@@ -24,7 +24,7 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 | ~~R2~~ | ~~P0~~ | ~~**Scrollbar-Styling in Datei-Previews**~~ | ~~Sonnet~~ | ✅ Session 17 |
 | ~~R3~~ | ~~P0~~ | ~~**Vault-Selector oben links zu Windows-artig**~~ | ~~Sonnet~~ | ✅ Session 17 |
 | ~~R4~~ | ~~P1~~ | ~~**Tab-Reihenfolge per Drag & Drop**~~ | ~~Sonnet~~ | ✅ Session 18 |
-| R5 | P1 | **Sidebar-Themen: ganzes Farbfeld mit Name statt Punkt** – erst 2 Design-Vorschläge liefern, dann implementieren | **Sonnet** | Design-Output zuerst im Chat, dann targeted CSS-Edit |
+| ~~R5~~ | ~~P1~~ | ~~**Sidebar-Themen: ganzes Farbfeld mit Name statt Punkt**~~ | ~~Sonnet~~ | ✅ Session 19 |
 | R6 | P1 | **Splitscreen-Verbesserung: Tab per D&D in 2. Fenster ziehen; rechtes Panel (Graph/Outline) sync zur aktiven Datei** | **Opus** | Komplex: Tab-State × Split-Mode × Panel-Sync; viele Randfälle |
 | R7 | P2 | **Einstellungs-Menü** – Button unten links öffnet Panel: Farb-Theme, Hauptthemen-Farben, Vault-Pfad, weitere sinnvolle Optionen; Persistence in localStorage / nexus.config.json | **Sonnet** | Großes UI-Feature, aber gut strukturierbar; kein neues Backend-Konzept |
 | R8 | P2 | **Claude in Suche oben rechts einbinden** – wie im Preview; Claude-API-Key konfigurierbar; auch auf anderem PC nutzbar | **Opus** | API-Integration + Key-Management + Security; architektonisch komplex |
@@ -47,6 +47,21 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 9. **R11** (Design-Vorschläge)
 10. **R12** (Obsidian-Regeln)
 11. **R13** (Vergleich)
+
+---
+
+## Stand: 2026-06-11 (Session 19 – R5 Sidebar-Farbfeld Variante B)
+
+Reine Front-End-Aenderung in `public/index.html`. Verifiziert: `verify:html` OK (1937 Zeilen, Ende `</html>`), `node test/md-render.test.mjs` 25/25. Aenderungen per Node-Skript (literaler split/join, kein safe-edit-JSON-Escaping-Problem bei Template-Literals).
+
+### Erledigt
+- [x] **R5 – Sidebar-Themen: Gradient-Zeile statt Farb-Dot (Variante B).**
+  - CSS: `.folder-row.folder-gradient` (volle Zeile, `color-mix`-Gradient links→transparent), `:hover` (28%), `.active` (32%), plus `.folder-label` (flex:1, weiß, 500-Weight). Bisherige `.dot`-Regel bleibt (Palette + Picker nutzen sie weiter).
+  - JS `makeFolderEl`: `isTop=depth===0`. Top-Level-Ordner (depth 0) bekommen `folder-gradient`-Klasse + `--fc:${color}` CSS-Var, kein dot-Span, stattdessen `<span class="folder-label">`. Sub-Ordner unverändert (grauer dot).
+
+### TODO Paul
+- [ ] App neu laden (`npm run app` oder Strg+R) und live prüfen: Top-Level-Ordner haben farbigen Gradient-Hintergrund ohne Punkt, Sub-Ordner haben weiterhin grauen Punkt.
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 19: R5 Sidebar-Farbfeld Variante B (Gradient)"`
 
 ---
 
@@ -402,6 +417,7 @@ node src/ui-server.js
 ## Usage-Log (Regel 22)
 | Session | Datum | Inhalt | Start % | End % |
 |---|---|---|---|---|
+| 19 | 2026-06-11 | R5 Sidebar-Farbfeld Variante B: isTop in makeFolderEl, folder-gradient CSS (color-mix Gradient), folder-label; verify:html 1937 Zeilen + 25/25 gruen |
 | 18 | 2026-06-11 | R4 Tab-D&D-Reorder: _draggingTabId, draggable+data-tidx in renderTabBar, initTabDnd() (Event-Delegation, curId-Tracking), .tab.drop-target CSS; verify:html 1929 Zeilen + 25/25 gruen | - | - |
 | 17 | 2026-06-11 | R2 Scrollbar (#1a1d2a/#3a3f55/#5a6080, 6px), R1 Checkbox-Toggle (_curNoteRaw+wireRendered+POST /api/save), R3 Custom Vault-Dropdown (toggleVaultDrop+CSS); verify:html 1892 Zeilen + 25/25 gruen | - | - |
 | 16 | 2026-06-11 | macOS-Dots entfernt; Rechtes Panel: #right-toggle (Graph/Gliederung/Split), CSS-Modi per data-rmode, renderOutline(), bindScrollSpy() (rAF), Sync in wireRendered+openFile+init; verify:html+25/25 gruen | - | - |

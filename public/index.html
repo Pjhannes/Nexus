@@ -73,6 +73,10 @@ body.col-resizing{cursor:col-resize;user-select:none}
 .folder-row{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:9px;cursor:pointer;border-left:3px solid transparent;transition:.12s;font-size:13px;user-select:none}
 .folder-row:hover{background:var(--panel2)}
 .folder-row.active{background:linear-gradient(90deg,rgba(124,140,255,.16),transparent);border-left-color:var(--accent)}
+.folder-row.folder-gradient{border-left:none;background:linear-gradient(90deg,color-mix(in srgb,var(--fc) 18%,transparent) 0%,transparent 70%);border-radius:9px}
+.folder-row.folder-gradient:hover{background:linear-gradient(90deg,color-mix(in srgb,var(--fc) 28%,transparent) 0%,rgba(255,255,255,.03) 70%)}
+.folder-row.folder-gradient.active{background:linear-gradient(90deg,color-mix(in srgb,var(--fc) 32%,transparent) 0%,rgba(255,255,255,.04) 80%);border-left-color:transparent}
+.folder-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;font-weight:500}
 .dot{width:9px;height:9px;border-radius:3px;flex-shrink:0;box-shadow:0 0 8px currentColor}
 .folder-row .count{margin-left:auto;color:var(--dim);font-size:11px;flex-shrink:0}
 .folder-row .tog{font-size:9px;color:var(--dim);margin-left:2px;flex-shrink:0;transition:.15s}
@@ -832,10 +836,14 @@ function makeFolderEl(node,depth){
   const color=depth===0?folderColor(node.name):'#4a5163';
   const count=countFiles(node.children??[]);
   const hasChildren=(node.children??[]).length>0;
+  const isTop=depth===0;
+  const dotHtml=isTop?'':`<span class="dot" style="background:${color};color:${color}"></span>`;
+  const nameHtml=isTop
+    ?`<span class="folder-label">${esc(node.name)}</span>`
+    :`<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(node.name)}</span>`;
   wrap.innerHTML=`
-    <div class="folder-row" data-path="${esc(node.path)}" style="padding-left:${8+depth*14}px">
-      <span class="dot" style="background:${color};color:${color}"></span>
-      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(node.name)}</span>
+    <div class="folder-row${isTop?' folder-gradient':''}" data-path="${esc(node.path)}" style="padding-left:${8+depth*14}px${isTop?';--fc:'+color:''}">
+      ${dotHtml}${nameHtml}
       <span class="count">${count>0?count.toLocaleString('de'):''}</span>
       ${hasChildren?'<span class="tog">▶</span>':''}
     </div><div class="folder-children"></div>`;
