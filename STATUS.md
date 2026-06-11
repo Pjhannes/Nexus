@@ -50,6 +50,26 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 
 ---
 
+## Stand: 2026-06-11 (Session 19b – Ordnerfarbe per Rechtsklick)
+
+Reine Front-End-Aenderung. verify:html OK (1977 Zeilen), 25/25 gruen.
+
+### Erledigt
+- [x] **Ordnerfarbe per Rechtsklick konfigurierbar.**
+  - `localStorage['nexus.folderColors']` = `{Name: "#hex"}` als Custom-Color-Store. `_customFolderColors()` + `setCustomFolderColor(name,color|null)` verwalten ihn.
+  - `folderColor()` prueft zuerst Custom-Store, dann COLORS-Map, dann Hash-Fallback.
+  - Context-Menu fuer Top-Level-Ordner (`path.indexOf('/')===-1`) bekommt Separator + Eintrag `🎨 Farbe anpassen…`.
+  - `#color-pop`-Popover erscheint an Menueposition: `<input type="color">`, Knopf "Uebernehmen", "Entfernen" (nur sichtbar wenn Custom-Farbe gesetzt), "Abbrechen". `colorToHex()` konvertiert hsl/rgb fuer `input[type=color]`.
+  - "Entfernen" loescht Custom-Eintrag -> folderColor() faellt auf COLORS/Hash zurueck.
+  - Nach Apply/Remove: `renderSidebar()` + `invalidateVaultGraph()` + `setGraphVault(true)` -> Sidebar-Gradient + Graph sofort aktuell.
+  - Popover schliesst bei Klick ausserhalb (click-listener prueft `.contains()`) und bei Escape.
+
+### TODO Paul
+- [ ] App neu laden (Strg+R), Rechtsklick auf Top-Level-Ordner -> `🎨 Farbe anpassen…` klicken, Farbe waehlen, `Uebernehmen` -> Gradient + Graph aktualisiert sich sofort. `Entfernen` -> Standardfarbe zurueck.
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 19b: Ordnerfarbe per Rechtsklick (custom localStorage + Graph-Update)"`
+
+---
+
 ## Stand: 2026-06-11 (Session 19 – R5 Sidebar-Farbfeld Variante B)
 
 Reine Front-End-Aenderung in `public/index.html`. Verifiziert: `verify:html` OK (1937 Zeilen, Ende `</html>`), `node test/md-render.test.mjs` 25/25. Aenderungen per Node-Skript (literaler split/join, kein safe-edit-JSON-Escaping-Problem bei Template-Literals).

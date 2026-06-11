@@ -309,6 +309,17 @@ canvas{display:block;width:100%;height:100%}
 .ctx-item:hover{background:var(--panel2)}
 .ctx-sep{height:1px;background:var(--border);margin:3px 0}
 
+/* Color picker popover */
+#color-pop{position:fixed;background:#0f1320;border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.75);z-index:1000;padding:14px 16px;min-width:210px;display:none}
+#color-pop.show{display:block}
+.cp-title{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);margin-bottom:10px}
+.cp-row{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+#cp-input{width:44px;height:34px;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer;padding:2px;flex-shrink:0}
+.cp-name{color:var(--text);font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cp-btns{display:flex;gap:6px}
+.cp-btns button{flex:1;padding:5px 6px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:11.5px;cursor:pointer;transition:.12s}
+.cp-btns button:hover{border-color:var(--accent);color:var(--accent)}
+
 /* Toast + drop */
 #toast{position:fixed;bottom:36px;right:20px;padding:9px 16px;border-radius:8px;font-size:12.5px;box-shadow:0 4px 20px rgba(0,0,0,.6);display:none;max-width:320px;z-index:1000;background:#151b2c;border:1px solid var(--border)}
 #toast.show{display:block}
@@ -382,6 +393,15 @@ body.row-resizing{cursor:row-resize;user-select:none}
 <div id="upload-bar"></div>
 <div id="drop-overlay">&#128193; Ablegen zum Hochladen</div>
 <div id="ctx-menu"></div>
+<div id="color-pop">
+  <div class="cp-title">Ordnerfarbe</div>
+  <div class="cp-row"><input type="color" id="cp-input"><span class="cp-name" id="cp-name"></span></div>
+  <div class="cp-btns">
+    <button onclick="cpApply()">Übernehmen</button>
+    <button id="cp-remove" onclick="cpRemove()">Entfernen</button>
+    <button onclick="cpClose()">Abbrechen</button>
+  </div>
+</div>
 <div id="toast"></div>
 
 <div class="app">
@@ -529,7 +549,11 @@ let _curNoteRaw=null;
 
 // ───────── Folder colors ─────────
 const COLORS={'Arbeit':'#3B82F6','Uni':'#10B981','Profil':'#8B5CF6','Unterhalt Heiko':'#EF4444','Unterhalt':'#EF4444','Bewerbungen':'#F59E0B','Gesundheit':'#EC4899','Julie – FROG':'#6366F1','Julie':'#6366F1','Motorrad':'#EA580C','Wissen':'#14B8A6','_Konversationen':'#06B6D4','_System':'#7C8CFF','Eingang':'#F59E0B','Vollmachten':'#8B5CF6','START':'#EAB308','start':'#EAB308'};
+function _customFolderColors(){try{return JSON.parse(localStorage['nexus.folderColors']||'{}');}catch(e){return {};}}
+function setCustomFolderColor(name,color){const c=_customFolderColors();c[name]=color||'none';localStorage['nexus.folderColors']=JSON.stringify(c);}
 function folderColor(name){
+  const custom=_customFolderColors();
+  if(Object.prototype.hasOwnProperty.call(custom,name)){if(custom[name]==='none')return '';return custom[name];}
   if(COLORS[name]) return COLORS[name];
   let h=0; for(const c of (name||'')) h=(h*31+c.charCodeAt(0))&0xffffff;
   return `hsl(${h%360},55%,58%)`;
@@ -841,8 +865,9 @@ function makeFolderEl(node,depth){
   const nameHtml=isTop
     ?`<span class="folder-label">${esc(node.name)}</span>`
     :`<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(node.name)}</span>`;
+  const hasColor=isTop&&color!=='';
   wrap.innerHTML=`
-    <div class="folder-row${isTop?' folder-gradient':''}" data-path="${esc(node.path)}" style="padding-left:${8+depth*14}px${isTop?';--fc:'+color:''}">
+    <div class="folder-row${hasColor?' folder-gradient':''}" data-path="${esc(node.path)}" style="padding-left:${8+depth*14}px${hasColor?';--fc:'+color:''}">
       ${dotHtml}${nameHtml}
       <span class="count">${count>0?count.toLocaleString('de'):''}</span>
       ${hasChildren?'<span class="tog">▶</span>':''}
@@ -1695,6 +1720,7 @@ function showCtx(e,path,type,ext){
     items.push({icon:'✏️',label:'Umbenennen',fn:`ctxRename('${cssAttr(path)}','folder')`});
     items.push({icon:'📦',label:'Verschieben nach…',fn:`ctxMove('${cssAttr(path)}')`});
     items.push({icon:'🗑',label:'Löschen',fn:`ctxDelete('${cssAttr(path)}','folder')`});
+    if(path.indexOf('/')===-1){items.push({sep:true});items.push({icon:'🎨',label:'Farbe anpassen…',fn:`ctxColor('${cssAttr(path)}');event.stopPropagation()`});}
   }
   items.push({sep:true});items.push({icon:'🔄',label:'Index aktualisieren',fn:'reindex()'});
   const menu=document.getElementById('ctx-menu');
@@ -1748,8 +1774,23 @@ async function ctxDelete(path,type){
   if(selectedPath===path){selectedPath=null;document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';setCrumb(esc(activeVault));}
   invalidateVaultGraph();await refreshTree();
 }
-document.addEventListener('click',closeCtx);
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeCtx();closePalette();closeVaultModal();pickerCancel();_confirmCancel();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
+function colorToHex(col){if(/^#[0-9a-f]{6}$/i.test(col))return col;const d=document.createElement('div');d.style.color=col;document.body.appendChild(d);const rgb=getComputedStyle(d).color;document.body.removeChild(d);const m=rgb.match(/d+/g);if(!m||m.length<3)return '#808080';return '#'+[m[0],m[1],m[2]].map(v=>parseInt(v).toString(16).padStart(2,'0')).join('');}
+let _cpTarget=null;
+function ctxColor(name){
+  _cpTarget=name;
+  document.getElementById('cp-input').value=colorToHex(folderColor(name));
+  document.getElementById('cp-name').textContent=name;
+  document.getElementById('cp-remove').style.display=_customFolderColors()[name]?'':'none';
+  const menu=document.getElementById('ctx-menu');
+  const pop=document.getElementById('color-pop');
+  pop.style.left=menu.style.left;pop.style.top=menu.style.top;
+  pop.classList.add('show');
+}
+function cpApply(){if(!_cpTarget)return;setCustomFolderColor(_cpTarget,document.getElementById('cp-input').value);cpClose();renderSidebar();invalidateVaultGraph();setGraphVault(true);}
+function cpRemove(){if(!_cpTarget)return;setCustomFolderColor(_cpTarget,'none');cpClose();renderSidebar();invalidateVaultGraph();setGraphVault(true);}
+function cpClose(){document.getElementById('color-pop').classList.remove('show');_cpTarget=null;}
+document.addEventListener('click',e=>{closeCtx();if(!document.getElementById('color-pop').contains(e.target))cpClose();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeCtx();cpClose();closePalette();closeVaultModal();pickerCancel();_confirmCancel();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
 
 // ═════════════════════ DRAG & DROP / UPLOAD ═════════════════════
 document.addEventListener('dragenter',e=>{if(e.dataTransfer.types.includes('Files')){dragCounter++;document.getElementById('drop-overlay').classList.add('active');}});
