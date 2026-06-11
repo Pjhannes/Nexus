@@ -12,6 +12,265 @@ Multi-Vault-Architektur: App in `D:\Nexus`, Vaults in `D:\Knowledge-base\` (wie 
 Web-UI mit Drag&Drop, Rechtsklick-Markitdown-Konvertierung.
 Sprache: **JavaScript/Node, KEIN Rust** (Entscheidung 2026-06-10).
 
+---
+
+## Offene Aufgaben – Roadmap (Stand 2026-06-11)
+
+Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung | **P3** = Polish/Forschung
+
+| # | Priorität | Aufgabe | Modell | Begründung |
+|---|-----------|---------|--------|------------|
+| ~~R1~~ | ~~P0~~ | ~~**Checkbox-Toggle in Notizen funktioniert nicht**~~ | ~~Sonnet~~ | ✅ Session 17 |
+| ~~R2~~ | ~~P0~~ | ~~**Scrollbar-Styling in Datei-Previews**~~ | ~~Sonnet~~ | ✅ Session 17 |
+| ~~R3~~ | ~~P0~~ | ~~**Vault-Selector oben links zu Windows-artig**~~ | ~~Sonnet~~ | ✅ Session 17 |
+| ~~R4~~ | ~~P1~~ | ~~**Tab-Reihenfolge per Drag & Drop**~~ | ~~Sonnet~~ | ✅ Session 18 |
+| R5 | P1 | **Sidebar-Themen: ganzes Farbfeld mit Name statt Punkt** – erst 2 Design-Vorschläge liefern, dann implementieren | **Sonnet** | Design-Output zuerst im Chat, dann targeted CSS-Edit |
+| R6 | P1 | **Splitscreen-Verbesserung: Tab per D&D in 2. Fenster ziehen; rechtes Panel (Graph/Outline) sync zur aktiven Datei** | **Opus** | Komplex: Tab-State × Split-Mode × Panel-Sync; viele Randfälle |
+| R7 | P2 | **Einstellungs-Menü** – Button unten links öffnet Panel: Farb-Theme, Hauptthemen-Farben, Vault-Pfad, weitere sinnvolle Optionen; Persistence in localStorage / nexus.config.json | **Sonnet** | Großes UI-Feature, aber gut strukturierbar; kein neues Backend-Konzept |
+| R8 | P2 | **Claude in Suche oben rechts einbinden** – wie im Preview; Claude-API-Key konfigurierbar; auch auf anderem PC nutzbar | **Opus** | API-Integration + Key-Management + Security; architektonisch komplex |
+| R9 | P2 | **Claude Usage-Widget unten rechts** – nach GitHub `SlavomirDurej/claude-usage-widget`; in Claude-Aktivitäts-Zeile; Login-Daten änderbar | **Sonnet** | Externe Lib einbinden + Config-UI; klar abgegrenzt |
+| R10 | P2 | **Installer verbessern** – kein CMD-Fenster, vollwertige Electron-App auf Pauls PC; NSIS-Installer für Fremd-PC (Arbeit von Session 11 finalisieren: `npm run dist` testen, SmartScreen-Workaround) | **Sonnet** | electron-builder schon konfiguriert; Hauptarbeit ist Windows-Test + Feinschliff |
+| R11 | P3 | **3 weitere UI-Design-Vorschläge für index.html** – Alternativen zum aktuellen Look, nur Mockups/HTML | **Opus** | Kreativ-intensiv; Opus generiert hochwertigere Design-Varianten |
+| R12 | P3 | **Obsidian-Regeln und Arbeitsweisen in Nexus übernehmen** – alle sinnvollen Obsidian-Workflows (Templates, Daily Notes, Kanban, Tags, Properties…) als Nexus-Features oder MCP-Tools abbilden | **Opus** | Großer Scope; braucht Analyse der Obsidian-Funktionen + Architektur-Entscheidungen |
+| R13 | P3 | **Abschließender Obsidian-vs-Nexus-Vergleich** – wo Obsidian noch besser ist; ehrliche Lücken-Liste | **Sonnet** | Reine Analyse/Recherche; kein Code |
+
+### Empfohlene Reihenfolge (je neues Fenster / neue Session)
+
+1. ~~**R2/R1/R3** – alle drei erledigt (Session 17)~~
+2. **R4** (Tab D&D Reorder)
+3. **R5** (Sidebar-Farbfeld: erst Designs zeigen, dann implementieren)
+4. **R6** (Splitscreen-Upgrade)
+5. **R7** (Einstellungs-Menü)
+6. **R10** (Installer finalisieren)
+7. **R8** (Claude in Suche)
+8. **R9** (Usage-Widget)
+9. **R11** (Design-Vorschläge)
+10. **R12** (Obsidian-Regeln)
+11. **R13** (Vergleich)
+
+---
+
+## Stand: 2026-06-11 (Session 18 – R4 Tab-D&D-Reorder)
+
+Reine Front-End-Aenderung in `public/index.html`. Verifiziert: `verify:html` OK (1929 Zeilen, Ende `</html>`), `node test/md-render.test.mjs` 25/25. Alle Aenderungen via `scripts/safe-edit.mjs` (1 Aufruf, 5 Patches).
+
+### Erledigt
+- [x] **R4 – Tab-Reihenfolge per Drag & Drop.**
+  - State-Variable `_draggingTabId=null` ergaenzt (unabhaengig von `_movingPath` fuer Tree-D&D).
+  - CSS: `.tab.drop-target` zur bestehenden Drop-Highlight-Regel ergaenzt.
+  - `renderTabBar()`: Tab-Divs bekommen `draggable="true" data-tidx="'+i+'"`.
+  - `initTabDnd()`: Event-Delegation auf `#tabbar` fuer `dragstart`/`dragover`/`drop`/`dragend`. `dragstart` prueft `if(_movingPath)return` -> kein Konflikt mit Tree-D&D. Drop: `curId`-Tracking (via `tabs[activeTab].id`) stellt `activeTab` nach Splice/Insert korrekt wieder her. `renderTabBar()` am Ende (ruft `saveTabs()` mit ein).
+  - `init()`: `initTabDnd()` nach `resetTabs()` aufgerufen.
+
+### TODO Paul
+- [ ] App neu laden (`npm run app` oder Strg+R) und live pruefen: Mehrere Tabs oeffnen, per Drag&Drop umsortieren. Aktiver Tab bleibt aktiv. Reihenfolge bleibt nach Reload erhalten (Persistenz ueber `saveTabs`/`localStorage`).
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 18: R4 Tab-D&D-Reorder"`
+
+---
+
+## Stand: 2026-06-11 (Session 17 – R2 Scrollbar, R1 Checkbox-Toggle, R3 Vault-Selector)
+
+Reine Front-End-Aenderung in `public/index.html`. Verifiziert: `verify:html` OK (1892 Zeilen, Ende `</html>`), `node test/md-render.test.mjs` 25/25. Alle Aenderungen via `scripts/safe-edit.mjs` (4 Aufruf-Rounds).
+
+### Erledigt
+- [x] **R2 – Scrollbar-Styling.** Globale `::-webkit-scrollbar`-Regeln auf Theme-Farben umgestellt: Track `#1a1d2a`, Thumb `#3a3f55`, Hover `#5a6080`, 6px Breite, border-radius 3px. Scoped Overrides fuer `#note-area`, `#outline-panel`, `.side-scroll`, `.log-rows`, `.graph-filter`, `.pal-results`, `.graph-settings` (6px) sowie horizontale Scrollbars fuer Code-Blocks / Tabellen / Transklusion (4px Hoehe).
+- [x] **R1 – Checkbox-Toggle.** `_curNoteRaw` State-Variable ergaenzt; `renderMarkdownView` speichert Raw-Text; `wireRendered` haengt Click-Listener an alle `.task-cb` Elemente: nth Checkbox wird auf nth `- [ ]`/`- [x]`-Zeile in `_curNoteRaw` gemappt, Line getoggelt, per `POST /api/save` zurueckgeschrieben, Note ohne Full-Reload neu gerendert.
+- [x] **R3 – Custom Vault-Dropdown.** Natives `<select>` ersetzt durch `#vault-sel-wrap` / `#vault-sel-btn` (Chevron `▾`, Dark-BG `#0d1017`, Border `#2a2f42`, Hover-Highlight, Rotate-Animation beim Oeffnen) + `#vault-sel-drop` (absolute Positionierung, `#0d1017`, `#2a2f42` Border, `.vs-opt`-Items mit `.active`-Klasse). `toggleVaultDrop()` + `_closeVaultDrop()` (click-outside via capture) + `refreshVaultSelector()` komplett neu. Kein natives OS-Widget mehr.
+
+### TODO Paul
+- [ ] App neu laden (`npm run app` oder Strg+R) und live pruefen: Scrollbars in Note-Area / Outline-Panel (dunkel, schmal), Checkbox-Klick toggelt und speichert, Vault-Dropdown oeffnet/schliesst sauber, Klick ausserhalb schliesst es.
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 17: R2 Scrollbar + R1 Checkbox-Toggle + R3 Vault-Selector"`
+
+---
+
+## Stand: 2026-06-11 (Session 16 – macOS-Dots entfernt, Rechtes Panel: Graph/Gliederung/Split)
+
+Reine Front-End-Aenderung in `public/index.html`. Verifiziert: `verify:html` OK (1806 Zeilen, Ende `</html>`), `node test/md-render.test.mjs` 25/25. Alle Aenderungen via `scripts/safe-edit.mjs` (3 Aufruf-Rounds mit Hash-Verifikation).
+
+### Erledigt
+- [x] **Aufgabe A – macOS-Ampel entfernt.** `<div class="dots">…</div>` aus Titlebar geloescht; `.dots span{…}`-CSS-Regel entfernt. Titlebar zeigt jetzt nur noch `◆ NEXUS`, Breadcrumb, Suchleiste.
+- [x] **B1 Struktur.** `#right-toggle` (3 Buttons: Graph | Gliederung | Split) + `#outline-panel` vor `.graph-wrap` ins `.right-panel` eingefuegt. Reihenfolge: `#right-toggle` → `#outline-panel` → `.graph-wrap` → `.activity`.
+- [x] **B2 CSS-Modi.** `data-rmode`-Attribut-Selektor auf `.right-panel` steuert Sichtbarkeit:
+  - Default (`data-rmode` nicht gesetzt oder `graph`): `#outline-panel{display:none}`, `.graph-wrap` voll sichtbar.
+  - `outline`: `.graph-wrap{display:none}`, `#outline-panel{flex:1;flex-direction:column}`.
+  - `split`: `#outline-panel{flex:0 0 42%;border-bottom}`, `.graph-wrap{flex:1}`.
+  - Aktiver Button per `.active`. Persistenz in `localStorage['nexus.rightmode']`. `window.dispatchEvent(new Event('resize'))` bei Wechsel.
+- [x] **B3 Outline-Render.** Globale `_curHeadings`, `_curNotePath`, `_scrollSpyFn`. `renderOutline()` fuellt `#outline-panel` mit klickbaren `.ol-row`-Buttons (Einrueckung `(level-1)*13+10px`), Klick → `scrollIntoView({block:'start'})`. Leerer State → "Keine Gliederung"-Hinweis.
+- [x] **B4 Scroll-Spy.** `bindScrollSpy()` haengt rAF-gedrosselten Scroll-Listener an `#note-area`. Aktive Ueberschrift = letzte mit `offsetTop <= scrollTop+8`. Entsprechende Outline-Zeile bekommt `.active` + `scrollIntoView({block:'nearest'})`. Alter Listener wird vor Neubindung sauber entfernt.
+- [x] **B5 Sync.** `_curHeadings=res.headings; renderOutline(); bindScrollSpy()` in `wireRendered()` (deckt alle MD-Opens + Tab-Wechsel ab). `_curHeadings=[]` + `renderOutline()` in `openFile()` vor dem try-Block (deckt Nicht-MD-Dateien ab). `setRightMode(localStorage.getItem('nexus.rightmode')||'graph')` in `init()`.
+
+### TODO Paul
+- [ ] App neu laden (`npm run app` oder Strg+R) und live pruefen: Buttons Graph|Gliederung|Split umschalten, Notiz oeffnen → Gliederung erscheint, Klick springt zur Ueberschrift, Scrollen markiert aktiven Abschnitt, Split zeigt beide Panels, Graph passt nach Wechsel. Persistenz: Modus bleibt nach Reload erhalten.
+- [ ] Git-Commit manuell ausfuehren (`.git/index.lock` war in der Session gesperrt, konnte nicht aus der Sandbox entfernt werden):
+  ```
+  git add public/index.html STATUS.md
+  git commit -m "Session 16: macOS-Dots entfernt + Rechtes Panel Graph/Gliederung/Split mit Scroll-Spy"
+  ```
+
+---
+
+---
+
+## Stand: 2026-06-11 (Session 15 – Dateiuebersicht: prompt()-Bug, Tree-State, Themed Confirm, Ordner-Picker)
+
+Reine Front-End-Aenderung in `public/index.html`. Verifiziert: `verify-html` OK (1747 Zeilen, Ende `</html>`), `node --check` des Inline-Scripts gruen, Windows-Datei und Mount konsistent gegengeprueft.
+
+### Behoben
+- [x] **Kernbug: neue Dateiuebersicht-Aktionen taten nichts.** Ursache: alle neuen Aktionen (Neue Notiz, Neuer Ordner, Umbenennen, Verschieben, „+ Notiz") starteten mit `window.prompt()` – **Electron unterstuetzt `prompt()` nicht** (liefert sofort `null`), daher `if(name===null)return;` = sofortiger Abbruch. `confirm()` funktioniert in Electron, deshalb lief Loeschen unauffaellig. Fix: promise-basiertes Modal `uiPrompt()` (App-Theme) ersetzt alle 5 `prompt()`-Aufrufe.
+- [x] **Kein Voll-Reload mehr / Ordner bleiben offen.** Neuer `refreshTree()` ersetzt `loadVault()` nach Aktionen (Neu/Umbenennen/Verschieben/Loeschen/Notiz-Speichern). Aufklappzustand via `openFolders`-Set persistiert ueber Re-Render, Scrollposition bleibt, Graph wird nicht neu initialisiert. `loadVault()` nur noch bei Start, Vault-Wechsel, Vault-Entfernen.
+- [x] **Themed Bestaetigungs-Dialog.** `uiConfirm()`-Modal ersetzt den weissen Windows-`confirm()` ueberall (Loeschen, ungespeicherte Aenderungen, Vault entfernen). 0 native `prompt`/`confirm` mehr in der Datei.
+- [x] **Verschieben per Ordner-Browser.** `ctxMove` oeffnet jetzt `uiFolderPicker()`: klickbare Ordneruebersicht mit Breadcrumb (Wurzel, `..` zurueck), Button „Hierhin verschieben". Zu verschiebender Ordner + Nachfahren werden ausgeblendet (kein Move in sich selbst).
+
+### Editier-Vorfall (erneut) + Lehre
+- Beim ersten Fix-Block hat das **Edit-Tool die Datei an einem `──`-Zeichen abgeschnitten** (Ende ab `renderVaultList` weg). index.html enthaelt 11 `──`. Erkannt via `verify-html`, Schwanz aus `git show HEAD:` rekonstruiert.
+- **Danach alle Aenderungen nur per Python-Skript** (literaler String-Replace mit Count-Assertion), nach jedem Block `verify-html` + Host-`Read` von Anfang und Ende. Deckt sich mit Session-14-Regel; kuenftig idealerweise `scripts/safe-edit.mjs` verwenden.
+
+### TODO Paul
+- [ ] App neu laden (Strg+R) bzw. `npm run app` neu starten und live pruefen: Rechtsklick Neu/Umbenennen/Verschieben/Loeschen, „+ Notiz", Ordner bleiben beim Arbeiten offen, Confirm-Dialog im Dark-Theme, Verschieben via Ordner-Picker.
+
+## Stand: 2026-06-11 (Session 14 - index.html-Truncation DAUERHAFT geloest)
+
+### Echte Ursache (korrigierte Diagnose -- die alte war ein Symptom)
+Die wiederkehrende "Edit-Tool zerschneidet index.html"-Diagnose war unvollstaendig.
+Beleg aus den eigenen Protokollen: Session 10/11 zeigten die **Windows-Datei intakt,
+nur den Linux-Mount** abgeschnitten/NUL-gepaddet; Session 13 (schwerster Unfall) wurde
+durch ein **node-Skript ueber den Mount** ausgeloest, nicht durch Edit -- eine veraltete
+Mount-Fassung wurde nach Windows zurueckgeschrieben. Die wahre Fehlerklasse ist damit
+**Read-Modify-Write ueber den divergierenden Windows<->Linux-Mount**, nicht ein einzelnes
+Tool. Edit zu verbieten behandelte nur ein Symptom und liess den eigentlichen
+geladenen Lauf (node/bash-Splice ueber den Mount) offen.
+
+### Loesung: sanktionierter, selbstpruefender Edit-Weg + Commit-Schutz
+Neu unter `scripts/`:
+- **`verify-html.mjs`** -- Integritaetspruefer. Harte Detektoren: (1) Datei endet mit
+  `</html>` (Sentinel), (2) `node --check` des Inline-`<script>`, plus NUL-/Byte-/Zeilen-
+  Sanity. Faengt JEDE bisher dokumentierte Truncation. Exit 0/1. `export verifyHtml()`.
+- **`safe-edit.mjs`** -- der EINZIGE erlaubte Weg, index.html zu aendern. Ablauf:
+  Basis-Check (nie eine bereits kaputte/stale Quelle editieren -> haette Session 13
+  gestoppt) -> Backup nach `.nexus-backups/` -> literale Patches (split/join, kein Regex)
+  mit exakter Count-Assertion -> atomic write (tmp+rename) -> **Read-Back-sha256 == Soll**
+  (faengt Mount-Write-Back-Korruption) -> Ergebnis-Check -> bei Fehler **Auto-Rollback**
+  aus Backup. Modi: `--patches <json>` oder `--content <txt>`.
+- **`scripts/hooks/pre-commit`** + `install-hooks.mjs` -- Git-Hook prueft den GESTAGTEN
+  index.html-Blob via verify-html; eine truncated Datei kann nicht mehr in die Historie
+  gelangen. Aktivierung selbstinstallierend ueber npm `prepare` (`core.hooksPath=scripts/hooks`).
+- **npm-Scripts**: `npm run verify:html`, `npm run edit:html -- --patches p.json`.
+
+### HARTE REGEL (ersetzt "index.html nie mit Edit")
+1. index.html NUR ueber `scripts/safe-edit.mjs` aendern (Patches oder --content).
+   Edit/Write-Tool direkt = verboten; bash/node-Splice ueber den Mount = verboten.
+2. Nach jeder Aenderung zusaetzlich per Windows-`Read` Kopf UND Ende gegenpruefen.
+3. Am sichersten laeuft safe-edit auf Pauls Windows-PC (kein Mount im Spiel). In der
+   Sandbox schuetzt der Read-Back-Hash trotzdem.
+4. Bei Mount-Divergenz kanonische Datei via `git show HEAD:...` / `git archive HEAD`
+   holen, NIE blind vom Mount kopieren.
+
+### Verifikation
+- [ ] **OFFEN (Sandbox war in dieser Session nicht startbar):** safe-edit/verify gegen
+  /tmp-Kopie testen: erfolgreicher Patch, simulierte Truncation -> Rollback greift,
+  `node --check`, `test/md-render.test.mjs` (25), `test/smoke.js` (48). Beim naechsten
+  Sandbox-Zugang oder auf Pauls PC nachholen (`npm run verify:html`, dann ein Test-Patch).
+- [x] Statisch geprueft: index.html aktuell gesund (1622 Zeilen, Ende `</html>`, kein NUL,
+  genau ein Inline-`<script>` 441-1620 -> Extraktor eindeutig).
+
+## Stand: 2026-06-11 (Session 10 - Tabs: Back/Forward, Persistenz, Drag&Drop-Move)
+
+Reine Front-End-Aenderung in `public/index.html` (Server/Tools unveraendert -> Smoke-Tests Session 7: 48/48 bleiben gueltig). `node --check` der Script-Sektion: gruen. `node test/md-render.test.mjs`: 25/25. Datei-Ende korrekt (`</html>`), jetzt 1622 Zeilen.
+
+### Erledigt
+- [x] **Pfeil-zurueck / Vor (pro-Tab Navigationshistorie).** Jeder Tab hat `hist[]` + `hi` (Index). `pushHist()` schneidet beim Navigieren den Vorwaerts-Zweig ab (Browser-Logik), dedupliziert gleiche Stelle. `‹`/`›`-Buttons links in der Tab-Leiste (`.tab-nav`/`.tnav`, disabled-Style `.off`) wirken auf den aktiven Tab via `tabBack()`/`tabForward()`. Historie wird in `updateActiveTab()` gepflegt (greift bei jedem openFile/openEditor/openFolderView, ausser `_silentRender`).
+- [x] **Tabs ueber Reloads persistieren (pro Vault).** `saveTabs()` schreibt `{activeTab, tabs:[{path,mode,hist,hi}]}` je Vault nach `localStorage['nexus.tabs']`; gehookt in `renderTabBar()` (deckt alle Mutationen ab). `restoreTabs()` stellt beim Start (`init`) und Vault-Wechsel (`switchVault`) wieder her; faellt sonst auf START.md / leeren Tab zurueck. `switchVault` sichert die Tabs des alten Vaults vor dem Wechsel.
+- [x] **Drag&Drop-Verschieben im Tree.** Datei- (`.tree-file`) und Ordner-Zeilen (`.folder-row`) sind `draggable`; `_movingPath` haelt die Quelle. Drop auf eine Ordnerzeile = hinein verschieben; Drop auf leeren Bereich/`#folder-list` = in die Wurzel. `moveInto()` nutzt `/api/rename` (wie ctxMove), mit Guards: kein No-Op in denselben Ordner, kein Ordner-in-sich-selbst/Nachfahre. Visuelles Feedback `.drop-target` / `.drop-root`. Externe Datei-Uploads (Files-Drop) unveraendert, da getrennt ueber `types.includes('Files')`.
+
+### Verifikation Session 10
+- [x] `node --check` der extrahierten Script-Sektion: OK.
+- [x] `node test/md-render.test.mjs`: 25/25 (Markdown-Renderer unberuehrt).
+- [x] Einfach-Definition aller neuen/geaenderten Funktionen geprueft (renderTabBar/updateActiveTab/pushHist/tabBack/tabForward/saveTabs/restoreTabs/moveInto/clearDropHL/resetTabs je 1x).
+- [ ] **TODO Paul:** UI Hard-Reload und live pruefen: (a) Pfeil zurueck/vor pro Tab, (b) Tabs bleiben nach Reload + nach Vault-Wechsel erhalten, (c) Datei/Ordner per Drag&Drop in anderen Ordner und in die Wurzel ziehen. Server-Neustart NICHT noetig (reine Front-End-Datei).
+
+### WICHTIG - Vorfall Session 10: Edit-Tool hat index.html erneut abgeschnitten
+- Beim Editieren von `public/index.html` mit dem **Edit-Tool** wurde die Datei wieder mittendrin (in `uploadFiles`) abgeschnitten -> Ende (`</script></body></html>`) weg. Bestaetigt die bestehende Regel.
+- **Loesung diese Session:** aus Backup wiederhergestellt und alle 10 Aenderungen per **Python-Skript mit exaktem String-Replace** (Count-Assertion ==1 je Edit) angewendet. Datei danach `node --check` gruen, Ende korrekt.
+- **Lehre (verschaerft):** index.html NIE mit dem Edit-Tool aendern. Vorher Backup, dann Python/bash-Replace, danach `tail`/`node --check`.
+
+### Offen / Naechste Schritte (Session 10)
+- Optional: Editor-Inhalt pro Tab live halten (statt Reload-from-disk beim Tab-Wechsel) - weiterhin offen.
+- Optional: Tab-Reihenfolge per Drag&Drop sortieren.
+- Optional: leerer-Bereich-Rechtsklick im Tree fuer "Neue Notiz/Ordner" in der Wurzel.
+- Optional: gespeicherte Tabs auf nicht mehr existierende Pfade pruefen/bereinigen beim Restore.
+
+## Stand: 2026-06-11 (Session 9 - Dateiuebersicht: Kontextmenue, Resizer, Tabs)
+
+Reine Front-End-Aenderung in `public/index.html` (Server/Tools unveraendert -> Smoke-Tests Session 7: 48/48 bleiben gueltig). `node --check` der Inline-Script-Sektion: gruen. Datei-Ende korrekt (`init(); </script></body></html>`).
+
+### Erledigt
+- [x] **Kontextmenue-Aktionen (Dateiuebersicht).** `showCtx` erweitert + neue Handler `ctxNewNote / ctxNewFolder / ctxRename / ctxMove / ctxDelete`.
+  - Datei-Rechtsklick: Umbenennen, Verschieben nach…, Loeschen (zus. zu Oeffnen/Bearbeiten/Markitdown/Pfad).
+  - Ordner-Rechtsklick: Neue Notiz, Neuer Ordner, Umbenennen, Verschieben nach…, Loeschen.
+  - Verdrahtet an bestehende Endpunkte: `/api/save` (create), `/api/mkdir`, `/api/rename` (dient auch als Move), `/api/delete`. `api()` wirft NICHT -> Handler pruefen `r.error`. Nach Aenderung: `invalidateVaultGraph()` + `loadVault()`. Verschieben = rename auf `Zielordner/basename`.
+- [x] **Resizable Panes.** `.main`-Grid nutzt CSS-Vars `--col-l`/`--col-r` + zwei `.resizer`-Handles (`#rz-l`, `#rz-r`) zwischen den Spalten. `initResizers()` (mousedown/move/up), Grenzen geklemmt, Persistenz in `localStorage` (`nexus.cols`), Graph-Resize via `window.dispatchEvent('resize')` (nutzt bestehenden resize-Closure).
+- [x] **Multi-Tab-System (Obsidian-Logik).** Tab-Leiste `#tabbar` ueber `note-area`.
+  - State: `tabs[]` {id,path,mode}, `activeTab`, `_silentRender`. Modi: file/editor/folder/empty.
+  - Klick auf Datei/Ordner -> `updateActiveTab()` ersetzt NUR den aktiven Tab (Hook in `openFile`/`openEditor`/`openFolderView`, unterdrueckt bei `_silentRender`).
+  - `+` (`newTab`) oeffnet leeren Tab; `switchTab` rendert gespeicherten Pfad neu (silent); `closeTab` mit Nachbar-Auswahl, letzter Tab -> leerer Tab.
+  - `maybeLeaveEditor()` vor Tab-Wechsel/Schliessen (ungespeicherte Edits). `resetTabs()` bei Init + Vault-Wechsel. `tabsRenamePath`/`tabsClosePath` halten Tabs bei ctxRename/ctxMove/ctxDelete konsistent.
+
+### Verifikation Session 9
+- [x] `node --check` der extrahierten Script-Sektion: OK.
+- [x] Keine Funktions-Namenskollisionen (renderTab/switchTab/closeTab/newTab/updateActiveTab/showEmptyTab/resetTabs je 1x).
+- [x] Hooks an korrekter Stelle (openFile 858, openEditor 994, openFolderView 1317); resetTabs in init + switchVault.
+- [ ] **TODO Paul:** UI Hard-Reload (localStorage-Cache) und live pruefen: Rechtsklick-Aktionen, Spalten ziehen, Tabs (Plus, Wechsel, Schliessen, Datei in neuem Tab). Server-Neustart NICHT noetig (reine Front-End-Datei).
+
+### Offen / Naechste Schritte (Session 9)
+- Optional: Tab-Zustand (offene Tabs) in localStorage persistieren ueber Reloads.
+- Optional: Drag&Drop zum Verschieben im Tree (statt Prompt-Zielordner).
+- Optional: Editor-Inhalt pro Tab live halten (statt Reload-from-disk beim Tab-Wechsel).
+- Optional: leerer-Bereich-Rechtsklick im Tree fuer "Neue Notiz/Ordner" in der Wurzel.
+
+## Stand: 2026-06-11 (Session 8 - Graph-UI ueberarbeitet)
+
+Alle Aenderungen NUR in `public/index.html` (Front-End). Server/Tools unveraendert -> Smoke-Tests (Session 7: 48/48) bleiben gueltig.
+
+### Issue 3 (Kern-Bug): Physik "springt wild umher" = VORZEICHENFEHLER in der Abstoszung
+- [x] Ursache gefunden: In `physicsGraph()` war `charge` negativ, die Kraft aber entlang `(n - m)` -> effektiv **Anziehung** statt Abstoszung. Knoten wurden zusammengezogen, kollabierten und schossen mit dem riesigen, ungedeckelten `charge` (d2-Minimum = 1px) durcheinander. "Abstoszung"-Regler verstaerkte die versteckte Anziehung.
+- [x] **`physicsGraph()` komplett neu** (numerisch verifiziert, auch mit echtem Code aus der Datei):
+  - charge POSITIV, Kraft entlang `(n-m)` = echte Abstoszung
+  - Nahbereichs-Deckel `minD2=(0.5L)^2` statt 1px -> keine Kraftspitzen
+  - harte Geschwindigkeitsbegrenzung `vmax=0.3L` + Daempfung 0.62 -> kein Ueberschiessen
+  - Zentrieren per **Translation** (kein komprimierender Feder-Term mehr) -> kein Kollaps zur Mitte
+  - Laengenmassstab `L=max(30,70*linkDist)*dpr`; `charge=0.9*GS.charge*L*L`; `ls=0.06*GS.link`
+  - Verifikation: N=1500 -> endBbox 23L, End-Jitter 0.07px (praktisch in Ruhe), kein NaN. Alle Slider-Extreme stabil.
+
+### Issue 2: Konzentrierte Notiz-Ansicht war chaotisch statt Kreis
+- [x] `buildEgo()`: Ringknoten + Zentrum werden jetzt auf der Kreisposition **fixiert** (`fx/fy` + `homeX/homeY`). Physik laesst sie in Ruhe -> gleichmaessiger, sauberer Kreis. Drag eines Knotens schnappt beim Loslassen auf die Kreisposition zurueck (`onGraphUp`).
+
+### Issue 1: Hauptgraph lud "ewig"
+- [x] **In-Memory-Cache** `_vaultCache` je Vault: `setGraphVault(force)` baut nur bei `force=true` (Reindex/Upload/Convert) neu, sonst sofort aus dem Speicher. Home-Button & Vault-Rueckkehr sind dadurch instant.
+- [x] **Render-Drossel**: `cx.shadowBlur` (sehr teuer) nur noch bei <=200 Knoten oder fuer den Hover-Knoten.
+- [x] **Animationsschleife stoppt** im Ruhezustand (`graph.raf=0`), `wakeGraph()` startet sie bei Interaktion neu -> keine Dauer-60fps-Last mehr.
+- [x] **Auto-Einpassen** (`fitGraphView`): Kamera zieht beim Aufbau sanft mit, bis das Layout ruht; bei manuellem Zoom/Pan (`_userMoved`) ausgesetzt.
+- [x] Aufrufer nach Datenaenderung auf `setGraphVault(true)` umgestellt (Upload/Convert/Reindex).
+
+### Verifikation Session 8
+- [x] `node --check` des kompletten Inline-Scripts: OK. Klammern balanciert.
+- [x] Physik headless mit echtem `physicsGraph` aus der Datei getestet (s.o.).
+- [ ] **TODO Paul:** UI im Browser neu laden (Hard-Reload, da localStorage-Graph-Settings gecacht sind) und Graph live pruefen. Server-Neustart NICHT noetig (reine Front-End-Datei).
+
+### Erweiterung Session 8b - Graph-Bedienung
+- [x] **Hauptthemen-Filter** (Vault): Button "Filter" + Panel mit Checkboxen je Top-Level-Ordner, **Mehrfachauswahl**. `applyVaultFilter()` filtert aus dem Cache (gleiche Knotenobjekte -> Positionen bleiben). "alle"-Reset. Button leuchtet bei aktivem Filter.
+- [x] **Index-Schalter** (Ego-Sicht): Button "Index" blendet Dateien mit "index" im Namen (case-insensitive, `isIndexFile`) aus/ein. Zustand in localStorage (`nexus.ego.index`).
+- [x] **Hover = Fokus** statt Aufhellung: `onGraphMove` berechnet bei Hover-Wechsel die Nachbarschaft (`graph.hoverSet`). `frameGraph` laesst Hover-Knoten + verknuepfte normal, **dunkelt alle uebrigen ab** (globalAlpha 0.16 Knoten / 0.10 Kanten). Keine Vergroesserung/Aufhellung mehr.
+- [x] Buttons modusabhaengig: Filter nur im Vault, Index nur in der Notiz-Sicht (`updateGraphChrome`).
+
+### WICHTIG - Vorfall Session 8b: Edit-Tool hat index.html abgeschnitten
+- Beim Editieren von `public/index.html` hat das Edit-Tool die Datei bei ~Zeile 1276 (mitten in `showCtx`, bei Template-Literals/Emojis) **abgeschnitten** - alles danach (Kontextmenue, Drag&Drop, Markitdown, Reindex, Vault-Mgmt, `init()`) war weg.
+- Wiederhergestellt per `head -n 1275` + `cat >> ... << 'NEXUSEOF'` (bash-Heredoc). Datei jetzt 1382 Zeilen, `node --check` gruen, Ende korrekt (`init(); </script></body></html>`).
+- **Lehre (vgl. bestehende Regel):** Grosse/sonderzeichenhaltige Bloecke in index.html NICHT mit dem Edit-Tool, sondern per bash-Heredoc schreiben. Nach jedem Edit an index.html `tail` + `node --check` der Script-Sektion pruefen.
+
+### Naechste Schritte (offen, Session 8)
+- Optional: echtes inkrementelles Hinzufuegen einzelner Knoten in den Cache (statt Voll-Rebuild bei force). Aktuell genuegt Cache + force-Rebuild.
+- Optional: Anzahl gezeichneter Labels bei sehr grossen Graphen weiter begrenzen.
+
 ## Stand: 2026-06-10 (Session 7)
 
 ### Erledigt (Session 7 - Test-Verifikation)
@@ -143,14 +402,21 @@ node src/ui-server.js
 ## Usage-Log (Regel 22)
 | Session | Datum | Inhalt | Start % | End % |
 |---|---|---|---|---|
+| 18 | 2026-06-11 | R4 Tab-D&D-Reorder: _draggingTabId, draggable+data-tidx in renderTabBar, initTabDnd() (Event-Delegation, curId-Tracking), .tab.drop-target CSS; verify:html 1929 Zeilen + 25/25 gruen | - | - |
+| 17 | 2026-06-11 | R2 Scrollbar (#1a1d2a/#3a3f55/#5a6080, 6px), R1 Checkbox-Toggle (_curNoteRaw+wireRendered+POST /api/save), R3 Custom Vault-Dropdown (toggleVaultDrop+CSS); verify:html 1892 Zeilen + 25/25 gruen | - | - |
+| 16 | 2026-06-11 | macOS-Dots entfernt; Rechtes Panel: #right-toggle (Graph/Gliederung/Split), CSS-Modi per data-rmode, renderOutline(), bindScrollSpy() (rAF), Sync in wireRendered+openFile+init; verify:html+25/25 gruen | - | - |
+| 15 | 2026-06-11 | Dateiuebersicht-Fixes: Electron-prompt()-Bug -> uiPrompt, refreshTree (Tree-State/Scroll erhalten), uiConfirm (themed), uiFolderPicker (Verschieben); Edit-Truncation erneut, per Python gefixt | - | - |
 | 1 | 2026-06-10 | Scaffold | 60 | 79 |
 | 2 | 2026-06-10 | Multi-Vault-Config, Indexer, Markitdown (Web-UI Drag&Drop, Markitdown) | 79 | ~95 |
 | 2b | 2026-06-10 | better-sqlite3 -> node:sqlite (kein Compiler), Vault-Pfad auf D:\Knowledge-base direkt | 95 | ~97 |
 | 3  | 2026-06-10 | Smoke-Tests (25/25), Bugfixes FTS/lineNo/backlinks, /api/reindex | ~97 | ~99 |
 | 4  | 2026-06-10 | Setup PC (npm, markitdown), File-Watcher (chokidar), query-Tool, 32 Tests | ~15 | ~40 |
+| 8  | 2026-06-11 | Graph-UI: Physik-Vorzeichenbug gefixt, Ego-Kreis fixiert, Hauptgraph-Cache + Render-Drossel | - | - |
+| 8b | 2026-06-11 | Graph: Hauptthemen-Filter (Mehrfachauswahl), Index-Schalter (Ego), Hover-Fokus/Abdunklung; index.html-Truncation behoben | - | - |
 | 5  | 2026-06-10 | P0: search FTS-Fix (Schema-Version + kein JOIN + buildFtsQuery), P1: patch-Tool, P2: Pagination | ~5 | ~25 |
 | 6  | 2026-06-10 | P0 live verifiziert (search ok, Sonderzeichen ok); P2-Luecke gefunden+gefixt (offset in server.js); Sandbox down -> smoke.js offen | ~25 | ~30 |
 | 7  | 2026-06-10 | smoke.js in Sandbox gelaufen: 48 bestanden, 0 Fehler. Test-Verifikation aus Session 5/6 abgeschlossen. Nur P3 offen. | ~30 | ~32 |
+| 9  | 2026-06-11 | Dateiuebersicht: Kontextmenue (neu/umbenennen/verschieben/loeschen), Resizable Panes, Multi-Tab (Obsidian-Logik) | - | - |
 | 8  | 2026-06-10 | Electron-Spike: node:sqlite entschaerft (Electron 42/Node 24), in-process-Modell, Scaffold (electron/main.js + preload.cjs), headless verifiziert | ~32 | ~38 |
 ## Stand: 2026-06-10 (Session 8 – Electron-Spike)
 

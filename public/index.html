@@ -19,7 +19,6 @@ body{
 /* Titlebar */
 .titlebar{display:flex;align-items:center;gap:14px;padding:0 14px;border-bottom:1px solid var(--border);backdrop-filter:blur(14px);background:rgba(10,13,22,.6);-webkit-app-region:drag}
 .titlebar>*{-webkit-app-region:no-drag}
-.dots span{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:5px;opacity:.85}
 .logo{font-weight:700;letter-spacing:.2em;font-size:12px;color:var(--accent);cursor:default;user-select:none}
 .crumb{color:var(--dim);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:400px}
 .crumb b{color:var(--text);font-weight:500}
@@ -28,15 +27,45 @@ body{
 kbd{background:rgba(255,255,255,.1);border-radius:5px;padding:1px 6px;font-size:11px;font-family:Consolas,monospace}
 
 /* Main grid */
-.main{display:grid;grid-template-columns:230px 1fr 370px;min-height:0}
+.main{display:grid;grid-template-columns:var(--col-l,230px) 5px minmax(0,1fr) 5px var(--col-r,370px);min-height:0}
+.resizer{cursor:col-resize;background:transparent;position:relative;z-index:5}
+.resizer::after{content:"";position:absolute;inset:0 2px;border-radius:2px;transition:background .15s}
+.resizer:hover::after,.resizer.drag::after{background:var(--accent,#7C8CFF)}
+body.col-resizing{cursor:col-resize;user-select:none}
 .col{border-right:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column}
 .col:last-child{border-right:none}
+.tabbar{display:flex;align-items:stretch;gap:2px;padding:4px 4px 0;background:rgba(8,10,18,.4);border-bottom:1px solid var(--border);overflow-x:auto;flex:0 0 auto;min-height:33px}
+.tabbar::-webkit-scrollbar{height:0}
+.tab{display:flex;align-items:center;gap:6px;max-width:200px;padding:5px 7px 5px 10px;border-radius:8px 8px 0 0;color:var(--dim);font-size:12px;cursor:pointer;white-space:nowrap;border:1px solid transparent;border-bottom:none}
+.tab:hover{background:rgba(255,255,255,.04);color:var(--text)}
+.tab.active{background:rgba(255,255,255,.06);color:var(--text);border-color:var(--border)}
+.tab-i{font-size:11px;flex:0 0 auto}
+.tab-t{overflow:hidden;text-overflow:ellipsis}
+.tab-x{flex:0 0 auto;opacity:.45;border-radius:4px;width:16px;height:16px;line-height:14px;text-align:center;font-size:14px}
+.tab-x:hover{opacity:1;background:rgba(255,255,255,.12)}
+.tab-add{flex:0 0 auto;align-self:center;width:24px;height:24px;line-height:22px;text-align:center;border-radius:6px;color:var(--dim);cursor:pointer;font-size:16px}
+.tab-add:hover{background:rgba(255,255,255,.08);color:var(--text)}
+.tab-nav{display:flex;align-items:center;gap:1px;flex:0 0 auto;align-self:center;margin-right:4px}
+.tnav{width:22px;height:22px;line-height:20px;text-align:center;border-radius:6px;border:none;background:transparent;color:var(--dim);cursor:pointer;font-size:16px;padding:0}
+.tnav:hover{background:rgba(255,255,255,.08);color:var(--text)}
+.tnav.off{opacity:.28;pointer-events:none}
+.folder-row.drop-target,.tree-file.drop-target,.tab.drop-target{outline:1px dashed var(--accent,#7C8CFF);outline-offset:-1px;background:rgba(124,140,255,.12)}
+#folder-list.drop-root{box-shadow:inset 0 0 0 1px rgba(124,140,255,.35)}
 
 /* Sidebar */
 .side{background:rgba(8,10,18,.5);backdrop-filter:blur(10px);display:flex;flex-direction:column;overflow:hidden}
 .vault-row{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0}
-.vault-row select{background:transparent;border:none;color:var(--text);font-size:12px;outline:none;cursor:pointer;flex:1;min-width:0}
-.vault-row select option{background:#111622}
+#vault-sel-wrap{position:relative;flex:1;min-width:0}
+#vault-sel-btn{display:flex;align-items:center;gap:6px;padding:3px 7px;background:#0d1017;border:1px solid #2a2f42;border-radius:6px;color:var(--text);font-size:12px;cursor:pointer;transition:.15s;min-width:0;user-select:none}
+#vault-sel-btn:hover{border-color:var(--accent)}
+#vault-sel-btn .vs-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#vault-sel-btn .vs-chev{flex-shrink:0;color:var(--dim);font-size:10px;transition:.15s;display:inline-block}
+#vault-sel-btn.open .vs-chev{transform:rotate(180deg)}
+#vault-sel-drop{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#0d1017;border:1px solid #2a2f42;border-radius:8px;overflow:hidden;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.6);display:none}
+#vault-sel-drop.open{display:block}
+.vs-opt{padding:6px 10px;font-size:12px;color:var(--dim);cursor:pointer;transition:.1s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vs-opt:hover,.vs-opt.active{background:rgba(255,255,255,.06);color:var(--text)}
+.vs-opt.active{color:var(--accent)}
 .vault-add{width:20px;height:20px;border-radius:5px;background:var(--panel2);border:1px solid var(--border);color:var(--dim);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1;transition:.15s}
 .vault-add:hover{color:var(--accent);border-color:var(--accent)}
 .side-scroll{flex:1;overflow-y:auto;padding:8px 6px}
@@ -222,6 +251,15 @@ canvas{display:block;width:100%;height:100%}
 .gs-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0}
 .gs-row label{font-size:11px;color:var(--dim);white-space:nowrap}
 .gs-row input[type=range]{flex:1;min-width:0;accent-color:var(--accent)}
+.gbtn.on{color:var(--accent);border-color:var(--accent);background:rgba(124,140,255,.14)}
+.graph-filter{position:absolute;top:62px;right:12px;width:208px;max-height:60%;overflow-y:auto;background:rgba(11,14,24,.97);border:1px solid var(--border);border-radius:10px;padding:8px 12px 10px;display:none;z-index:11;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+.graph-filter.open{display:block}
+.graph-filter .gs-head{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin:2px 0 7px;display:flex;justify-content:space-between;align-items:center}
+.gf-all{font-size:10px;color:var(--accent);cursor:pointer;text-transform:none;letter-spacing:0}
+.gf-row{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:12px;color:var(--text);cursor:pointer;user-select:none}
+.gf-row input{accent-color:var(--accent);cursor:pointer}
+.gf-row i{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.gf-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* Activity log */
 .activity{border-top:1px solid var(--border);background:rgba(7,9,15,.85);flex-shrink:0}
@@ -275,9 +313,12 @@ canvas{display:block;width:100%;height:100%}
 #drop-overlay{position:fixed;inset:0;background:rgba(124,140,255,.06);border:2px dashed var(--accent);display:none;align-items:center;justify-content:center;font-size:22px;font-weight:600;color:var(--accent);pointer-events:none;z-index:100}
 #drop-overlay.active{display:flex}
 #upload-bar{height:2px;background:var(--accent);width:0%;transition:width .3s;position:fixed;top:0;left:0;z-index:200}
-::-webkit-scrollbar{width:9px;height:9px}
-::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:6px}
-::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.18)}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#1a1d2a}
+::-webkit-scrollbar-thumb{background:#3a3f55;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#5a6080}
+#note-area::-webkit-scrollbar,#outline-panel::-webkit-scrollbar,.side-scroll::-webkit-scrollbar,.log-rows::-webkit-scrollbar,.graph-filter::-webkit-scrollbar,.pal-results::-webkit-scrollbar,.graph-settings::-webkit-scrollbar{width:6px}
+.code-block pre::-webkit-scrollbar,.md-table-wrap::-webkit-scrollbar,.transclude .tc-body::-webkit-scrollbar,.file-pre::-webkit-scrollbar{height:4px}
 /* ── Editor (Bearbeiten/Speichern) ── */
 .note-area{flex:1}
 .editor-wrap{display:flex;flex-direction:column;height:100%}
@@ -307,6 +348,30 @@ canvas{display:block;width:100%;height:100%}
 .new-note-btn:hover{background:rgba(124,140,255,.2)}
 .ed-edit-btn{font-size:11px;color:var(--accent);background:rgba(124,140,255,.1);border:1px solid rgba(124,140,255,.3);border-radius:99px;padding:3px 11px;cursor:pointer;transition:.15s;margin-left:auto}
 .ed-edit-btn:hover{background:rgba(124,140,255,.2)}
+.ovl-msg{padding:18px;font-size:13.5px;line-height:1.5;white-space:pre-line;color:var(--text)}
+.pk-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:13.5px;color:var(--text)}
+.pk-item:hover{background:var(--panel2)}
+.pk-crumb{cursor:pointer}
+.pk-crumb:hover{color:var(--accent);text-decoration:underline}
+/* Right-panel mode toggle (Session 16) */
+#right-toggle{display:flex;gap:2px;padding:6px 10px;border-bottom:1px solid var(--border);flex-shrink:0;background:rgba(7,9,15,.7)}
+#right-toggle button{flex:1;padding:3px 0;border-radius:5px;font-size:11px;letter-spacing:.05em;background:transparent;border:1px solid transparent;color:var(--dim);cursor:pointer;transition:.15s}
+#right-toggle button:hover{color:var(--text)}
+#right-toggle button.active{background:var(--panel2);border-color:var(--border);color:var(--text)}
+#outline-panel{display:none;overflow:auto}
+#outline-panel .ol-row{display:block;width:100%;padding:3px 10px;font-size:12px;color:var(--dim);cursor:pointer;background:transparent;border:none;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:.1s;line-height:1.6}
+#outline-panel .ol-row:hover{color:var(--text);background:rgba(255,255,255,.04)}
+#outline-panel .ol-row.active{color:var(--accent);background:rgba(124,140,255,.08)}
+#outline-panel .ol-empty{padding:12px 14px;font-size:11px;color:var(--dim);font-style:italic}
+.right-panel[data-rmode="outline"] .graph-wrap{display:none}
+.right-panel[data-rmode="outline"] #outline-panel{flex:1;display:flex;flex-direction:column;overflow:auto}
+#rz-split{display:none;height:5px;cursor:row-resize;flex-shrink:0;background:transparent;position:relative;z-index:5}
+#rz-split::after{content:"";position:absolute;inset:2px 0;border-radius:2px;transition:background .15s}
+#rz-split:hover::after,#rz-split.drag::after{background:var(--accent)}
+body.row-resizing{cursor:row-resize;user-select:none}
+.right-panel[data-rmode="split"] #rz-split{display:block}
+.right-panel[data-rmode="split"] #outline-panel{display:block;flex:0 0 var(--split-top,42%);overflow:auto;border-bottom:1px solid var(--border)}
+.right-panel[data-rmode="split"] .graph-wrap{flex:1}
 </style>
 </head>
 <body>
@@ -317,7 +382,6 @@ canvas{display:block;width:100%;height:100%}
 
 <div class="app">
   <div class="titlebar">
-    <div class="dots"><span style="background:#ff5f57"></span><span style="background:#febc2e"></span><span style="background:#28c840"></span></div>
     <div class="logo">&#9670; NEXUS</div>
     <div class="crumb" id="crumb">&mdash;</div>
     <div class="search-btn" onclick="openPalette()">&#8981; &nbsp;Suchen oder Befehl&hellip; <kbd>Ctrl K</kbd></div>
@@ -326,7 +390,7 @@ canvas{display:block;width:100%;height:100%}
   <div class="main">
     <div class="col side">
       <div class="vault-row">
-        <select id="vault-sel" onchange="switchVault(this.value)"></select>
+        <div id="vault-sel-wrap"><div id="vault-sel-btn" onclick="toggleVaultDrop()"><span class="vs-label" id="vault-sel-label">Vault</span><span class="vs-chev">&#9660;</span></div><div id="vault-sel-drop"></div></div>
         <div class="vault-add" title="Vaults verwalten" onclick="openVaultModal()">+</div>
       </div>
       <div class="side-scroll" id="side-scroll">
@@ -335,23 +399,39 @@ canvas{display:block;width:100%;height:100%}
       </div>
     </div>
 
+    <div class="resizer" id="rz-l"></div>
     <div class="col">
+      <div class="tabbar" id="tabbar"></div>
       <div class="note-area" id="note-area">
         <div class="placeholder"><span class="big">&#9670;</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>
       </div>
     </div>
 
+    <div class="resizer" id="rz-r"></div>
     <div class="right-panel">
+      <div id="right-toggle">
+        <button data-mode="graph" onclick="setRightMode('graph')">Graph</button>
+        <button data-mode="outline" onclick="setRightMode('outline')">Gliederung</button>
+        <button data-mode="split" onclick="setRightMode('split')">Split</button>
+      </div>
+      <div id="outline-panel"></div>
+      <div id="rz-split"></div>
       <div class="graph-wrap">
         <div class="graph-label">Graph</div>
         <div class="graph-mode" id="graph-mode">Vault</div>
         <div class="graph-btns">
           <button class="gbtn" id="graph-home" title="Zur Hauptansicht">&#8962; Haupt</button>
+          <button class="gbtn" id="graph-filter" title="Nach Hauptthemen filtern" style="display:none">&#9662; Filter</button>
+          <button class="gbtn" id="graph-index" title="Index-Dateien (mit &bdquo;index&ldquo; im Namen) anzeigen/ausblenden" style="display:none">Index</button>
           <button class="gbtn" id="graph-gear" title="Graph-Einstellungen">&#9881;</button>
         </div>
         <canvas id="graph-canvas"></canvas>
         <div class="graph-tip" id="graph-tip"></div>
         <div class="graph-legend" id="graph-legend"></div>
+        <div class="graph-filter" id="graph-filter-panel">
+          <div class="gs-head"><span>Hauptthemen</span><span class="gf-all" id="gf-all">alle</span></div>
+          <div id="gf-list"></div>
+        </div>
         <div class="graph-settings" id="graph-settings">
           <div class="gs-head">Graph-Physik</div>
           <div class="gs-row"><label>Absto&szlig;ung</label><input type="range" id="gs-charge" min="0.2" max="3" step="0.1"></div>
@@ -398,13 +478,50 @@ canvas{display:block;width:100%;height:100%}
   </div>
 </div>
 
+<div class="overlay" id="prompt-overlay" onclick="uiPromptCancel()">
+  <div class="palette" style="width:440px" onclick="event.stopPropagation()">
+    <div id="prompt-title" style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600"></div>
+    <div style="padding:16px 18px">
+      <input id="prompt-input" style="width:100%;padding:9px 12px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;color:var(--text);outline:none;box-sizing:border-box" onkeydown="uiPromptKey(event)">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--border)">
+      <button class="ft-btn" onclick="uiPromptCancel()">Abbrechen</button>
+      <button class="ft-btn" style="border-color:var(--accent);color:var(--accent)" onclick="uiPromptOk()">OK</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="confirm-overlay" onclick="_confirmCancel()">
+  <div class="palette" style="width:420px" onclick="event.stopPropagation()">
+    <div id="confirm-msg" class="ovl-msg"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--border)">
+      <button class="ft-btn" onclick="_confirmCancel()">Abbrechen</button>
+      <button class="ft-btn" id="confirm-ok" style="border-color:var(--accent);color:var(--accent)" onclick="confirmOk()">OK</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="picker-overlay" onclick="pickerCancel()">
+  <div class="palette" style="width:480px" onclick="event.stopPropagation()">
+    <div id="picker-title" style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600"></div>
+    <div id="picker-crumb" style="padding:9px 18px;font-size:12px;color:var(--dim);border-bottom:1px solid var(--border)"></div>
+    <div id="picker-list" style="max-height:340px;overflow:auto;padding:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;padding:12px 18px;border-top:1px solid var(--border)">
+      <button class="ft-btn" onclick="pickerCancel()">Abbrechen</button>
+      <button class="ft-btn" style="border-color:var(--accent);color:var(--accent)" onclick="pickerConfirm()">Hierhin verschieben</button>
+    </div>
+  </div>
+</div>
+
 <input id="file-input" type="file" multiple style="display:none" onchange="uploadFiles(this.files,currentFolder)">
 <script>
 // ───────── State ─────────
 let activeVault=null, vaultTree=[], selectedPath=null, currentFolder='';
-let ctxTarget=null, dragCounter=0, palSel=0, palItems=[];
+let ctxTarget=null, dragCounter=0, palSel=0, palItems=[], _movingPath=null, _draggingTabId=null;
 let noteIndex={};            // lowercased name/path -> real path
 let allMdFiles=[];           // flat list of md file nodes
+let _curHeadings=[], _curNotePath=null, _scrollSpyFn=null;
+let _curNoteRaw=null;
 
 // ───────── Folder colors ─────────
 const COLORS={'Arbeit':'#3B82F6','Uni':'#10B981','Profil':'#8B5CF6','Unterhalt Heiko':'#EF4444','Unterhalt':'#EF4444','Bewerbungen':'#F59E0B','Gesundheit':'#EC4899','Julie – FROG':'#6366F1','Julie':'#6366F1','Motorrad':'#EA580C','Wissen':'#14B8A6','_Konversationen':'#06B6D4','_System':'#7C8CFF','Eingang':'#F59E0B','Vollmachten':'#8B5CF6','START':'#EAB308','start':'#EAB308'};
@@ -426,17 +543,218 @@ const IMG_EXT=['.png','.jpg','.jpeg','.gif','.webp','.svg','.bmp','.avif'];
 function extOf(p){const m=/\.[^./\\]+$/.exec(p);return m?m[0].toLowerCase():'';}
 function fileUrl(path){return `/api/file?vault=${encodeURIComponent(activeVault)}&path=${encodeURIComponent(path)}`;}
 
+// ───────── Tabs (Obsidian-Logik) ─────────
+let tabs=[], activeTab=0, _tabSeq=1, _silentRender=false;
+function tabTitle(t){if(t.mode==='empty'||!t.path)return 'Neuer Tab';return t.path.split('/').pop()||t.path;}
+function tabIcon(t){if(t.mode==='folder')return '📁';if(t.mode==='editor')return '✎';if(t.mode==='empty')return '＋';return fileIcon(extOf(t.path||''));}
+function renderTabBar(){
+  const bar=document.getElementById('tabbar');if(!bar)return;
+  const cur=tabs[activeTab]||{};
+  const canB=!!(cur.hist&&cur.hi>0), canF=!!(cur.hist&&cur.hi<cur.hist.length-1);
+  const nav='<div class="tab-nav">'
+    +'<button class="tnav'+(canB?'':' off')+'" title="Zurück" onclick="tabBack()">‹</button>'
+    +'<button class="tnav'+(canF?'':' off')+'" title="Vor" onclick="tabForward()">›</button></div>';
+  bar.innerHTML=nav+tabs.map((t,i)=>
+    '<div class="tab'+(i===activeTab?' active':'')+'" draggable="true" data-tidx="'+i+'" onclick="switchTab('+i+')" title="'+esc(t.path||'')+'">'
+    +'<span class="tab-i">'+tabIcon(t)+'</span><span class="tab-t">'+esc(tabTitle(t))+'</span>'
+    +'<span class="tab-x" onclick="event.stopPropagation();closeTab('+i+')">×</span></div>'
+  ).join('')+'<div class="tab-add" title="Neuer Tab" onclick="newTab()">+</div>';
+  saveTabs();
+}
+function updateActiveTab(path,mode){
+  let t;
+  if(!tabs.length){t={id:_tabSeq++,path,mode,hist:[],hi:-1};tabs.push(t);activeTab=0;}
+  else{t=tabs[activeTab];t.path=path;t.mode=mode;}
+  pushHist(t,path,mode);
+  renderTabBar();
+}
+function pushHist(t,path,mode){
+  if(!Array.isArray(t.hist))t.hist=[];
+  if(typeof t.hi!=='number')t.hi=t.hist.length-1;
+  const last=t.hist[t.hi];
+  if(last&&last.path===path&&last.mode===mode)return;
+  t.hist=t.hist.slice(0,t.hi+1);
+  t.hist.push({path,mode});t.hi=t.hist.length-1;
+}
+async function tabBack(){
+  const t=tabs[activeTab];if(!t||!t.hist||t.hi<=0)return;
+  if(!(await maybeLeaveEditor()))return;
+  t.hi--;const e=t.hist[t.hi];t.path=e.path;t.mode=e.mode;
+  await renderTab(t);renderTabBar();
+}
+async function tabForward(){
+  const t=tabs[activeTab];if(!t||!t.hist||t.hi>=t.hist.length-1)return;
+  if(!(await maybeLeaveEditor()))return;
+  t.hi++;const e=t.hist[t.hi];t.path=e.path;t.mode=e.mode;
+  await renderTab(t);renderTabBar();
+}
+function showEmptyTab(){
+  document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';
+  setCrumb(esc(activeVault));selectedPath=null;
+  document.querySelectorAll('.tree-file.selected').forEach(e=>e.classList.remove('selected'));
+}
+async function renderTab(t){
+  _silentRender=true;
+  try{
+    if(t.mode==='file')await openFile(t.path);
+    else if(t.mode==='editor')await openEditor(t.path);
+    else if(t.mode==='folder')openFolderView(t.path);
+    else showEmptyTab();
+  }finally{_silentRender=false;}
+}
+async function newTab(){
+  if(!(await maybeLeaveEditor()))return;
+  tabs.push({id:_tabSeq++,path:null,mode:'empty'});activeTab=tabs.length-1;
+  showEmptyTab();renderTabBar();
+}
+async function switchTab(i){
+  if(i===activeTab||i<0||i>=tabs.length)return;
+  if(!(await maybeLeaveEditor()))return;
+  activeTab=i;renderTabBar();await renderTab(tabs[i]);
+}
+async function closeTab(i){
+  if(i<0||i>=tabs.length)return;
+  const wasActive=(i===activeTab);
+  if(wasActive&&!(await maybeLeaveEditor()))return;
+  tabs.splice(i,1);
+  if(!tabs.length){tabs.push({id:_tabSeq++,path:null,mode:'empty'});activeTab=0;renderTabBar();_silentRender=true;showEmptyTab();_silentRender=false;return;}
+  if(activeTab>i)activeTab--;else if(activeTab===i)activeTab=Math.min(i,tabs.length-1);
+  renderTabBar();
+  if(wasActive)await renderTab(tabs[activeTab]);
+}
+function tabsRenamePath(oldP,newP){let ch=false;for(const t of tabs){if(t.path===oldP){t.path=newP;ch=true;}else if(t.path&&t.path.startsWith(oldP+'/')){t.path=newP+t.path.slice(oldP.length);ch=true;}}if(ch)renderTabBar();}
+function tabsClosePath(p){let ch=false;for(let i=0;i<tabs.length;i++){const t=tabs[i];if(t.path===p||(t.path&&t.path.startsWith(p+'/'))){t.path=null;t.mode='empty';ch=true;if(i===activeTab){_silentRender=true;showEmptyTab();_silentRender=false;}}}if(ch)renderTabBar();}
+function resetTabs(){tabs=[{id:_tabSeq++,path:null,mode:'empty',hist:[],hi:-1}];activeTab=0;renderTabBar();}
+function initTabDnd(){
+  const bar=document.getElementById('tabbar');if(!bar)return;
+  bar.addEventListener('dragstart',e=>{
+    if(_movingPath)return;
+    const tab=e.target.closest('.tab');if(!tab)return;
+    _draggingTabId=parseInt(tab.dataset.tidx,10);
+    e.dataTransfer.effectAllowed='move';
+    e.dataTransfer.setData('text/plain',String(_draggingTabId));
+  });
+  bar.addEventListener('dragover',e=>{
+    if(_draggingTabId===null)return;
+    const tab=e.target.closest('.tab');if(!tab)return;
+    const idx=parseInt(tab.dataset.tidx,10);
+    if(idx===_draggingTabId)return;
+    e.preventDefault();e.dataTransfer.dropEffect='move';
+    document.querySelectorAll('.tab.drop-target').forEach(t=>t.classList.remove('drop-target'));
+    tab.classList.add('drop-target');
+  });
+  bar.addEventListener('drop',e=>{
+    if(_draggingTabId===null)return;
+    const tab=e.target.closest('.tab');if(!tab)return;
+    const src=_draggingTabId,dst=parseInt(tab.dataset.tidx,10);
+    if(src===dst){_draggingTabId=null;return;}
+    e.preventDefault();
+    const curId=tabs[activeTab]&&tabs[activeTab].id;
+    const moved=tabs.splice(src,1)[0];
+    const insertAt=dst>src?dst-1:dst;
+    tabs.splice(insertAt,0,moved);
+    activeTab=tabs.findIndex(t=>t.id===curId);if(activeTab<0)activeTab=0;
+    _draggingTabId=null;
+    renderTabBar();
+  });
+  bar.addEventListener('dragend',()=>{
+    _draggingTabId=null;
+    document.querySelectorAll('.tab.drop-target').forEach(t=>t.classList.remove('drop-target'));
+  });
+}
+const TAB_KEY='nexus.tabs';
+function saveTabs(){
+  if(!activeVault)return;
+  try{
+    const all=JSON.parse(localStorage.getItem(TAB_KEY)||'{}');
+    all[activeVault]={activeTab,tabs:tabs.map(t=>({path:t.path,mode:t.mode,hist:Array.isArray(t.hist)?t.hist:[],hi:typeof t.hi==='number'?t.hi:-1}))};
+    localStorage.setItem(TAB_KEY,JSON.stringify(all));
+  }catch(e){}
+}
+async function restoreTabs(){
+  try{
+    const all=JSON.parse(localStorage.getItem(TAB_KEY)||'{}');
+    const st=all[activeVault];
+    if(!st||!Array.isArray(st.tabs)||!st.tabs.length)return false;
+    if(st.tabs.length===1&&!st.tabs[0].path)return false;
+    tabs=st.tabs.map(t=>({id:_tabSeq++,path:t.path||null,mode:t.mode||'empty',hist:Array.isArray(t.hist)?t.hist:[],hi:typeof t.hi==='number'?t.hi:(t.path?0:-1)}));
+    activeTab=Math.min(Math.max(0,st.activeTab|0),tabs.length-1);
+    renderTabBar();
+    await renderTab(tabs[activeTab]);
+    return true;
+  }catch(e){return false;}
+}
+async function moveInto(src,destFolder){
+  destFolder=(destFolder||'').replace(/^\/+|\/+$/g,'');
+  const base=src.split('/').pop();
+  const srcParent=src.split('/').slice(0,-1).join('/');
+  if(destFolder===srcParent)return;
+  if(destFolder===src||destFolder.startsWith(src+'/')){toast('Ordner kann nicht in sich selbst verschoben werden','err');return;}
+  const newPath=(destFolder?destFolder+'/':'')+base;
+  if(newPath===src)return;
+  const r=await api('/api/rename',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,oldPath:src,newPath})});
+  if(r&&r.error){toast('Fehler: '+r.error,'err');return;}
+  toast('Verschoben');if(selectedPath===src)selectedPath=newPath;tabsRenamePath&&tabsRenamePath(src,newPath);invalidateVaultGraph();await refreshTree();
+}
+function clearDropHL(){document.querySelectorAll('.drop-target').forEach(e=>e.classList.remove('drop-target'));document.getElementById('folder-list')&&document.getElementById('folder-list').classList.remove('drop-root');}
+
+// ───────── Spalten-Resizer ─────────
+const RZ_KEY='nexus.cols';
+function loadCols(){try{const c=JSON.parse(localStorage.getItem(RZ_KEY)||'{}');const m=document.querySelector('.main');if(c.l)m.style.setProperty('--col-l',c.l+'px');if(c.r)m.style.setProperty('--col-r',c.r+'px');}catch(e){}}
+function saveCols(){const m=document.querySelector('.main');const cs=getComputedStyle(m);localStorage.setItem(RZ_KEY,JSON.stringify({l:parseInt(cs.getPropertyValue('--col-l'))||230,r:parseInt(cs.getPropertyValue('--col-r'))||370}));}
+function initResizers(){
+  const main=document.querySelector('.main');
+  function drag(handle,which){
+    handle.addEventListener('mousedown',e=>{
+      e.preventDefault();handle.classList.add('drag');document.body.classList.add('col-resizing');
+      const sx=e.clientX;const cs=getComputedStyle(main);
+      const startL=parseInt(cs.getPropertyValue('--col-l'))||230;
+      const startR=parseInt(cs.getPropertyValue('--col-r'))||370;
+      const mw=main.getBoundingClientRect().width;
+      function mv(ev){
+        const dx=ev.clientX-sx;
+        if(which==='l'){const v=Math.max(150,Math.min(mw-400,startL+dx));main.style.setProperty('--col-l',v+'px');}
+        else{const v=Math.max(220,Math.min(mw-450,startR-dx));main.style.setProperty('--col-r',v+'px');}
+        window.dispatchEvent(new Event('resize'));
+      }
+      function up(){document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);handle.classList.remove('drag');document.body.classList.remove('col-resizing');saveCols();window.dispatchEvent(new Event('resize'));}
+      document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
+    });
+  }
+  drag(document.getElementById('rz-l'),'l');
+  drag(document.getElementById('rz-r'),'r');
+  initSplitResizer();
+}
+function initSplitResizer(){
+  const handle=document.getElementById('rz-split');if(!handle)return;
+  try{const v=parseFloat(localStorage.getItem('nexus.splitTop'));if(v>5&&v<95){document.querySelector('.right-panel')?.style.setProperty('--split-top',v+'%');}}
+  catch(e){}
+  handle.addEventListener('mousedown',function(e){
+    e.preventDefault();handle.classList.add('drag');document.body.classList.add('row-resizing');
+    const rp=document.querySelector('.right-panel');
+    const startY=e.clientY,rpH=rp.clientHeight;
+    const startPct=parseFloat(rp.style.getPropertyValue('--split-top'))||42;
+    const startPx=rpH*(startPct/100);
+    function mv(e){const newPx=Math.max(60,Math.min(rpH-80,startPx+(e.clientY-startY)));const pct=Math.round(newPx/rpH*100);rp.style.setProperty('--split-top',pct+'%');localStorage.setItem('nexus.splitTop',pct);}
+    function up(){document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);handle.classList.remove('drag');document.body.classList.remove('row-resizing');refitGraph();}
+    document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
+  });
+}
+
 // ───────── Init ─────────
 async function init(){
+  loadCols();initResizers();resetTabs();initTabDnd();
+  setRightMode(localStorage.getItem('nexus.rightmode')||'graph');
   const vaults=await api('/api/vaults');
-  const sel=document.getElementById('vault-sel');
-  sel.innerHTML=vaults.map(v=>`<option value="${esc(v.name)}" ${v.active?'selected':''}>${esc(v.name)}</option>`).join('');
   activeVault=vaults.find(v=>v.active)?.name ?? vaults[0]?.name;
+  await refreshVaultSelector();
   await loadVault();
-  // Beim Start: START.md oeffnen, aber Graph auf Hauptansicht belassen
+  // Beim Start: gespeicherte Tabs wiederherstellen, sonst START.md oeffnen
   graph.pinnedMain=true;
-  const startNote=allMdFiles.find(f=>f.path.split('/').pop().toLowerCase()==='start.md');
-  if(startNote) await openFile(startNote.path,{startup:true});
+  if(!(await restoreTabs())){
+    const startNote=allMdFiles.find(f=>f.path.split('/').pop().toLowerCase()==='start.md');
+    if(startNote) await openFile(startNote.path,{startup:true});
+  }
 }
 async function loadVault(){
   setCrumb(esc(activeVault));
@@ -449,10 +767,23 @@ async function loadVault(){
   initGraph();
   await setGraphVault();
 }
+async function refreshTree(){
+  const sb=document.getElementById('folder-list');
+  const scroll=sb?sb.scrollTop:0;
+  vaultTree=await api(`/api/tree?vault=${encodeURIComponent(activeVault)}`);
+  buildNoteIndex();
+  renderSidebar();
+  const total=countFiles(vaultTree);
+  document.getElementById('sb-index').textContent=`Index: ${total.toLocaleString('de')} Dateien`;
+  const sb2=document.getElementById('folder-list');if(sb2)sb2.scrollTop=scroll;
+}
 async function switchVault(name){
+  saveTabs();
   activeVault=name; selectedPath=null; currentFolder='';
   document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';
   await loadVault();
+  await refreshVaultSelector();
+  if(!(await restoreTabs()))resetTabs();
   logActivity('#10B981',`Vault gewechselt → ${esc(name)}`);
 }
 
@@ -485,12 +816,16 @@ function resolveWiki(target){
 }
 
 // ───────── Sidebar ─────────
+let openFolders=new Set();
 function renderSidebar(){
   const list=document.getElementById('folder-list'); list.innerHTML='';
   for(const node of vaultTree){
     if(node.type==='folder') list.appendChild(makeFolderEl(node,0));
     else list.appendChild(makeFileEl(node,22));
   }
+  list.ondragover=e=>{if(!_movingPath)return;e.preventDefault();e.dataTransfer.dropEffect='move';list.classList.add('drop-root');};
+  list.ondragleave=e=>{if(e.target===list)list.classList.remove('drop-root');};
+  list.ondrop=e=>{if(!_movingPath)return;e.preventDefault();const src=_movingPath;_movingPath=null;clearDropHL();moveInto(src,'');};
 }
 function makeFolderEl(node,depth){
   const wrap=document.createElement('div');
@@ -510,24 +845,33 @@ function makeFolderEl(node,depth){
       if(child.type==='folder') childWrap.appendChild(makeFolderEl(child,depth+1));
       else childWrap.appendChild(makeFileEl(child,28+depth*14));
     }
+    if(openFolders.has(node.path)){childWrap.classList.add('open');row.querySelector('.tog').textContent='▼';row.classList.add('active');}
     row.addEventListener('click',e=>{
       e.stopPropagation();
       const open=childWrap.classList.toggle('open');
       row.querySelector('.tog').textContent=open?'▼':'▶';
       row.classList.toggle('active',open);
-      if(open) currentFolder=node.path;
+      if(open){currentFolder=node.path;openFolders.add(node.path);}else{openFolders.delete(node.path);}
     });
   }
   row.addEventListener('contextmenu',e=>showCtx(e,node.path,'folder'));
+  row.draggable=true;
+  row.addEventListener('dragstart',e=>{_movingPath=node.path;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',node.path);e.stopPropagation();});
+  row.addEventListener('dragend',()=>{_movingPath=null;clearDropHL();});
+  row.addEventListener('dragover',e=>{if(!_movingPath||_movingPath===node.path)return;e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='move';row.classList.add('drop-target');});
+  row.addEventListener('dragleave',()=>row.classList.remove('drop-target'));
+  row.addEventListener('drop',e=>{if(!_movingPath)return;e.preventDefault();e.stopPropagation();const src=_movingPath;_movingPath=null;row.classList.remove('drop-target');moveInto(src,node.path);});
   return wrap;
 }
 function makeFileEl(node,indent){
   const el=document.createElement('div');
-  el.className='tree-file'; el.dataset.path=node.path;
+  el.className='tree-file'; el.dataset.path=node.path; el.draggable=true;
   el.style.paddingLeft=(indent??22)+'px';
   el.innerHTML=`<span>${fileIcon(node.ext)}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${esc(node.name)}</span>`;
   el.addEventListener('click',()=>openFile(node.path));
   el.addEventListener('contextmenu',e=>showCtx(e,node.path,'file',node.ext));
+  el.addEventListener('dragstart',e=>{_movingPath=node.path;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',node.path);e.stopPropagation();});
+  el.addEventListener('dragend',()=>{_movingPath=null;clearDropHL();});
   return el;
 }
 function fileIcon(ext){
@@ -738,6 +1082,7 @@ async function openFile(path,opts){
   if(!(await maybeLeaveEditor()))return;
   if(!(opts&&opts.startup))graph.pinnedMain=false;
   selectedPath=path;
+  if(!_silentRender)updateActiveTab(path,'file');
   document.querySelectorAll('.tree-file.selected').forEach(e=>e.classList.remove('selected'));
   document.querySelector('.tree-file[data-path="'+cssAttr(path)+'"]')?.classList.add('selected');
   const parts=path.split('/'), fname=parts[parts.length-1];
@@ -746,6 +1091,7 @@ async function openFile(path,opts){
   document.getElementById('sb-vault').textContent=path;
   const ext=extOf(path), area=document.getElementById('note-area');
   area.scrollTop=0;
+  _curHeadings=[]; _curNotePath=path; renderOutline();
   try{
     if(ext==='.md'||ext==='.markdown'||ext===''){
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
@@ -774,6 +1120,7 @@ async function openFile(path,opts){
 }
 
 function renderMarkdownView(area,fname,raw,path){
+  _curNoteRaw=raw;
   const res=renderMarkdown(raw);
   const fm=res.frontmatter||{};
   const title=fm.title||fname.replace(/\.[^.]+$/,'');
@@ -809,6 +1156,43 @@ function renderToc(hs){
   return `<details class="toc" open><summary>Inhalt</summary><ul>${hs.map(h=>`<li style="padding-left:${(h.level-1)*13}px"><a data-goto="${esc(h.id)}">${esc(h.text)}</a></li>`).join('')}</ul></details>`;
 }
 
+// ─── Right-panel mode toggle (Session 16) ───
+function setRightMode(mode){
+  const rp=document.querySelector('.right-panel');
+  if(!rp)return;
+  rp.setAttribute('data-rmode',mode);
+  localStorage.setItem('nexus.rightmode',mode);
+  document.querySelectorAll('#right-toggle button').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
+  requestAnimationFrame(()=>requestAnimationFrame(refitGraph));
+}
+function renderOutline(){
+  const p=document.getElementById('outline-panel');if(!p)return;
+  if(!_curHeadings.length){p.innerHTML='<div class="ol-empty">Keine Gliederung</div>';return;}
+  p.innerHTML=_curHeadings.map(h=>`<button class="ol-row" style="padding-left:${(h.level-1)*13+10}px" data-goto="${esc(h.id)}">${esc(h.text)}</button>`).join('');
+  p.querySelectorAll('.ol-row').forEach(b=>b.addEventListener('click',()=>{const ar=document.getElementById('note-area'),t=document.getElementById(b.dataset.goto);if(ar&&t)ar.scrollTop+=t.getBoundingClientRect().top-ar.getBoundingClientRect().top-4;}));
+}
+function bindScrollSpy(){
+  const area=document.getElementById('note-area');if(!area)return;
+  if(_scrollSpyFn){area.removeEventListener('scroll',_scrollSpyFn,{passive:true});}
+  let rafId=0;
+  _scrollSpyFn=function(){
+    if(rafId)return;
+    rafId=requestAnimationFrame(()=>{
+      rafId=0;
+      if(!_curHeadings.length)return;
+      const st=area.scrollTop+8;
+      let active=_curHeadings[0].id;
+      for(const h of _curHeadings){const el=document.getElementById(h.id);if(el&&el.offsetTop<=st)active=h.id;}
+      const p=document.getElementById('outline-panel');if(!p)return;
+      p.querySelectorAll('.ol-row').forEach(b=>{
+        const on=b.dataset.goto===active;
+        if(on!==b.classList.contains('active')){b.classList.toggle('active',on);if(on)b.scrollIntoView({block:'nearest'});}
+      });
+    });
+  };
+  area.addEventListener('scroll',_scrollSpyFn,{passive:true});
+}
+
 function wireRendered(area,path,res){
   area.querySelectorAll('a.wikilink').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();if(a.dataset.path)openFile(a.dataset.path);else doSearch(a.dataset.search||'');}));
   area.querySelectorAll('.md-tag,.chip.tag,.pv-tag').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();doSearch(el.dataset.tag||el.textContent.replace(/^#/,''));}));
@@ -818,6 +1202,24 @@ function wireRendered(area,path,res){
   area.querySelectorAll('.callout.foldable .callout-title').forEach(t=>t.addEventListener('click',()=>t.closest('.callout').classList.toggle('collapsed')));
   area.querySelectorAll('.transclude[data-embed]').forEach(tc=>{tc.querySelector('.tc-head').addEventListener('click',()=>openFile(tc.dataset.embed));loadTransclude(tc);});
   area.querySelector('.ed-edit-btn')?.addEventListener('click',()=>openEditor(path));
+  _curHeadings=res.headings; _curNotePath=path; renderOutline(); bindScrollSpy();
+  area.querySelectorAll('.task-cb').forEach((cb,idx)=>{
+    cb.style.cursor='pointer';
+    cb.addEventListener('click',async()=>{
+      if(!_curNoteRaw||!_curNotePath)return;
+      const lines=_curNoteRaw.split('\n');let cnt=-1;
+      for(let i=0;i<lines.length;i++){
+        if(/^[ \t]*[-*+] \[[ xX]\] /i.test(lines[i])){cnt++;
+          if(cnt===idx){lines[i]=lines[i].replace(/^([ \t]*[-*+] \[)([ xX])(\] )/,(_,a,b,c)=>a+(b.trim()===''?'x':' ')+c);break;}
+        }
+      }
+      const newRaw=lines.join('\n');
+      try{
+        await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,path:_curNotePath,content:newRaw})});
+        renderMarkdownView(document.getElementById('note-area'),_curNotePath.split('/').pop(),newRaw,_curNotePath);
+      }catch(e){toast('Fehler: '+e.message,'error');}
+    });
+  });
   updateGraphForNote(path,res.links||[]);
   renderMermaid(area);
   renderMath(area);
@@ -873,6 +1275,7 @@ async function openEditor(path,isNew){
   let raw='';
   if(!isNew){try{raw=await fetch(fileUrl(path)).then(r=>r.text());}catch(e){toast('Konnte Datei nicht laden','err');return;}}
   selectedPath=path;
+  if(!_silentRender)updateActiveTab(path,'editor');
   document.querySelectorAll('.tree-file.selected').forEach(e=>e.classList.remove('selected'));
   document.querySelector('.tree-file[data-path="'+cssAttr(path)+'"]')?.classList.add('selected');
   const area=document.getElementById('note-area');area.scrollTop=0;
@@ -915,7 +1318,7 @@ async function saveEditor(){
     editorState.original=content;markDirty();
     toast('Gespeichert ✓','ok');
     logActivity(folderColor((path.split('/')[0])||''),'write_note &rarr; <b>'+esc(path.split('/').pop())+'</b>');
-    if(editorState.isNew){editorState.isNew=false;await loadVault();document.querySelector('.tree-file[data-path="'+cssAttr(path)+'"]')?.classList.add('selected');setCrumb(esc(activeVault)+' / <b>'+esc(path.split('/').pop())+'</b> &middot; bearbeiten');}
+    if(editorState.isNew){editorState.isNew=false;invalidateVaultGraph();await refreshTree();document.querySelector('.tree-file[data-path="'+cssAttr(path)+'"]')?.classList.add('selected');setCrumb(esc(activeVault)+' / <b>'+esc(path.split('/').pop())+'</b> &middot; bearbeiten');}
   }catch(e){toast('Speichern fehlgeschlagen','err');}
 }
 function togglePreview(){
@@ -935,18 +1338,18 @@ function togglePreview(){
   host.style.display='none';pv.style.display='';if(btn)btn.textContent='Editor';
 }
 async function cancelEditor(){
-  if(isDirty()&&!confirm('Ungespeicherte Änderungen verwerfen?'))return;
+  if(isDirty()&&!(await uiConfirm('Ungespeicherte Änderungen verwerfen?')))return;
   const path=editorState&&editorState.path,wasNew=editorState&&editorState.isNew;
   editorState=null;
   if(wasNew||!path){document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';setCrumb(esc(activeVault));}
   else openFile(path);
 }
 async function maybeLeaveEditor(){
-  if(editorState&&isDirty()){if(!confirm('Ungespeicherte Änderungen verwerfen?'))return false;}
+  if(editorState&&isDirty()){if(!(await uiConfirm('Ungespeicherte Änderungen verwerfen?')))return false;}
   editorState=null;return true;
 }
 async function newNote(){
-  let name=prompt('Name der neuen Notiz (z.B. Ordner/Titel):');if(!name)return;name=name.trim();if(!name)return;
+  let name=await uiPrompt('Name der neuen Notiz (z.B. Ordner/Titel):');if(!name)return;name=name.trim();if(!name)return;
   if(!/\.[^./\\]+$/.test(name))name+='.md';
   if(!(await maybeLeaveEditor()))return;
   const ex=noteIndex[name.toLowerCase()]||noteIndex[name.replace(/\.md$/,'').toLowerCase()];
@@ -971,7 +1374,8 @@ function renderMath(area){const els=area.querySelectorAll('[data-tex]');if(!els.
 function renderHtmlView(area,fname,raw,path){
   area.innerHTML=`<div class="file-toolbar"><span class="ft-name">🌐 ${esc(fname)}</span><span class="ft-spacer"></span><button class="ft-btn on" id="ht-view">Vorschau</button><button class="ft-btn" id="ht-src">Quelltext</button></div><iframe class="html-frame" id="ht-frame" sandbox="allow-scripts allow-popups allow-forms allow-modals"></iframe><pre class="file-pre" id="ht-pre" style="display:none"></pre>`;
   const frame=area.querySelector('#ht-frame'),pre=area.querySelector('#ht-pre');
-  frame.srcdoc=raw; pre.textContent=raw;
+  const _isc='<style>::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#1a1d2a}::-webkit-scrollbar-thumb{background:#3a3f55;border-radius:3px}::-webkit-scrollbar-thumb:hover{background:#5a6080}body{background:#0d1017;color:#dbe2ee}</style>';
+  frame.srcdoc=raw.includes('</head>')?raw.replace('</head>',_isc+'</head>'):raw+_isc; pre.textContent=raw;
   const vb=area.querySelector('#ht-view'),sb=area.querySelector('#ht-src');
   vb.onclick=()=>{frame.style.display='block';pre.style.display='none';vb.classList.add('on');sb.classList.remove('on');};
   sb.onclick=()=>{frame.style.display='none';pre.style.display='block';sb.classList.add('on');vb.classList.remove('on');};
@@ -992,9 +1396,28 @@ function renderPlain(area,fname,raw,path){
 const GS_KEY='nexus.graph.settings';
 const graphSettings=Object.assign({charge:1,link:1,linkDist:1,size:1,center:1},(function(){try{return JSON.parse(localStorage.getItem(GS_KEY)||'{}');}catch(e){return {};}})());
 function saveGraphSettings(){try{localStorage.setItem(GS_KEY,JSON.stringify(graphSettings));}catch(e){}}
-function reheat(a){graph.alpha=Math.max(graph.alpha,a||0.7);}
+function reheat(a){graph.alpha=Math.max(graph.alpha,a||0.7);wakeGraph();}
+function wakeGraph(){if(graph.inited&&!graph.raf)graph.raf=requestAnimationFrame(frameGraph);}
+function fitGraphView(){
+  const ns=graph.nodes;if(!ns.length)return;
+  let a=1e9,b=-1e9,c=1e9,d=-1e9;for(const n of ns){if(n.x<a)a=n.x;if(n.x>b)b=n.x;if(n.y<c)c=n.y;if(n.y>d)d=n.y;}
+  const w=Math.max(b-a,1),h=Math.max(d-c,1);
+  const k=Math.min(4,Math.max(0.05,Math.min(graph.W/w,graph.H/h)*0.72));
+  graph.view.k=k;graph.view.x=graph.W/2-(a+b)/2*k;graph.view.y=graph.H/2-(c+d)/2*k;
+}
+function refitGraph(){
+  const cv=graph.cv;if(!cv)return;
+  const dpr=window.devicePixelRatio||1;
+  graph.W=cv.width=Math.max(1,Math.round(cv.clientWidth*dpr));
+  graph.H=cv.height=Math.max(1,Math.round(cv.clientHeight*dpr));
+  graph._userMoved=false;
+  fitGraphView();
+  wakeGraph();
+}
 
-const graph={inited:false,cv:null,cx:null,W:0,H:0,nodes:[],edges:[],mode:'vault',hover:null,raf:0,alpha:0,view:{x:0,y:0,k:1},drag:null,pinnedMain:false};
+const graph={inited:false,cv:null,cx:null,W:0,H:0,nodes:[],edges:[],mode:'vault',hover:null,raf:0,alpha:0,view:{x:0,y:0,k:1},drag:null,pinnedMain:false,filter:new Set(),hoverSet:null,hoverFor:null};
+let egoShowIndex=(function(){try{return localStorage.getItem('nexus.ego.index')!=='0';}catch(e){return true;}})();
+const isIndexFile=p=>/index/i.test(p.split('/').pop());
 let graphData={nodes:[],links:[]};
 let _ego={path:null,links:[],backlinks:[]};
 
@@ -1014,14 +1437,21 @@ function initGraph(){
   if(window.ResizeObserver){try{new ResizeObserver(resize).observe(cv);}catch(e){}}
   window.addEventListener('resize',resize);
   cv.addEventListener('mousemove',onGraphMove);
-  cv.addEventListener('mouseleave',()=>{graph.hover=null;document.getElementById('graph-tip').style.display='none';});
+  cv.addEventListener('mouseleave',()=>{graph.hover=null;document.getElementById('graph-tip').style.display='none';wakeGraph();});
   cv.addEventListener('mousedown',onGraphDown);
   window.addEventListener('mouseup',onGraphUp);
   cv.addEventListener('wheel',onGraphWheel,{passive:false});
   const gear=document.getElementById('graph-gear'),panel=document.getElementById('graph-settings');
-  if(gear)gear.onclick=()=>panel.classList.toggle('open');
+  const fpanel=document.getElementById('graph-filter-panel');
+  if(gear)gear.onclick=()=>{panel.classList.toggle('open');fpanel.classList.remove('open');};
   const home=document.getElementById('graph-home');
   if(home)home.onclick=()=>{graph.pinnedMain=true;setGraphVault();};
+  const fbtn=document.getElementById('graph-filter');
+  if(fbtn)fbtn.onclick=()=>{fpanel.classList.toggle('open');panel.classList.remove('open');};
+  const gfAll=document.getElementById('gf-all');
+  if(gfAll)gfAll.onclick=()=>{graph.filter.clear();renderFilterPanel();applyVaultFilter();};
+  const idxBtn=document.getElementById('graph-index');
+  if(idxBtn)idxBtn.onclick=()=>{egoShowIndex=!egoShowIndex;try{localStorage.setItem('nexus.ego.index',egoShowIndex?'1':'0');}catch(e){}updateGraphChrome();buildEgo();};
   [['gs-charge','charge'],['gs-link','link'],['gs-linkDist','linkDist'],['gs-size','size'],['gs-center','center']].forEach(pair=>{
     const el=document.getElementById(pair[0]);if(!el)return;el.value=graphSettings[pair[1]];
     el.addEventListener('input',()=>{graphSettings[pair[1]]=parseFloat(el.value);saveGraphSettings();reheat(0.5);});
@@ -1039,46 +1469,87 @@ function onGraphMove(e){
   else if(graph.drag){const dx=(e.clientX-graph.drag.cx)*dpr,dy=(e.clientY-graph.drag.cy)*dpr;if(Math.abs(dx)+Math.abs(dy)>3)graph.drag.moved=true;graph.view.x=graph.drag.vx+dx;graph.view.y=graph.drag.vy+dy;}
   const best=graph.drag?graph.drag.node:hitNode(p.sx,p.sy);
   graph.hover=best;
+  if(best!==graph.hoverFor){graph.hoverFor=best;graph.hoverSet=null;if(best){const s=new Set([best]);for(const ed of graph.edges){if(ed[0]===best)s.add(ed[1]);else if(ed[1]===best)s.add(ed[0]);}graph.hoverSet=s;}}
   const tip=document.getElementById('graph-tip');
   if(best&&best.label){tip.style.display='block';tip.style.left=(e.clientX-p.rectLeft+12)+'px';tip.style.top=(e.clientY-p.rectTop+8)+'px';tip.innerHTML=esc(best.label)+(best.count!=null?' <span style="color:var(--dim)">&middot; '+best.count+'</span>':'');graph.cv.style.cursor='pointer';}
   else{tip.style.display='none';graph.cv.style.cursor=graph.drag?'grabbing':'grab';}
+  if(graph.drag&&!graph.drag.node)graph._userMoved=true;          // manuelles Schieben -> Auto-Einpassen aussetzen
+  wakeGraph();
 }
-function onGraphDown(e){const p=ptFromEvent(e);const n=hitNode(p.sx,p.sy);graph.drag={cx:e.clientX,cy:e.clientY,vx:graph.view.x,vy:graph.view.y,node:n||null,moved:false};if(n){n.fx=n.x;n.fy=n.y;}}
-function onGraphUp(){if(!graph.drag)return;const d=graph.drag;graph.drag=null;if(d.node){if(!d.moved)onGraphActivate(d.node);d.node.fx=null;d.node.fy=null;reheat(0.3);}}
+function onGraphDown(e){const p=ptFromEvent(e);const n=hitNode(p.sx,p.sy);graph.drag={cx:e.clientX,cy:e.clientY,vx:graph.view.x,vy:graph.view.y,node:n||null,moved:false};if(n){n.fx=n.x;n.fy=n.y;}wakeGraph();}
+function onGraphUp(){if(!graph.drag)return;const d=graph.drag;graph.drag=null;if(d.node){if(!d.moved)onGraphActivate(d.node);
+  if(d.node.homeX!=null){d.node.fx=d.node.homeX;d.node.fy=d.node.homeY;d.node.x=d.node.homeX;d.node.y=d.node.homeY;}  // Notiz-Modus: zurueck auf Kreisposition
+  else{d.node.fx=null;d.node.fy=null;}
+  reheat(0.3);}wakeGraph();}
 function onGraphActivate(n){if(n.path&&n.path!==selectedPath)openFile(n.path);else if(n.folder)openFolderView(n.folder);}
-function onGraphWheel(e){e.preventDefault();const p=ptFromEvent(e);const old=graph.view.k;const k=Math.min(4,Math.max(0.2,old*(e.deltaY<0?1.12:0.893)));graph.view.x=p.sx-(p.sx-graph.view.x)*(k/old);graph.view.y=p.sy-(p.sy-graph.view.y)*(k/old);graph.view.k=k;}
+function onGraphWheel(e){e.preventDefault();graph._userMoved=true;const p=ptFromEvent(e);const old=graph.view.k;const k=Math.min(4,Math.max(0.05,old*(e.deltaY<0?1.12:0.893)));graph.view.x=p.sx-(p.sx-graph.view.x)*(k/old);graph.view.y=p.sy-(p.sy-graph.view.y)*(k/old);graph.view.k=k;wakeGraph();}
 
 function seedPos(group){const dpr=window.devicePixelRatio||1;let h=0;for(const c of (group||'')) h=(h*31+c.charCodeAt(0))&0xffff;const a=(h%360)*Math.PI/180;const rad=(0.16+0.13*(((h>>4)&7)/7))*Math.min(graph.W,graph.H);return {x:graph.W/2+Math.cos(a)*rad+(Math.random()-0.5)*40*dpr,y:graph.H/2+Math.sin(a)*rad+(Math.random()-0.5)*40*dpr};}
 
-async function setGraphVault(){
-  graph.mode='vault';graph.view={x:0,y:0,k:1};graph.hover=null;_ego.path=null;
+// Hauptgraph wird je Vault einmal gebaut und im Speicher gehalten (_vaultCache).
+// force=true nur nach echten Datenaenderungen (Reindex/Upload/Convert) – sonst Cache.
+const _vaultCache={};
+function invalidateVaultGraph(v){delete _vaultCache[v||activeVault];}
+async function setGraphVault(force){
+  graph.mode='vault';graph.view={x:0,y:0,k:1};graph.hover=null;graph.hoverSet=null;graph.hoverFor=null;_ego.path=null;graph._userMoved=false;
   document.getElementById('graph-mode').textContent='Vault';
-  try{graphData=await api('/api/graph?vault='+encodeURIComponent(activeVault));}catch(e){graphData={nodes:[],links:[]};}
-  const byPath=new Map();const nodes=[];
-  for(const nd of (graphData.nodes||[])){const top=nd.path.indexOf('/')<0?nd.path:nd.path.split('/')[0];const sp=seedPos(top);const node={x:sp.x,y:sp.y,vx:0,vy:0,r0:2.4,color:colorForPath(nd.path),label:nd.title||nd.path.split('/').pop().replace(/\.md$/,''),path:nd.path,deg:0};byPath.set(nd.path,node);nodes.push(node);}
-  const edges=[];
-  for(const l of (graphData.links||[])){const a=byPath.get(l.src);if(!a)continue;const tp=resolveWiki(l.target);if(!tp)continue;const b=byPath.get(tp);if(!b||b===a)continue;a.deg++;b.deg++;edges.push([a,b]);}
-  for(const n of nodes)n.r0=2.2+Math.min(n.deg,18)*0.45;
+  let cached=_vaultCache[activeVault];
+  if(!cached||force){
+    try{graphData=await api('/api/graph?vault='+encodeURIComponent(activeVault));}catch(e){graphData={nodes:[],links:[]};}
+    const byPath=new Map();const nodes=[];
+    for(const nd of (graphData.nodes||[])){const top=nd.path.indexOf('/')<0?nd.path:nd.path.split('/')[0];const sp=seedPos(top);const node={x:sp.x,y:sp.y,vx:0,vy:0,r0:2.4,color:colorForPath(nd.path),label:nd.title||nd.path.split('/').pop().replace(/\.md$/,''),path:nd.path,top,deg:0};byPath.set(nd.path,node);nodes.push(node);}
+    const edges=[];
+    for(const l of (graphData.links||[])){const a=byPath.get(l.src);if(!a)continue;const tp=resolveWiki(l.target);if(!tp)continue;const b=byPath.get(tp);if(!b||b===a)continue;a.deg++;b.deg++;edges.push([a,b]);}
+    for(const n of nodes)n.r0=2.2+Math.min(n.deg,18)*0.45;
+    const tops=vaultTree.filter(n=>n.type==='folder').map(f=>f.name);
+    const legend=tops.slice(0,10).map(f=>'<span><i style="background:'+folderColor(f)+'"></i>'+esc(f)+'</span>').join('');
+    cached=_vaultCache[activeVault]={nodes,edges,legend,tops};
+  }
+  document.getElementById('graph-legend').innerHTML=cached.legend;
+  renderFilterPanel();updateGraphChrome();applyVaultFilter();
+}
+// Wendet den Hauptthemen-Filter auf den gecachten Vollgraph an (gleiche Knotenobjekte -> Positionen bleiben erhalten)
+function applyVaultFilter(){
+  const cached=_vaultCache[activeVault];if(!cached){graph.nodes=[];graph.edges=[];return;}
+  const f=graph.filter;let nodes,edges;
+  if(!f.size){nodes=cached.nodes;edges=cached.edges;}
+  else{const inc=new Set();nodes=cached.nodes.filter(n=>{const ok=f.has(n.top);if(ok)inc.add(n);return ok;});edges=cached.edges.filter(e=>inc.has(e[0])&&inc.has(e[1]));}
   graph.nodes=nodes;graph.edges=edges;
-  const tops=vaultTree.filter(n=>n.type==='folder').slice(0,10);
-  document.getElementById('graph-legend').innerHTML=tops.map(f=>'<span><i style="background:'+folderColor(f.name)+'"></i>'+esc(f.name)+'</span>').join('');
-  reheat(1);
+  graph.hover=null;graph.hoverSet=null;graph.hoverFor=null;graph._needFit=true;graph._userMoved=false;
+  updateFilterBtn();reheat(0.7);
+}
+function renderFilterPanel(){
+  const cached=_vaultCache[activeVault];const list=document.getElementById('gf-list');if(!list||!cached)return;
+  list.innerHTML=cached.tops.length?cached.tops.map(f=>`<label class="gf-row"><input type="checkbox" data-top="${cssAttr(f)}" ${graph.filter.has(f)?'checked':''}><i style="background:${folderColor(f)}"></i><span>${esc(f)}</span></label>`).join(''):'<div style="font-size:11px;color:var(--dim)">Keine Ordner</div>';
+  list.querySelectorAll('input[data-top]').forEach(cb=>cb.addEventListener('change',()=>{const t=cb.dataset.top;if(cb.checked)graph.filter.add(t);else graph.filter.delete(t);applyVaultFilter();}));
+}
+function updateFilterBtn(){const b=document.getElementById('graph-filter');if(b)b.classList.toggle('on',graph.filter.size>0);}
+function updateGraphChrome(){
+  const note=graph.mode==='note';
+  const fbtn=document.getElementById('graph-filter'),ibtn=document.getElementById('graph-index');
+  if(fbtn)fbtn.style.display=note?'none':'';
+  if(ibtn){ibtn.style.display=note?'':'none';ibtn.classList.toggle('on',egoShowIndex);ibtn.textContent=egoShowIndex?'Index':'Index aus';}
+  if(note)document.getElementById('graph-filter-panel').classList.remove('open');
+  updateFilterBtn();
 }
 
 function updateGraphForNote(path,links){if(graph.pinnedMain)return;_ego={path,links:links||[],backlinks:_ego.path===path?_ego.backlinks:[]};buildEgo();}
 function updateGraphBacklinks(path,bl){if(graph.pinnedMain)return;if(_ego.path!==path)_ego={path,links:[],backlinks:[]};_ego.backlinks=bl||[];buildEgo();}
 function buildEgo(){
-  graph.mode='note';graph.view={x:0,y:0,k:1};graph.hover=null;
+  graph.mode='note';graph.view={x:0,y:0,k:1};graph.hover=null;graph.hoverSet=null;graph.hoverFor=null;
   document.getElementById('graph-mode').textContent='Notiz-Graph';
+  updateGraphChrome();
   const cx=graph.W/2,cy=graph.H*0.46;
-  const center={x:cx,y:cy,vx:0,vy:0,fx:cx,fy:cy,r0:6.5,color:'#EAB308',label:_ego.path.split('/').pop().replace(/\.md$/,''),path:_ego.path};
+  const center={x:cx,y:cy,vx:0,vy:0,fx:cx,fy:cy,homeX:cx,homeY:cy,r0:6.5,color:'#EAB308',label:_ego.path.split('/').pop().replace(/\.md$/,''),path:_ego.path};
   const nodes=[center],edges=[];const seen=new Set([_ego.path]);
   const out=[],back=[];
-  for(const p of _ego.links)if(!seen.has(p)){seen.add(p);out.push(p);}
-  for(const p of _ego.backlinks)if(!seen.has(p)){seen.add(p);back.push(p);}
+  // egoShowIndex=false blendet Dateien mit "index" im Namen aus
+  for(const p of _ego.links)if(!seen.has(p)&&(egoShowIndex||!isIndexFile(p))){seen.add(p);out.push(p);}
+  for(const p of _ego.backlinks)if(!seen.has(p)&&(egoShowIndex||!isIndexFile(p))){seen.add(p);back.push(p);}
   const all=[].concat(out.map(p=>({p,kind:'out'})),back.map(p=>({p,kind:'in'})));
   const R=Math.min(graph.W,graph.H)*0.34;
-  all.forEach((it,i)=>{const a=(i/Math.max(all.length,1))*6.283-1.57;const color=it.kind==='in'?'#10B981':'#7ec8e3';nodes.push({x:cx+Math.cos(a)*R,y:cy+Math.sin(a)*R,vx:0,vy:0,r0:4.5,color,label:it.p.split('/').pop().replace(/\.md$/,''),path:it.p});edges.push([center,nodes[nodes.length-1],it.kind]);});
+  // Knoten gleichmaessig auf dem Kreis FIXIEREN (fx/fy) -> ruhige, saubere Anordnung statt Physik-Chaos
+  all.forEach((it,i)=>{const ang=(i/Math.max(all.length,1))*6.283-1.5708;const color=it.kind==='in'?'#10B981':'#7ec8e3';const nx=cx+Math.cos(ang)*R,ny=cy+Math.sin(ang)*R;nodes.push({x:nx,y:ny,vx:0,vy:0,fx:nx,fy:ny,homeX:nx,homeY:ny,r0:4.5,color,label:it.p.split('/').pop().replace(/\.md$/,''),path:it.p});edges.push([center,nodes[nodes.length-1],it.kind]);});
   if(!all.length)center.label+=' · keine Links';
   graph.nodes=nodes;graph.edges=edges;
   document.getElementById('graph-legend').innerHTML='<span><i style="background:#7ec8e3"></i>ausgehend</span> <span><i style="background:#EAB308"></i>aktuell</span> <span><i style="background:#10B981"></i>Backlink</span>';
@@ -1088,31 +1559,56 @@ function buildEgo(){
 function physicsGraph(){
   if(graph.alpha<0.004)return;
   const dpr=window.devicePixelRatio||1;const ns=graph.nodes,es=graph.edges;const a=graph.alpha;
-  const cxc=graph.W/2,cyc=graph.H/2,cf=0.013*graphSettings.center;
-  for(const n of ns){if(n.fx==null){n.vx+=(cxc-n.x)*cf*a;n.vy+=(cyc-n.y)*cf*a;}}
-  const charge=-(360*graphSettings.charge)*dpr*dpr;const cell=Math.max(40,70*graphSettings.linkDist)*dpr;const maxD2=(cell*1.7)*(cell*1.7);
+  const L=Math.max(30,70*graphSettings.linkDist)*dpr;          // Linklaenge & Laengenmassstab
+  // ABSTOSSUNG: charge POSITIV, Kraft entlang (n - m) => Knoten voneinander WEG.
+  // (Vorher war charge negativ bei gleicher Richtung => effektiv Anziehung => Kollaps & wildes Springen.)
+  const charge=0.9*graphSettings.charge*L*L;
+  const minD2=(0.5*L)*(0.5*L);                                  // Nahbereichs-Deckel gegen Kraftspitzen
+  const maxRange=2.4*L,maxR2=maxRange*maxRange,cell=maxRange;
   const grid=new Map();
   for(const n of ns){const gx=Math.floor(n.x/cell),gy=Math.floor(n.y/cell);n._gx=gx;n._gy=gy;const k=gx+','+gy;let arr=grid.get(k);if(!arr){arr=[];grid.set(k,arr);}arr.push(n);}
-  for(const n of ns){for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){const arr=grid.get((n._gx+dx)+','+(n._gy+dy));if(!arr)continue;for(const m of arr){if(m===n)continue;let ddx=n.x-m.x,ddy=n.y-m.y;let d2=ddx*ddx+ddy*ddy;if(d2>maxD2)continue;if(d2<1)d2=1;const d=Math.sqrt(d2);const f=charge/d2*a;n.vx+=(ddx/d)*f;n.vy+=(ddy/d)*f;}}}
-  const L=Math.max(28,62*graphSettings.linkDist)*dpr;const ls=0.045*graphSettings.link;
+  for(const n of ns){if(n.fx!=null)continue;for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){const arr=grid.get((n._gx+dx)+','+(n._gy+dy));if(!arr)continue;for(const m of arr){if(m===n)continue;
+    let ddx=n.x-m.x,ddy=n.y-m.y;let d2=ddx*ddx+ddy*ddy;if(d2>maxR2)continue;
+    if(d2<1e-6){ddx=Math.random()-0.5;ddy=Math.random()-0.5;d2=ddx*ddx+ddy*ddy;}
+    const d=Math.sqrt(d2);const dM2=d2<minD2?minD2:d2;const f=charge*a/dM2;
+    n.vx+=(ddx/d)*f;n.vy+=(ddy/d)*f;}}}
+  // ANZIEHUNG entlang Kanten: Feder auf Ziel-Linklaenge L
+  const ls=0.06*graphSettings.link;
   for(const e of es){const A=e[0],B=e[1];let dx=B.x-A.x,dy=B.y-A.y;let d=Math.hypot(dx,dy)||1;const f=(d-L)/d*ls*a;const fx=dx*f,fy=dy*f;if(A.fx==null){A.vx+=fx;A.vy+=fy;}if(B.fx==null){B.vx-=fx;B.vy-=fy;}}
-  for(const n of ns){if(n.fx!=null){n.x=n.fx;n.y=n.fy;n.vx=0;n.vy=0;continue;}n.vx*=0.82;n.vy*=0.82;n.x+=n.vx;n.y+=n.vy;}
+  // Integration: Daempfung + harte Geschwindigkeitsbegrenzung -> kein Ueberschiessen/Springen
+  const vmax=0.3*L;
+  for(const n of ns){if(n.fx!=null){n.x=n.fx;n.y=n.fy;n.vx=0;n.vy=0;continue;}n.vx*=0.62;n.vy*=0.62;const sp=Math.hypot(n.vx,n.vy);if(sp>vmax){const s=vmax/sp;n.vx*=s;n.vy*=s;}n.x+=n.vx;n.y+=n.vy;}
+  // Zentrieren per Translation (keine komprimierende Feder => kein Kollaps zur Mitte)
+  const rc=0.05*graphSettings.center;
+  if(rc>0){let mx=0,my=0,cn=0;for(const n of ns){if(n.fx==null){mx+=n.x;my+=n.y;cn++;}}if(cn){mx/=cn;my/=cn;const sx=(graph.W/2-mx)*rc,sy=(graph.H/2-my)*rc;for(const n of ns){if(n.fx==null){n.x+=sx;n.y+=sy;}}}}
   graph.alpha*=0.985;
 }
 
 function frameGraph(){
-  graph.raf=requestAnimationFrame(frameGraph);
-  const cx=graph.cx;if(!cx)return;
+  const cx=graph.cx;if(!cx){graph.raf=requestAnimationFrame(frameGraph);return;}
   physicsGraph();
+  // Einmal automatisch einpassen, sobald sich das Layout beruhigt hat (nur Vault, nur wenn Nutzer nicht selbst gezoomt/geschoben hat)
+  if(graph._needFit&&graph.mode==='vault'&&!graph._userMoved){fitGraphView();if(graph.alpha<0.02)graph._needFit=false;}
   const W=graph.W,H=graph.H,vx=graph.view.x,vy=graph.view.y,k=graph.view.k;const dpr=window.devicePixelRatio||1;
   cx.clearRect(0,0,W,H);
-  for(const e of graph.edges){const A=e[0],B=e[1],kind=e[2];cx.lineWidth=0.8*dpr;cx.strokeStyle=kind==='out'?'rgba(126,200,227,.45)':kind==='in'?'rgba(16,185,129,.45)':'rgba(140,160,220,.12)';cx.beginPath();cx.moveTo(A.x*k+vx,A.y*k+vy);cx.lineTo(B.x*k+vx,B.y*k+vy);cx.stroke();}
+  const hs=graph.hover?graph.hoverSet:null;   // beim Hover: nur verknuepfte Knoten hell, Rest abgedunkelt
+  for(const e of graph.edges){const A=e[0],B=e[1],kind=e[2];const act=!hs||A===graph.hover||B===graph.hover;cx.globalAlpha=act?1:0.10;cx.lineWidth=0.8*dpr;cx.strokeStyle=kind==='out'?'rgba(126,200,227,.45)':kind==='in'?'rgba(16,185,129,.45)':'rgba(140,160,220,.12)';cx.beginPath();cx.moveTo(A.x*k+vx,A.y*k+vy);cx.lineTo(B.x*k+vx,B.y*k+vy);cx.stroke();}
+  cx.globalAlpha=1;
+  // shadowBlur ist sehr teuer -> bei grossen Graphen nur ambient bei <=200 Knoten
+  const glowAll=graph.nodes.length<=200;
   const showLabels=graph.mode==='note'||graph.nodes.length<=60||k>1.8;
-  for(const n of graph.nodes){const hl=graph.hover===n;const px=n.x*k+vx,py=n.y*k+vy;const r=nodeRadius(n)*k;cx.shadowColor=n.color;cx.shadowBlur=(n.fx!=null||n.deg>6?14:7)*dpr*(hl?1.8:1);cx.fillStyle=n.color;cx.beginPath();cx.arc(px,py,r+(hl?2*dpr:0),0,6.283);cx.fill();cx.shadowBlur=0;
-    if(n.label&&(hl||(showLabels&&(graph.mode==='note'||n.deg>8)))){cx.fillStyle='rgba(219,226,238,.92)';cx.font=(10.5*dpr)+'px Segoe UI';cx.textAlign='center';cx.fillText(n.label.slice(0,26),px,py-r-5*dpr);}}
+  for(const n of graph.nodes){const dim=hs&&!hs.has(n);const px=n.x*k+vx,py=n.y*k+vy;const r=nodeRadius(n)*k;
+    cx.globalAlpha=dim?0.16:1;
+    if(glowAll&&!dim){cx.shadowColor=n.color;cx.shadowBlur=(n.fx!=null||n.deg>6?14:7)*dpr;}else{cx.shadowBlur=0;}
+    cx.fillStyle=n.color;cx.beginPath();cx.arc(px,py,r,0,6.283);cx.fill();cx.shadowBlur=0;
+    if(n.label&&!dim&&((hs&&hs.has(n))||(showLabels&&(graph.mode==='note'||n.deg>8)))){cx.fillStyle='rgba(219,226,238,.92)';cx.font=(10.5*dpr)+'px Segoe UI';cx.textAlign='center';cx.fillText(n.label.slice(0,26),px,py-r-5*dpr);}}
+  cx.globalAlpha=1;
+  // Schleife anhalten, wenn beruhigt und keine Interaktion -> spart CPU/Akku. wakeGraph() startet sie bei Bedarf neu.
+  if(graph.alpha>=0.004||graph.hover||graph.drag||graph._needFit){graph.raf=requestAnimationFrame(frameGraph);}else{graph.raf=0;}
 }
 
 function openFolderView(folderPath){
+  if(!_silentRender)updateActiveTab(folderPath,'folder');
   let node=null;(function w(ns){for(const n of ns){if(node)return;if(n.type==='folder'&&n.path===folderPath)node=n;else if(n.children)w(n.children);}})(vaultTree);
   if(!node)return;
   const files=[];(function w(ns){for(const n of ns){if(n.type==='file')files.push(n);else if(n.children)w(n.children);}})(node.children||[]);
@@ -1178,9 +1674,19 @@ function showCtx(e,path,type,ext){
     items.push({sep:true});
     if(ext&&ext!=='.md')items.push({icon:'🔄',label:'Mit Markitdown → .md',fn:`convertMarkitdown('${cssAttr(path)}')`});
     items.push({icon:'📋',label:'Pfad kopieren',fn:`copyPath('${cssAttr(path)}')`});
+    items.push({sep:true});
+    items.push({icon:'✏️',label:'Umbenennen',fn:`ctxRename('${cssAttr(path)}','file')`});
+    items.push({icon:'📦',label:'Verschieben nach…',fn:`ctxMove('${cssAttr(path)}')`});
+    items.push({icon:'🗑',label:'Löschen',fn:`ctxDelete('${cssAttr(path)}','file')`});
   } else {
     items.push({icon:'📂',label:'Ordner-Übersicht',fn:`openFolderView('${cssAttr(path)}')`});
     items.push({icon:'📥',label:'Dateien hier ablegen…',fn:`uploadToFolder('${cssAttr(path)}')`});
+    items.push({sep:true});
+    items.push({icon:'📝',label:'Neue Notiz',fn:`ctxNewNote('${cssAttr(path)}')`});
+    items.push({icon:'📁',label:'Neuer Ordner',fn:`ctxNewFolder('${cssAttr(path)}')`});
+    items.push({icon:'✏️',label:'Umbenennen',fn:`ctxRename('${cssAttr(path)}','folder')`});
+    items.push({icon:'📦',label:'Verschieben nach…',fn:`ctxMove('${cssAttr(path)}')`});
+    items.push({icon:'🗑',label:'Löschen',fn:`ctxDelete('${cssAttr(path)}','folder')`});
   }
   items.push({sep:true});items.push({icon:'🔄',label:'Index aktualisieren',fn:'reindex()'});
   const menu=document.getElementById('ctx-menu');
@@ -1190,8 +1696,52 @@ function showCtx(e,path,type,ext){
   menu.classList.add('show');
 }
 function closeCtx(){document.getElementById('ctx-menu').classList.remove('show');}
+
+async function ctxNewNote(folder){
+  let name=await uiPrompt('Name der neuen Notiz (ohne .md):');if(name===null)return;name=name.trim();if(!name)return;
+  if(!/\.(md|markdown)$/i.test(name))name+='.md';
+  const path=(folder?folder.replace(/\/+$/,'')+'/':'')+name;
+  const title=name.replace(/\.(md|markdown)$/i,'');
+  const r=await api('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,path,content:'# '+title+'\n\n',create:true})});
+  if(r&&r.error){toast('Fehler: '+r.error,'err');return;}
+  toast('Notiz erstellt');invalidateVaultGraph();await refreshTree();openEditor(path);
+}
+async function ctxNewFolder(folder){
+  let name=await uiPrompt('Name des neuen Ordners:');if(name===null)return;name=name.trim();if(!name)return;
+  const path=(folder?folder.replace(/\/+$/,'')+'/':'')+name;
+  const r=await api('/api/mkdir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,path})});
+  if(r&&r.error){toast('Fehler: '+r.error,'err');return;}
+  toast('Ordner erstellt');await refreshTree();
+}
+async function ctxRename(path,type){
+  const parts=path.split('/');const base=parts[parts.length-1];
+  let name=await uiPrompt('Neuer Name:',base);if(name===null)return;name=name.trim();if(!name||name===base)return;
+  const newPath=parts.slice(0,-1).concat(name).join('/');
+  const r=await api('/api/rename',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,oldPath:path,newPath})});
+  if(r&&r.error){toast('Fehler: '+r.error,'err');return;}
+  toast('Umbenannt');if(selectedPath===path)selectedPath=newPath;tabsRenamePath&&tabsRenamePath(path,newPath);invalidateVaultGraph();await refreshTree();
+}
+async function ctxMove(path){
+  const parts=path.split('/');const base=parts[parts.length-1];
+  const startDir=parts.slice(0,-1).join('/');
+  const dest=await uiFolderPicker('„'+base+'“ verschieben nach…',startDir,path);
+  if(dest===null)return;
+  const newPath=(dest?dest+'/':'')+base;
+  if(newPath===path){toast('Bereits in diesem Ordner');return;}
+  const r=await api('/api/rename',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,oldPath:path,newPath})});
+  if(r&&r.error){toast('Fehler: '+r.error,'err');return;}
+  toast('Verschoben');if(selectedPath===path)selectedPath=newPath;tabsRenamePath&&tabsRenamePath(path,newPath);invalidateVaultGraph();await refreshTree();
+}
+async function ctxDelete(path,type){
+  if(!(await uiConfirm((type==='folder'?'Ordner':'Datei')+' wirklich löschen?\n'+path+(type==='folder'?'\n(inklusive Inhalt)':''))))return;
+  const r=await api('/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,path})});
+  if(r&&r.error){toast('Fehler: '+r.error,'err');return;}
+  toast('Gelöscht');tabsClosePath&&tabsClosePath(path);
+  if(selectedPath===path){selectedPath=null;document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';setCrumb(esc(activeVault));}
+  invalidateVaultGraph();await refreshTree();
+}
 document.addEventListener('click',closeCtx);
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeCtx();closePalette();closeVaultModal();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeCtx();closePalette();closeVaultModal();pickerCancel();_confirmCancel();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
 
 // ═════════════════════ DRAG & DROP / UPLOAD ═════════════════════
 document.addEventListener('dragenter',e=>{if(e.dataTransfer.types.includes('Files')){dragCounter++;document.getElementById('drop-overlay').classList.add('active');}});
@@ -1207,7 +1757,7 @@ async function uploadFiles(fileList,targetPath){
   try{
     const r=await fetch('/api/upload',{method:'POST',body:fd});bar.style.width='80%';const json=await r.json();
     if(json.error)toast('Fehler: '+json.error,'error');
-    else{toast(`✓ ${json.files.length} Datei(en) hochgeladen`,'success');logActivity(folderColor(activeVault),`upload → ${json.files.length} Datei(en)`);vaultTree=await api(`/api/tree?vault=${encodeURIComponent(activeVault)}`);buildNoteIndex();renderSidebar();setGraphVault();}
+    else{toast(`✓ ${json.files.length} Datei(en) hochgeladen`,'success');logActivity(folderColor(activeVault),`upload → ${json.files.length} Datei(en)`);vaultTree=await api(`/api/tree?vault=${encodeURIComponent(activeVault)}`);buildNoteIndex();renderSidebar();setGraphVault(true);}
   }catch(ex){toast('Upload-Fehler: '+ex.message,'error');}
   finally{bar.style.width='100%';setTimeout(()=>bar.style.width='0%',600);}
 }
@@ -1218,14 +1768,14 @@ async function convertMarkitdown(path){
   try{
     const r=await api('/api/convert/markitdown',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filePath:path,vault:activeVault})});
     if(r.error){toast('Fehler: '+r.error,'error');return;}
-    toast(`✓ Konvertiert: ${r.mdPath}`,'success');vaultTree=await api(`/api/tree?vault=${encodeURIComponent(activeVault)}`);buildNoteIndex();renderSidebar();setGraphVault();openFile(r.mdPath);
+    toast(`✓ Konvertiert: ${r.mdPath}`,'success');vaultTree=await api(`/api/tree?vault=${encodeURIComponent(activeVault)}`);buildNoteIndex();renderSidebar();setGraphVault(true);openFile(r.mdPath);
   }catch(ex){toast('Fehler: '+ex.message,'error');}
 }
 async function reindex(){
   toast('🔄 Reindexiere…');logActivity('#7C8CFF','reindex() gestartet');
   try{
     const r=await api('/api/reindex',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault})});
-    vaultTree=await api(`/api/tree?vault=${encodeURIComponent(activeVault)}`);buildNoteIndex();renderSidebar();setGraphVault();
+    vaultTree=await api(`/api/tree?vault=${encodeURIComponent(activeVault)}`);buildNoteIndex();renderSidebar();setGraphVault(true);
     const total=countFiles(vaultTree);document.getElementById('sb-index').textContent=`Index: ${total.toLocaleString('de')} Dateien`;
     toast(`✓ Reindex – ${r.indexed??total} Dateien`,'success');logActivity('#10B981',`reindex → ${r.indexed??total} Dateien`);
   }catch(ex){toast('Fehler: '+ex.message,'error');}
@@ -1243,6 +1793,76 @@ function logActivity(color,msg){
 // ═════════════════════ VAULT-MANAGEMENT ═════════════════════
 async function openVaultModal(){await renderVaultList();document.getElementById('vault-overlay').classList.add('show');document.getElementById('vault-new').focus();}
 function closeVaultModal(){document.getElementById('vault-overlay').classList.remove('show');}
+
+// uiPrompt: Ersatz fuer window.prompt() (in Electron nicht unterstuetzt) – promise-basiertes Modal
+let _promptResolve=null;
+function uiPrompt(message,def=''){
+  return new Promise(resolve=>{
+    _promptResolve=resolve;
+    document.getElementById('prompt-title').textContent=message;
+    const inp=document.getElementById('prompt-input');
+    inp.value=(def==null?'':def);
+    document.getElementById('prompt-overlay').classList.add('show');
+    setTimeout(()=>{inp.focus();inp.select();},30);
+  });
+}
+function _promptClose(val){
+  document.getElementById('prompt-overlay').classList.remove('show');
+  const r=_promptResolve;_promptResolve=null;
+  if(r)r(val);
+}
+function uiPromptOk(){_promptClose(document.getElementById('prompt-input').value);}
+function uiPromptCancel(){_promptClose(null);}
+function uiPromptKey(e){if(e.key==='Enter'){e.preventDefault();uiPromptOk();}else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();uiPromptCancel();}}
+
+// uiConfirm: themed Ersatz fuer window.confirm()
+let _confirmResolve=null;
+function uiConfirm(message){
+  return new Promise(resolve=>{
+    _confirmResolve=resolve;
+    document.getElementById('confirm-msg').textContent=message;
+    document.getElementById('confirm-overlay').classList.add('show');
+    setTimeout(()=>{const b=document.getElementById('confirm-ok');if(b)b.focus();},30);
+  });
+}
+function _confirmClose(val){document.getElementById('confirm-overlay').classList.remove('show');const r=_confirmResolve;_confirmResolve=null;if(r)r(val);}
+function confirmOk(){_confirmClose(true);}
+function _confirmCancel(){_confirmClose(false);}
+
+// uiFolderPicker: klickbarer Ordner-Browser; resolved gewaehlten Ordnerpfad ('' = Wurzel) oder null
+let _pickerResolve=null,_pickerCwd='',_pickerExclude='';
+function uiFolderPicker(title,startPath,excludePath){
+  return new Promise(resolve=>{
+    _pickerResolve=resolve;_pickerCwd=startPath||'';_pickerExclude=excludePath||'';
+    if(_pickerExclude&&(_pickerCwd===_pickerExclude||_pickerCwd.startsWith(_pickerExclude+'/')))_pickerCwd='';
+    document.getElementById('picker-title').textContent=title;
+    document.getElementById('picker-overlay').classList.add('show');
+    renderPicker();
+  });
+}
+function _foldersAt(path){
+  let nodes=vaultTree;
+  if(path){for(const part of path.split('/')){const f=(nodes||[]).find(n=>n.type==='folder'&&n.name===part);if(!f)return[];nodes=f.children||[];}}
+  return (nodes||[]).filter(n=>n.type==='folder');
+}
+function renderPicker(){
+  const crumb=document.getElementById('picker-crumb');
+  let html=`<span class="pk-crumb" data-go="">🏠 ${esc(activeVault)}</span>`;
+  let acc='';
+  for(const part of (_pickerCwd?_pickerCwd.split('/'):[])){acc=acc?acc+'/'+part:part;html+=` › <span class="pk-crumb" data-go="${cssAttr(acc)}">${esc(part)}</span>`;}
+  crumb.innerHTML=html;
+  crumb.querySelectorAll('.pk-crumb').forEach(sp=>sp.addEventListener('click',()=>{_pickerCwd=sp.dataset.go;renderPicker();}));
+  const subs=_foldersAt(_pickerCwd).filter(f=>!(_pickerExclude&&(f.path===_pickerExclude||f.path.startsWith(_pickerExclude+'/'))));
+  let items='';
+  if(_pickerCwd)items+=`<div class="pk-item" id="pk-up">↩&nbsp; ..</div>`;
+  for(const f of subs)items+=`<div class="pk-item" data-into="${cssAttr(f.path)}"><span class="dot" style="background:${folderColor(f.path.split('/')[0])}"></span><span style="flex:1">${esc(f.name)}</span><span style="color:var(--dim)">›</span></div>`;
+  if(!subs.length)items+=`<div style="padding:12px;color:var(--dim);font-size:13px">Keine Unterordner – mit „Hierhin verschieben“ hier ablegen.</div>`;
+  document.getElementById('picker-list').innerHTML=items;
+  document.querySelectorAll('#picker-list .pk-item[data-into]').forEach(el=>el.addEventListener('click',()=>{_pickerCwd=el.dataset.into;renderPicker();}));
+  const up=document.getElementById('pk-up');if(up)up.addEventListener('click',()=>{_pickerCwd=_pickerCwd.split('/').slice(0,-1).join('/');renderPicker();});
+}
+function pickerCancel(){document.getElementById('picker-overlay').classList.remove('show');const r=_pickerResolve;_pickerResolve=null;if(r)r(null);}
+function pickerConfirm(){document.getElementById('picker-overlay').classList.remove('show');const r=_pickerResolve;_pickerResolve=null;if(r)r(_pickerCwd);}
 async function renderVaultList(){
   const vaults=await api('/api/vaults');
   document.getElementById('vault-list').innerHTML=vaults.map(v=>`<div class="vault-item ${v.active?'active':''}" data-name="${esc(v.name)}"><span class="dot" style="background:${folderColor(v.name)}"></span><span class="vi-name">${esc(v.name)}</span>${v.active?'<span class="vi-active">aktiv</span>':''}${vaults.length>1?`<span class="vi-del" data-del="${esc(v.name)}" title="Entfernen">✕</span>`:''}</div>`).join('');
@@ -1253,10 +1873,33 @@ async function renderVaultList(){
     el.addEventListener('click',e=>{e.stopPropagation();removeVault(el.dataset.del);});
   });
 }
+function toggleVaultDrop(){
+  const btn=document.getElementById('vault-sel-btn'),drop=document.getElementById('vault-sel-drop');
+  const open=drop.classList.toggle('open');btn.classList.toggle('open',open);
+  if(open)setTimeout(()=>document.addEventListener('click',_closeVaultDrop,{once:true,capture:true}),0);
+}
+function _closeVaultDrop(e){
+  const wrap=document.getElementById('vault-sel-wrap');
+  if(wrap&&wrap.contains(e.target)){
+    if(document.getElementById('vault-sel-drop').classList.contains('open'))
+      setTimeout(()=>document.addEventListener('click',_closeVaultDrop,{once:true,capture:true}),0);
+    return;
+  }
+  const btn=document.getElementById('vault-sel-btn'),drop=document.getElementById('vault-sel-drop');
+  if(btn)btn.classList.remove('open');if(drop)drop.classList.remove('open');
+}
 async function refreshVaultSelector(){
   const vaults=await api('/api/vaults');
-  const sel=document.getElementById('vault-sel');
-  if(sel)sel.innerHTML=vaults.map(v=>`<option value="${esc(v.name)}" ${v.name===activeVault?'selected':''}>${esc(v.name)}</option>`).join('');
+  const lbl=document.getElementById('vault-sel-label');
+  const drop=document.getElementById('vault-sel-drop');
+  if(!lbl||!drop)return;
+  lbl.textContent=activeVault||(vaults.find(v=>v.active)||vaults[0])?.name||'Vault';
+  drop.innerHTML=vaults.map(v=>'<div class="vs-opt'+(v.name===activeVault?' active':'')+'" data-vault="'+esc(v.name)+'">'+esc(v.name)+'</div>').join('');
+  drop.querySelectorAll('.vs-opt').forEach(el=>el.addEventListener('click',()=>{
+    switchVault(el.dataset.vault);
+    document.getElementById('vault-sel-drop').classList.remove('open');
+    document.getElementById('vault-sel-btn').classList.remove('open');
+  }));
 }
 async function createVault(){
   const inp=document.getElementById('vault-new');const name=(inp.value||'').trim();
@@ -1269,7 +1912,7 @@ async function createVault(){
   }catch(ex){toast('Fehler: '+ex.message,'error');}
 }
 async function removeVault(name){
-  if(!confirm(`Vault „${name}" aus Nexus entfernen? Dateien bleiben erhalten.`))return;
+  if(!(await uiConfirm(`Vault „${name}" aus Nexus entfernen? Dateien bleiben erhalten.`)))return;
   try{
     const r=await api('/api/vaults/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
     if(r.error){toast('Fehler: '+r.error,'error');return;}
