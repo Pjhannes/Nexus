@@ -428,7 +428,8 @@ Pauls Vorgaben (6 Fixes am Graph):
 - [x] `node --check` auf das extrahierte `<script>` aus index.html (aus der Mount-Datei, die hier == kanonisch ist) -> **OK**.
 - [x] `test/md-render.test.mjs` (extrahiert Renderer aus der echten index.html) -> **25 bestanden, 0 Fehler** (beweist: Datei vollstaendig + Renderer unveraendert).
 - [x] Windows-`Read` bestaetigt Kopf + Tail von index.html, `/api/graph` in ui-server.js, `graph()`+Export in tools.js.
-- [ ] **OFFEN**: `test/smoke.js` + E2E gegen `/api/graph` konnten diese Session NICHT laufen - der Linux-Mount lieferte fuer die Edit-Tool-geaenderten Dateien (tools.js, ui-server.js) hartnaeckig **abgeschnittene Stubs** (bekannte Mount-Divergenz). Kanonische Windows-Dateien sind per Read verifiziert. **Nachholen, sobald der Mount sauber synct** (oder direkt auf Pauls PC `node test/smoke.js`).
+- [x] **NACHGEHOLT (nach Git-Baseline)**: `git init` + erster Commit (701c72f) durch Paul auf Windows -> kanonische Dateien im Object-Store. Aus der Sandbox via `git archive HEAD` einen sauberen Baum extrahiert (umgeht den kaputten Mount) und getestet: **smoke.js 48 bestanden**, **md-render 25/0**, **`/api/graph`-E2E** (3 Knoten / 3 Kanten, `src`+`target` korrekt). Alles gruen.
+- **Merke fuer kuenftige Sessions**: Wenn der Mount divergiert, kanonische Dateien via `git archive HEAD | tar -x -C /tmp/clean` holen statt `cp` vom Mount.
 
 ### Naechste Schritte / zu pruefen auf Pauls PC
 - [ ] `npm run app` -> Start oeffnet START.md, Graph zeigt Hauptansicht (alle Notizen vernetzt). Knoten anklicken -> Datei + Ego-Fokus; "Haupt"-Button -> zurueck. Zahnrad -> Slider testen (Abstossung/Anziehung/Groesse). Cursor exakt auf Knoten -> Tooltip.
