@@ -25,8 +25,8 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 | ~~R3~~ | ~~P0~~ | ~~**Vault-Selector oben links zu Windows-artig**~~ | ~~Sonnet~~ | ✅ Session 17 |
 | ~~R4~~ | ~~P1~~ | ~~**Tab-Reihenfolge per Drag & Drop**~~ | ~~Sonnet~~ | ✅ Session 18 |
 | ~~R5~~ | ~~P1~~ | ~~**Sidebar-Themen: ganzes Farbfeld mit Name statt Punkt**~~ | ~~Sonnet~~ | ✅ Session 19 |
-| R6 | P1 | **Splitscreen-Verbesserung: Tab per D&D in 2. Fenster ziehen; rechtes Panel (Graph/Outline) sync zur aktiven Datei** | **Opus** | Komplex: Tab-State × Split-Mode × Panel-Sync; viele Randfälle |
-| R7 | P2 | **Einstellungs-Menü** – Button unten links öffnet Panel: Farb-Theme, Hauptthemen-Farben, Vault-Pfad, weitere sinnvolle Optionen; Persistence in localStorage / nexus.config.json | **Sonnet** | Großes UI-Feature, aber gut strukturierbar; kein neues Backend-Konzept |
+| ~~R6~~ | ~~P1~~ | ~~**Splitscreen-Verbesserung: Tab per D&D in 2. Fenster ziehen; rechtes Panel (Graph/Outline) sync zur aktiven Datei**~~ | ~~Opus~~ | ✅ Session 20 |
+| ~~R7~~ | ~~P2~~ | ~~**Einstellungs-Menü** – Button unten links öffnet Panel: Farb-Theme, Hauptthemen-Farben, Vault-Pfad, weitere sinnvolle Optionen; Persistence in localStorage / nexus.config.json~~ | ~~Sonnet~~ | ✅ Session 21 |
 | R8 | P2 | **Claude in Suche oben rechts einbinden** – wie im Preview; Claude-API-Key konfigurierbar; auch auf anderem PC nutzbar | **Opus** | API-Integration + Key-Management + Security; architektonisch komplex |
 | R9 | P2 | **Claude Usage-Widget unten rechts** – nach GitHub `SlavomirDurej/claude-usage-widget`; in Claude-Aktivitäts-Zeile; Login-Daten änderbar | **Sonnet** | Externe Lib einbinden + Config-UI; klar abgegrenzt |
 | R10 | P2 | **Installer verbessern** – kein CMD-Fenster, vollwertige Electron-App auf Pauls PC; NSIS-Installer für Fremd-PC (Arbeit von Session 11 finalisieren: `npm run dist` testen, SmartScreen-Workaround) | **Sonnet** | electron-builder schon konfiguriert; Hauptarbeit ist Windows-Test + Feinschliff |
@@ -39,14 +39,84 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 1. ~~**R2/R1/R3** – alle drei erledigt (Session 17)~~
 2. **R4** (Tab D&D Reorder)
 3. **R5** (Sidebar-Farbfeld: erst Designs zeigen, dann implementieren)
-4. **R6** (Splitscreen-Upgrade)
-5. **R7** (Einstellungs-Menü)
+4. ~~**R6** (Splitscreen-Upgrade)~~ ✅ Session 20
+5. ~~**R7** (Einstellungs-Menü)~~ ✅ Session 21
 6. **R10** (Installer finalisieren)
 7. **R8** (Claude in Suche)
 8. **R9** (Usage-Widget)
 9. **R11** (Design-Vorschläge)
 10. **R12** (Obsidian-Regeln)
 11. **R13** (Vergleich)
+
+---
+
+## Stand: 2026-06-11 (Session 21 – R7 Einstellungs-Menü)
+
+Front-End in `public/index.html` (10 Patches via `scripts/safe-edit.mjs`, 1 Aufruf, Read-Back-Hash OK) + **ein** neuer Backend-Endpoint in `src/ui-server.js`. Verifiziert: `verify:html` OK (2210 Zeilen, Ende `</html>`, Inline-Script `node --check` grün), `md-render.test.mjs` 25/25, `node --check src/ui-server.js` grün (rekonstruiert, s.u.).
+
+### Erledigt
+- [x] **R7 – Einstellungs-Menü.** Zahnrad-Button `⚙ Einstellungen` unten in der Sidebar (unter `#side-scroll`, über dem Spalten-Resizer) öffnet Modal (`#settings-overlay`, Klasse `.settings-modal` im Nexus-Stil). Optionen:
+  - **Farb-Theme** – 3 Presets (Dark/Standard, Darker, Soft-Blue). `NEXUS_THEMES` setzt CSS-Variablen-Overrides (`--bg/--panel/--panel2/--border/--text/--dim/--accent`) per `documentElement.style.setProperty`; vorher werden alle Theme-Vars zurückgesetzt (saubere Umschaltung). Persistenz `localStorage['nexus.theme']`, beim Start in `init()` via `applyTheme(currentTheme())` angewendet.
+  - **Hauptthemen-Farben** – pro Top-Level-Ordner ein `<input type=color>`; schreibt über bestehendes `setCustomFolderColor()` nach `localStorage['nexus.folderColors']`, danach `renderSidebar()+invalidateVaultGraph()+setGraphVault(true)` (sofort sichtbar in Sidebar-Gradient + Graph). „↺"-Button stellt Standardfarbe wieder her (löscht Custom-Key → `folderColor()` fällt auf COLORS/Hash zurück).
+  - **Vault-Speicherort** – zeigt aktuellen `vaultsRoot`; Speichern → `POST /api/settings/vaultsRoot` (validiert `existsSync+isDirectory`, schreibt `nexus.config.json` via `saveConfig()`, antwortet mit Reload-/Neustart-Hinweis). Anzeige liest `GET /api/settings/vaultsRoot` (gleicher Pfad → strikt „nur ein Endpoint").
+  - **Editor-Schriftgröße** – Slider 12–20px, sofort wirksam über CSS-Var `--editor-fs` (CodeMirror + Textarea-Regeln auf `var(--editor-fs,13.5px)` umgestellt). Persistenz `localStorage['nexus.editorFontSize']`, Start via `applyEditorFs(currentEditorFs())`.
+  - **Graph-Standardmodus** – Dropdown Ego-Graph (Default) / Hauptgraph. `openFile()` setzt `graph.pinnedMain` jetzt aus `localStorage['nexus.graphDefault']` (`'main'` → bleibt Hauptgraph beim Notiz-Öffnen). Persistenz `localStorage['nexus.graphDefault']`.
+  - **Zusatz (Bugfix beim Lesen aufgefallen):** `colorToHex()` nutzte `/d+/g` (literal „d") statt `/\d+/g` → hsl-Farben wurden zu `#808080`. Korrigiert; verbessert auch den bestehenden Rechtsklick-Farbpicker.
+  - Esc schließt das Menü (in globalen Escape-Handler aufgenommen). Input-Specificity-Konflikt mit `.palette input` durch `.set-body`-Präfixe gelöst.
+- [x] **Backend:** `GET/POST /api/settings/vaultsRoot` in `src/ui-server.js` (nach `/api/vaults/active`). Nutzt bereits importierte Symbole (`existsSync`, `statSync`, `dataPath`, lokales `saveConfig()`). Strukturelle Persistenz in `nexus.config.json`; rein visuelle Einstellungen ausschließlich in `localStorage`.
+
+### Mount-Hinweis (wichtig für nächste Session)
+- Der Linux-Mount lieferte in dieser Session eine **stale/abgeschnittene** Kopie von `src/ui-server.js` (310 Zeilen, mitten in `/api/delete`), während die echte Windows-Datei vollständig ist (337 Zeilen, Ende `app.listen`). `node --check` direkt über den Mount schlug deshalb fälschlich fehl. Verifikation erfolgte über eine rekonstruierte Datei (Mount-Kopf bis Z.310 inkl. der neuen Routes + bekannter, gegengelesener Schwanz) → **Syntax OK**. `public/index.html` war im Mount dagegen in-sync (2210 Zeilen), `safe-edit` lief sauber, Mount→Windows-Schreibpropagation per Marker-Datei bestätigt. Bei Zweifeln auf Pauls Windows-PC `npm run verify:html` + `node --check src/ui-server.js` nachfahren.
+
+### TODO Paul
+- [ ] App neu laden (Strg+R) / `npm run app` und live prüfen: ⚙-Button unten links → Modal; Theme umschalten (sofort), Editor-Font-Slider (Editor öffnen), Graph-Standardmodus, Ordnerfarbe ändern/zurücksetzen, Vault-Pfad anzeigen/speichern. Bei Pfadänderung Server-Neustart nötig.
+- [ ] Git-Commit: `git add public/index.html src/ui-server.js STATUS.md && git commit -m "Session 21: R7 Einstellungs-Menü (Theme/Ordnerfarben/Vault-Pfad/Editor-Font/Graph-Default + vaultsRoot-Endpoint)"`
+
+---
+
+## Stand: 2026-06-11 (Session 20b – R6a korrigiert: Tab-Split in die MITTE)
+
+Korrektur nach Paul-Feedback: Der rechte „Split"-Button (Gliederung + Ego-Graph zusammen) bleibt wie er ist. Der **Tab-Splitscreen gehört in die Mitte** – zwei Dokumente nebeneinander – und **rechts bleiben Gliederung + Graph daneben** sichtbar. Der alte Ansatz (2. Ansicht als Overlay im rechten Panel) wurde komplett entfernt.
+
+Reine Front-End-Aenderung in `public/index.html`. 8 Patches via `scripts/safe-edit.mjs` (Anker direkt aus der Live-Datei extrahiert → garantiert exakter Match). Verifiziert: `verify:html` OK (2100 Zeilen, Ende `</html>`), `md-render.test.mjs` 25/25, `grep` zeigt keine Reste der alten Funktionen.
+
+### Erledigt
+- [x] **R6a neu – Tab-Splitscreen in der Mitte (unabhaengig vom rechten Panel-Modus).**
+  - Mittlere Spalte umstrukturiert: `#center-body` (Flex-Row) umschliesst jetzt `#note-area` + `#rz-center` (Spalten-Resizer) + `#note-pane2` (2. Ansicht). Default einspaltig; `#center-body.split` → zweispaltig.
+  - `openCenterSplit(path)` rendert die gezogene Datei **read-only** in `#note-pane2` (MD via `renderMarkdown`, Bilder, PDF-iframe, sonst `<pre>`) mit Kopf (Tag „2. Ansicht" + Name + ✕). Gezogener Tab bleibt in der Leiste (parallele Anzeige, kein Move).
+  - `initCenterSplitDrop()` haengt `dragover`/`dragleave`/`drop` an `#center-body`; nutzt bestehendes `_draggingTabId` (R4); Drop-Feedback `#center-body.drop-target` (gestrichelter Rahmen). **Funktioniert in jedem rechten Panel-Modus** (Graph/Gliederung/Split), da unabhaengig.
+  - `initCenterResizer()` – Spaltenbreite per Drag, Persistenz `localStorage['nexus.centerL']`.
+  - `closeCenterSplit()` bei ✕ und bei `switchVault`. Tabbar-`dragend` raeumt `#center-body.drop-target` mit auf.
+  - Rechtes Panel (Gliederung + Graph) unveraendert und folgt weiterhin dem aktiven Haupt-Tab (R6b).
+  - **Fix (Folge-Patch):** Tab-Dragstart `effectAllowed` von `move` → `copyMove`. Vorher zeigte der Cursor beim Ziehen in die Mitte einen durchgestrichenen Kreis (Drop verboten), weil `dropEffect='copy'` nicht zu `effectAllowed='move'` passte. Reorder in der Tab-Leiste (nutzt `dropEffect='move'`) bleibt unter `copyMove` gueltig.
+
+### TODO Paul
+- [ ] App neu laden (Strg+R) und live pruefen: Einen Tab aus der Leiste in den **mittleren** Dokumentbereich ziehen → zweite Ansicht erscheint rechts daneben in der Mitte (read-only), Tab bleibt erhalten, rechts bleiben Gliederung+Graph; Trennlinie verschiebbar; ✕ schliesst. R6b weiterhin: aktiver Tab steuert Graph/Gliederung.
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 20b: R6a korrigiert – Tab-Splitscreen in der Mitte (rechtes Panel bleibt)"`
+
+---
+
+## Stand: 2026-06-11 (Session 20 – R6 Splitscreen-Upgrade)
+
+Reine Front-End-Aenderung in `public/index.html`. Alle 16 Patches via `scripts/safe-edit.mjs` (1 Aufruf). Verifiziert: `npm run verify:html` OK (2070 Zeilen, Ende `</html>`), `node test/md-render.test.mjs` 25/25, Datei-Ende + alle Einfuegestellen per Windows-`Read` gegengeprueft.
+
+### Erledigt
+- [x] **R6b – Rechtes Panel folgt immer dem aktiven Tab.**
+  - Neue State-Var `_panelPath` (Guard: letzter synchronisierter Pfad).
+  - `graphToMain()` – Graph zurueck zur Vault-Hauptansicht (nur wenn nicht schon `vault`-Modus; `pinnedMain`-Lock bleibt respektiert).
+  - `applyActivePanel(path,headings,links)` – zentrale Sync: setzt `_curHeadings/_curNotePath`, ruft `renderOutline()` + `bindScrollSpy()` + `updateGraphForNote()`. Guard: bei reinem Aktivierungswechsel ohne Pfadwechsel No-Op; mit echten Headings (`fresh`) immer anwenden. `pinnedMain` wird NICHT angefasst -> Startup-Hauptgraph bleibt erhalten.
+  - `syncFromActivation()` – liest aktiven Tab; MD-Datei im `file`-Modus wird uebersprungen (kommt frisch ueber `wireRendered`, kein Doppel-Render), `folder` -> Hauptgraph, sonst `applyActivePanel`.
+  - Verdrahtet in `switchTab()`, `updateActiveTab()`, `newTab()`, `closeTab()` (beide Exits). `wireRendered()` ruft jetzt `applyActivePanel(path,res.headings,res.links)` (ersetzt inline Outline-Sync; doppelter `updateGraphForNote` entfernt).
+  - Randfaelle: leerer Tab -> Hauptgraph + leere Gliederung; Nicht-MD-Datei -> Gliederung leer, Graph-Ego soweit moeglich; Editor-Tab -> Ego des bearbeiteten Pfads.
+- [x] **R6a – Tab per Drag&Drop als 2. Ansicht in den Split-Bereich.**
+  - `#split-preview`-Overlay (absolut, `inset:0`, z-index 45) im `.right-panel` (jetzt `position:relative`); nur im `data-rmode="split"` + `.show` sichtbar (CSS-getriebene Bereinigung bei Modus-Wechsel).
+  - `openSplitPreview(path)` rendert die Datei **read-only** (MD via `renderMarkdown`, Bilder, sonst `<pre>`), mit Kopf (Tag „2. Ansicht“ + Dateiname + ✕). Wikilinks im Preview schliessen Preview und oeffnen Ziel.
+  - `initSplitDrop()` haengt `dragover`/`dragleave`/`drop` an `.right-panel`: nur im Split-Modus aktiv, nutzt bestehendes `_draggingTabId` (R4), Drop-Feedback `.tab-drop-target` (gestrichelter Rahmen). Gezogener Tab bleibt erhalten (parallele Anzeige, kein Move). In `init()` nach `initTabDnd()`.
+  - `closeSplitPreview()` bei ✕, bei `setRightMode(!=split)` (R6a-Cleanup) und bei `switchVault`. Tabbar-`dragend` raeumt Right-Panel-Highlight mit auf.
+
+### TODO Paul
+- [ ] App neu laden (Strg+R) und live pruefen: (a) Notiz/Tab wechseln -> Graph wechselt in Ego-Modus der aktiven Datei, Gliederung folgt; leerer Tab -> Hauptgraph; Nicht-MD -> Gliederung leer. (b) Split-Modus aktivieren, einen Tab aus der Leiste in den rechten Bereich ziehen -> read-only 2. Ansicht erscheint, Tab bleibt in der Leiste; Drop-Feedback sichtbar; ✕ schliesst; Moduswechsel raeumt auf.
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 20: R6 Splitscreen-Upgrade (R6a Tab-D&D Split-Preview + R6b Panel-Sync)"`
 
 ---
 
@@ -437,6 +507,8 @@ node src/ui-server.js
 ## Usage-Log (Regel 22)
 | Session | Datum | Inhalt | Start % | End % |
 |---|---|---|---|---|
+| 20b | 2026-06-11 | R6a korrigiert: Tab-Splitscreen in die MITTE (#center-body/#note-pane2/#rz-center, openCenterSplit/closeCenterSplit/initCenterSplitDrop/initCenterResizer), alter Right-Panel-Overlay-Ansatz entfernt; rechtes Panel bleibt daneben; 8 Patches via safe-edit; verify:html 2100 Zeilen + 25/25 gruen | - | - |
+| 20 | 2026-06-11 | R6 Splitscreen-Upgrade: R6b Panel-Sync (_panelPath-Guard, applyActivePanel/syncFromActivation/graphToMain in switchTab/updateActiveTab/wireRendered/newTab/closeTab) + R6a Tab-D&D Split-Preview (#split-preview Overlay, openSplitPreview/closeSplitPreview/initSplitDrop, Drop-Feedback); 16 Patches via safe-edit; verify:html 2070 Zeilen + 25/25 gruen | - | - |
 | 19 | 2026-06-11 | R5 Sidebar-Farbfeld Variante B: isTop in makeFolderEl, folder-gradient CSS (color-mix Gradient), folder-label; verify:html 1937 Zeilen + 25/25 gruen |
 | 18 | 2026-06-11 | R4 Tab-D&D-Reorder: _draggingTabId, draggable+data-tidx in renderTabBar, initTabDnd() (Event-Delegation, curId-Tracking), .tab.drop-target CSS; verify:html 1929 Zeilen + 25/25 gruen | - | - |
 | 17 | 2026-06-11 | R2 Scrollbar (#1a1d2a/#3a3f55/#5a6080, 6px), R1 Checkbox-Toggle (_curNoteRaw+wireRendered+POST /api/save), R3 Custom Vault-Dropdown (toggleVaultDrop+CSS); verify:html 1892 Zeilen + 25/25 gruen | - | - |

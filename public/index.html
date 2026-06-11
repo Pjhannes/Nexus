@@ -238,6 +238,26 @@ a.wikilink.broken{color:#e07b7b;border-bottom-style:dashed;border-bottom-color:r
 
 /* Right panel */
 .right-panel{display:flex;flex-direction:column;overflow:hidden}
+/* Center: Tab-Splitscreen (2 Dokumente nebeneinander); rechtes Panel bleibt daneben */
+#center-body{flex:1;display:flex;min-height:0;min-width:0}
+#note-area{min-width:0}
+#center-body.split #note-area{flex:0 0 var(--center-l,50%)}
+#note-pane2{display:none;min-width:0;flex-direction:column;border-left:1px solid var(--border);background:rgba(7,9,15,.6)}
+#center-body.split #note-pane2{display:flex;flex:1}
+#rz-center{display:none;width:5px;cursor:col-resize;flex-shrink:0;position:relative;z-index:5}
+#center-body.split #rz-center{display:block}
+#rz-center::after{content:"";position:absolute;inset:0 2px;border-radius:2px;transition:background .15s}
+#rz-center:hover::after,#rz-center.drag::after{background:var(--accent)}
+#center-body.drop-target{outline:2px dashed var(--accent);outline-offset:-4px;border-radius:6px}
+#note-pane2 .np2-head{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border);background:rgba(10,13,22,.7);flex-shrink:0}
+#note-pane2 .np2-name{font-size:12px;color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+#note-pane2 .np2-tag{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);background:rgba(124,140,255,.12);border:1px solid rgba(124,140,255,.3);border-radius:99px;padding:1px 8px;flex-shrink:0}
+#note-pane2 .np2-x{flex-shrink:0;cursor:pointer;color:var(--dim);width:20px;height:20px;line-height:18px;text-align:center;border-radius:5px;font-size:15px}
+#note-pane2 .np2-x:hover{background:rgba(255,255,255,.12);color:var(--text)}
+#note-pane2 .np2-body{flex:1;overflow:auto;min-height:0}
+#note-pane2 .np2-body .note-content{padding:24px 30px 60px}
+#note-pane2 .np2-body .pdf-frame{height:100%}
+#note-pane2 .np2-pre{white-space:pre-wrap;word-break:break-word;font-family:Consolas,monospace;font-size:12px;line-height:1.6;color:#cdd6e8;padding:16px 18px}
 .graph-wrap{flex:1;position:relative;background:rgba(5,7,13,.55);min-height:0}
 canvas{display:block;width:100%;height:100%}
 .graph-label{position:absolute;top:12px;left:14px;font-size:10px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;pointer-events:none}
@@ -346,7 +366,7 @@ canvas{display:block;width:100%;height:100%}
 .ed-btn kbd{font-size:9.5px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--dim)}
 .ed-btn.ghost{background:transparent}
 .editor-host{flex:1;min-height:0;overflow:auto}
-.editor-host .CodeMirror{height:100%;background:transparent;color:var(--text);font-family:Consolas,'SF Mono',monospace;font-size:13.5px;line-height:1.65}
+.editor-host .CodeMirror{height:100%;background:transparent;color:var(--text);font-family:Consolas,'SF Mono',monospace;font-size:var(--editor-fs,13.5px);line-height:1.65}
 .editor-host .CodeMirror-gutters{background:rgba(8,10,18,.5);border-right:1px solid var(--border)}
 .editor-host .CodeMirror-linenumber{color:var(--dim)}
 .editor-host .CodeMirror-cursor{border-left:1.7px solid var(--accent)}
@@ -356,7 +376,7 @@ canvas{display:block;width:100%;height:100%}
 .editor-host .cm-comment{color:#7ec8e3}
 .editor-host .cm-variable-2{color:#c2cad8}
 .editor-host .cm-quote{color:#9fb0ff}
-.ed-textarea{width:100%;height:100%;box-sizing:border-box;resize:none;background:transparent;color:var(--text);border:none;outline:none;padding:18px 22px;font-family:Consolas,'SF Mono',monospace;font-size:13.5px;line-height:1.65;tab-size:2}
+.ed-textarea{width:100%;height:100%;box-sizing:border-box;resize:none;background:transparent;color:var(--text);border:none;outline:none;padding:18px 22px;font-family:Consolas,'SF Mono',monospace;font-size:var(--editor-fs,13.5px);line-height:1.65;tab-size:2}
 .ed-preview-pane{flex:1;min-height:0;overflow:auto}
 .ed-preview-pane .note-content{padding:24px 40px 70px}
 .new-note-btn{float:right;font-size:10.5px;color:var(--accent);background:rgba(124,140,255,.1);border:1px solid rgba(124,140,255,.3);border-radius:99px;padding:1px 9px;cursor:pointer;transition:.15s}
@@ -387,6 +407,35 @@ body.row-resizing{cursor:row-resize;user-select:none}
 .right-panel[data-rmode="split"] #rz-split{display:block}
 .right-panel[data-rmode="split"] #outline-panel{display:block;flex:0 0 var(--split-top,42%);overflow:auto;border-bottom:1px solid var(--border)}
 .right-panel[data-rmode="split"] .graph-wrap{flex:1}
+
+/* Einstellungs-Menue (R7) */
+.side-settings{display:flex;align-items:center;gap:9px;padding:10px 14px;border-top:1px solid var(--border);color:var(--dim);font-size:12.5px;cursor:pointer;flex-shrink:0;user-select:none;transition:.15s}
+.side-settings:hover{background:var(--panel2);color:var(--text)}
+.side-settings .ss-ic{font-size:15px;line-height:1}
+.settings-modal{width:520px;max-height:82vh;display:flex;flex-direction:column}
+.settings-modal .set-head{padding:14px 18px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+.set-body{overflow:auto;padding:4px 18px 10px}
+.set-section{padding:13px 2px;border-bottom:1px solid rgba(255,255,255,.05)}
+.set-section:last-child{border-bottom:none}
+.set-label{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:9px;display:flex;align-items:center;gap:8px}
+.set-val{margin-left:auto;color:var(--accent);letter-spacing:0;text-transform:none;font-size:12px}
+.set-themes{display:flex;gap:8px;flex-wrap:wrap}
+.set-theme{flex:1;min-width:120px;padding:9px 12px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:12.5px;cursor:pointer;transition:.15s;text-align:left}
+.set-theme:hover{border-color:var(--accent)}
+.set-theme.active{border-color:var(--accent);background:rgba(124,140,255,.14);color:var(--accent)}
+.set-theme .st-sw{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:7px;vertical-align:middle}
+.set-body .set-range{width:100%;padding:0;border:none;background:none;accent-color:var(--accent);cursor:pointer}
+.set-body .set-select{width:100%;padding:8px 10px;background:#0d1017;border:1px solid #2a2f42;border-radius:8px;color:var(--text);font-size:13px;outline:none;cursor:pointer}
+.set-folders{display:flex;flex-direction:column;gap:6px}
+.set-folder{display:flex;align-items:center;gap:10px}
+.set-body .set-color{width:38px;height:30px;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer;padding:2px;flex-shrink:0}
+.set-folder-name{flex:1;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.set-folder-reset{cursor:pointer;color:var(--dim);font-size:15px;padding:1px 8px;border-radius:5px;flex-shrink:0}
+.set-folder-reset:hover{color:var(--accent);background:var(--panel2)}
+.set-vaultroot{display:flex;gap:8px}
+.set-body .set-input{flex:1;min-width:0;padding:8px 11px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;color:var(--text);outline:none;font-size:12px;font-family:Consolas,monospace}
+.set-body .set-input:focus{border-color:var(--accent)}
+.set-hint{font-size:11px;color:var(--dim);margin-top:7px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -421,13 +470,18 @@ body.row-resizing{cursor:row-resize;user-select:none}
         <div class="side-section">Vault <span class="new-note-btn" title="Neue Notiz" onclick="newNote()">+ Notiz</span></div>
         <div id="folder-list"></div>
       </div>
+      <div class="side-settings" onclick="openSettings()" title="Einstellungen oeffnen"><span class="ss-ic">&#9881;</span><span>Einstellungen</span></div>
     </div>
 
     <div class="resizer" id="rz-l"></div>
     <div class="col">
       <div class="tabbar" id="tabbar"></div>
-      <div class="note-area" id="note-area">
-        <div class="placeholder"><span class="big">&#9670;</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>
+      <div class="center-body" id="center-body">
+        <div class="note-area" id="note-area">
+          <div class="placeholder"><span class="big">&#9670;</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>
+        </div>
+        <div id="rz-center"></div>
+        <div id="note-pane2"></div>
       </div>
     </div>
 
@@ -537,6 +591,13 @@ body.row-resizing{cursor:row-resize;user-select:none}
   </div>
 </div>
 
+<div class="overlay" id="settings-overlay" onclick="closeSettings()">
+  <div class="palette settings-modal" onclick="event.stopPropagation()">
+    <div class="set-head">&#9881; Einstellungen</div>
+    <div class="set-body" id="settings-body"></div>
+    <div class="pal-footer"><span>Visuelle Einstellungen: lokal &middot; Vault-Speicherort: nexus.config.json</span></div>
+  </div>
+</div>
 <input id="file-input" type="file" multiple style="display:none" onchange="uploadFiles(this.files,currentFolder)">
 <script>
 // ───────── State ─────────
@@ -546,6 +607,7 @@ let noteIndex={};            // lowercased name/path -> real path
 let allMdFiles=[];           // flat list of md file nodes
 let _curHeadings=[], _curNotePath=null, _scrollSpyFn=null;
 let _curNoteRaw=null;
+let _panelPath;  // R6b: letzter Pfad, auf den das rechte Panel synchronisiert wurde (Guard)
 
 // ───────── Folder colors ─────────
 const COLORS={'Arbeit':'#3B82F6','Uni':'#10B981','Profil':'#8B5CF6','Unterhalt Heiko':'#EF4444','Unterhalt':'#EF4444','Bewerbungen':'#F59E0B','Gesundheit':'#EC4899','Julie – FROG':'#6366F1','Julie':'#6366F1','Motorrad':'#EA580C','Wissen':'#14B8A6','_Konversationen':'#06B6D4','_System':'#7C8CFF','Eingang':'#F59E0B','Vollmachten':'#8B5CF6','START':'#EAB308','start':'#EAB308'};
@@ -595,6 +657,7 @@ function updateActiveTab(path,mode){
   else{t=tabs[activeTab];t.path=path;t.mode=mode;}
   pushHist(t,path,mode);
   renderTabBar();
+  syncFromActivation();
 }
 function pushHist(t,path,mode){
   if(!Array.isArray(t.hist))t.hist=[];
@@ -633,22 +696,24 @@ async function renderTab(t){
 async function newTab(){
   if(!(await maybeLeaveEditor()))return;
   tabs.push({id:_tabSeq++,path:null,mode:'empty'});activeTab=tabs.length-1;
-  showEmptyTab();renderTabBar();
+  showEmptyTab();renderTabBar();syncFromActivation();
 }
 async function switchTab(i){
   if(i===activeTab||i<0||i>=tabs.length)return;
   if(!(await maybeLeaveEditor()))return;
   activeTab=i;renderTabBar();await renderTab(tabs[i]);
+  syncFromActivation();
 }
 async function closeTab(i){
   if(i<0||i>=tabs.length)return;
   const wasActive=(i===activeTab);
   if(wasActive&&!(await maybeLeaveEditor()))return;
   tabs.splice(i,1);
-  if(!tabs.length){tabs.push({id:_tabSeq++,path:null,mode:'empty'});activeTab=0;renderTabBar();_silentRender=true;showEmptyTab();_silentRender=false;return;}
+  if(!tabs.length){tabs.push({id:_tabSeq++,path:null,mode:'empty'});activeTab=0;renderTabBar();_silentRender=true;showEmptyTab();_silentRender=false;syncFromActivation();return;}
   if(activeTab>i)activeTab--;else if(activeTab===i)activeTab=Math.min(i,tabs.length-1);
   renderTabBar();
   if(wasActive)await renderTab(tabs[activeTab]);
+  if(wasActive)syncFromActivation();
 }
 function tabsRenamePath(oldP,newP){let ch=false;for(const t of tabs){if(t.path===oldP){t.path=newP;ch=true;}else if(t.path&&t.path.startsWith(oldP+'/')){t.path=newP+t.path.slice(oldP.length);ch=true;}}if(ch)renderTabBar();}
 function tabsClosePath(p){let ch=false;for(let i=0;i<tabs.length;i++){const t=tabs[i];if(t.path===p||(t.path&&t.path.startsWith(p+'/'))){t.path=null;t.mode='empty';ch=true;if(i===activeTab){_silentRender=true;showEmptyTab();_silentRender=false;}}}if(ch)renderTabBar();}
@@ -659,7 +724,7 @@ function initTabDnd(){
     if(_movingPath)return;
     const tab=e.target.closest('.tab');if(!tab)return;
     _draggingTabId=parseInt(tab.dataset.tidx,10);
-    e.dataTransfer.effectAllowed='move';
+    e.dataTransfer.effectAllowed='copyMove';
     e.dataTransfer.setData('text/plain',String(_draggingTabId));
   });
   bar.addEventListener('dragover',e=>{
@@ -688,6 +753,7 @@ function initTabDnd(){
   bar.addEventListener('dragend',()=>{
     _draggingTabId=null;
     document.querySelectorAll('.tab.drop-target').forEach(t=>t.classList.remove('drop-target'));
+    document.getElementById('center-body')?.classList.remove('drop-target');
   });
 }
 const TAB_KEY='nexus.tabs';
@@ -771,8 +837,9 @@ function initSplitResizer(){
 
 // ───────── Init ─────────
 async function init(){
-  loadCols();initResizers();resetTabs();initTabDnd();
+  loadCols();initResizers();resetTabs();initTabDnd();initCenterSplitDrop();initCenterResizer();
   setRightMode(localStorage.getItem('nexus.rightmode')||'graph');
+  applyTheme(currentTheme());applyEditorFs(currentEditorFs());
   const vaults=await api('/api/vaults');
   activeVault=vaults.find(v=>v.active)?.name ?? vaults[0]?.name;
   await refreshVaultSelector();
@@ -806,7 +873,7 @@ async function refreshTree(){
   const sb2=document.getElementById('folder-list');if(sb2)sb2.scrollTop=scroll;
 }
 async function switchVault(name){
-  saveTabs();
+  saveTabs();closeCenterSplit();
   activeVault=name; selectedPath=null; currentFolder='';
   document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';
   await loadVault();
@@ -1113,7 +1180,7 @@ function cssAttr(v){return (v||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").rep
 
 async function openFile(path,opts){
   if(!(await maybeLeaveEditor()))return;
-  if(!(opts&&opts.startup))graph.pinnedMain=false;
+  if(!(opts&&opts.startup))graph.pinnedMain=(localStorage.getItem('nexus.graphDefault')==='main');
   selectedPath=path;
   if(!_silentRender)updateActiveTab(path,'file');
   document.querySelectorAll('.tree-file.selected').forEach(e=>e.classList.remove('selected'));
@@ -1198,6 +1265,79 @@ function setRightMode(mode){
   document.querySelectorAll('#right-toggle button').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
   requestAnimationFrame(()=>requestAnimationFrame(refitGraph));
 }
+// ─── R6a: Tab per Drag&Drop als 2. Ansicht in die MITTE (Tab-Splitscreen); rechtes Panel bleibt ───
+let _centerSplitPath=null;
+async function openCenterSplit(path){
+  if(!path)return;
+  const cb=document.getElementById('center-body'),pane=document.getElementById('note-pane2');
+  if(!cb||!pane)return;
+  _centerSplitPath=path;
+  const fname=path.split('/').pop(),ext=extOf(path);
+  pane.innerHTML='<div class="np2-head"><span class="np2-tag">2. Ansicht</span><span class="np2-name">'+esc(fname)+'</span><span class="np2-x" title="Schliessen" onclick="closeCenterSplit()">&times;</span></div><div class="np2-body" id="np2-body"><div class="placeholder" style="padding-top:40px">Lade&hellip;</div></div>';
+  cb.classList.add('split');
+  window.dispatchEvent(new Event('resize'));
+  const body=document.getElementById('np2-body');
+  try{
+    if(ext===''||ext==='.md'||ext==='.markdown'){
+      const raw=await fetch(fileUrl(path)).then(r=>r.text());
+      const res=renderMarkdown(raw);
+      body.innerHTML='<div class="note-content"><div class="md-body">'+res.html+'</div></div>';
+      body.querySelectorAll('a.wikilink').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();if(a.dataset.path)openCenterSplit(a.dataset.path);}));
+      body.querySelectorAll('.callout.foldable .callout-title').forEach(t=>t.addEventListener('click',()=>t.closest('.callout').classList.toggle('collapsed')));
+      renderMermaid(body);renderMath(body);
+    }else if(IMG_EXT.includes(ext)){
+      body.innerHTML='<div class="img-view"><img src="'+fileUrl(path)+'" alt="'+esc(fname)+'"></div>';
+    }else if(ext==='.pdf'){
+      body.innerHTML='<iframe class="pdf-frame" src="'+fileUrl(path)+'#view=FitH"></iframe>';
+    }else{
+      const raw=await fetch(fileUrl(path)).then(r=>r.text());
+      body.innerHTML='<pre class="np2-pre">'+escHtml(raw)+'</pre>';
+    }
+  }catch(e){body.innerHTML='<div class="placeholder" style="padding-top:40px">Fehler: '+esc(e.message)+'</div>';}
+  logActivity('#7ec8e3','split (Mitte) &rarr; <b>'+esc(fname)+'</b>');
+}
+function closeCenterSplit(){
+  const cb=document.getElementById('center-body'),pane=document.getElementById('note-pane2');
+  _centerSplitPath=null;
+  if(cb)cb.classList.remove('split');
+  if(pane)pane.innerHTML='';
+  window.dispatchEvent(new Event('resize'));
+}
+function initCenterSplitDrop(){
+  const cb=document.getElementById('center-body');if(!cb)return;
+  cb.addEventListener('dragover',e=>{
+    if(_draggingTabId===null)return;
+    e.preventDefault();e.dataTransfer.dropEffect='copy';
+    cb.classList.add('drop-target');
+  });
+  cb.addEventListener('dragleave',e=>{
+    if(e.relatedTarget&&cb.contains(e.relatedTarget))return;
+    cb.classList.remove('drop-target');
+  });
+  cb.addEventListener('drop',e=>{
+    if(_draggingTabId===null)return;
+    e.preventDefault();e.stopPropagation();
+    cb.classList.remove('drop-target');
+    const t=tabs[_draggingTabId],path=t&&t.path;
+    _draggingTabId=null;
+    if(path)openCenterSplit(path);
+    else toast('Leerer Tab – nichts anzuzeigen');
+  });
+}
+function initCenterResizer(){
+  const handle=document.getElementById('rz-center');if(!handle)return;
+  const cb=document.getElementById('center-body');
+  try{const v=parseFloat(localStorage.getItem('nexus.centerL'));if(v>15&&v<85)cb.style.setProperty('--center-l',v+'%');}catch(e){}
+  handle.addEventListener('mousedown',function(e){
+    e.preventDefault();handle.classList.add('drag');document.body.classList.add('col-resizing');
+    const rect=cb.getBoundingClientRect(),startX=e.clientX;
+    const startPct=parseFloat(cb.style.getPropertyValue('--center-l'))||50;
+    const startPx=rect.width*(startPct/100);
+    function mv(ev){const px=Math.max(120,Math.min(rect.width-160,startPx+(ev.clientX-startX)));const pct=Math.round(px/rect.width*100);cb.style.setProperty('--center-l',pct+'%');localStorage.setItem('nexus.centerL',pct);window.dispatchEvent(new Event('resize'));}
+    function up(){document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);handle.classList.remove('drag');document.body.classList.remove('col-resizing');}
+    document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
+  });
+}
 function renderOutline(){
   const p=document.getElementById('outline-panel');if(!p)return;
   if(!_curHeadings.length){p.innerHTML='<div class="ol-empty">Keine Gliederung</div>';return;}
@@ -1226,6 +1366,27 @@ function bindScrollSpy(){
   area.addEventListener('scroll',_scrollSpyFn,{passive:true});
 }
 
+// ─── R6b: Rechtes Panel (Graph + Gliederung) folgt immer dem aktiven Tab ───
+function graphToMain(){ if(graph.mode!=='vault') setGraphVault(); }
+function applyActivePanel(path,headings,links){
+  const fresh = headings!==undefined;            // true = frisch gerenderte Notiz (echte Headings/Links)
+  if(!fresh && path===_panelPath) return;        // Guard: reine Aktivierungswechsel ohne Pfadwechsel ignorieren
+  _panelPath = path||null;
+  _curHeadings = headings||[];
+  _curNotePath = path||null;
+  renderOutline(); bindScrollSpy();
+  if(!path){ graphToMain(); return; }            // leerer Tab -> Hauptansicht, Gliederung leer
+  updateGraphForNote(path, links||[]);           // Notiz/Datei -> Ego-Graph (pinnedMain-Guard bleibt wirksam)
+}
+function syncFromActivation(){
+  const t=tabs[activeTab]||{};
+  let path=t.path||null; const mode=t.mode;
+  const ext=path?extOf(path):'';
+  // MD-Datei im 'file'-Modus wird von wireRendered mit echten Headings/Links synchronisiert -> hier ueberspringen (kein Doppel-Render)
+  if(mode==='file' && (ext===''||ext==='.md'||ext==='.markdown')) return;
+  if(mode==='folder') path=null;                 // Ordneransicht -> Hauptgraph + leere Gliederung
+  applyActivePanel(path);                         // Editor / Nicht-MD / leerer Tab
+}
 function wireRendered(area,path,res){
   area.querySelectorAll('a.wikilink').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();if(a.dataset.path)openFile(a.dataset.path);else doSearch(a.dataset.search||'');}));
   area.querySelectorAll('.md-tag,.chip.tag,.pv-tag').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();doSearch(el.dataset.tag||el.textContent.replace(/^#/,''));}));
@@ -1235,7 +1396,7 @@ function wireRendered(area,path,res){
   area.querySelectorAll('.callout.foldable .callout-title').forEach(t=>t.addEventListener('click',()=>t.closest('.callout').classList.toggle('collapsed')));
   area.querySelectorAll('.transclude[data-embed]').forEach(tc=>{tc.querySelector('.tc-head').addEventListener('click',()=>openFile(tc.dataset.embed));loadTransclude(tc);});
   area.querySelector('.ed-edit-btn')?.addEventListener('click',()=>openEditor(path));
-  _curHeadings=res.headings; _curNotePath=path; renderOutline(); bindScrollSpy();
+  applyActivePanel(path,res.headings,res.links);
   area.querySelectorAll('.task-cb').forEach((cb,idx)=>{
     cb.style.cursor='pointer';
     cb.addEventListener('click',async()=>{
@@ -1253,7 +1414,6 @@ function wireRendered(area,path,res){
       }catch(e){toast('Fehler: '+e.message,'error');}
     });
   });
-  updateGraphForNote(path,res.links||[]);
   renderMermaid(area);
   renderMath(area);
 }
@@ -1774,7 +1934,7 @@ async function ctxDelete(path,type){
   if(selectedPath===path){selectedPath=null;document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';setCrumb(esc(activeVault));}
   invalidateVaultGraph();await refreshTree();
 }
-function colorToHex(col){if(/^#[0-9a-f]{6}$/i.test(col))return col;const d=document.createElement('div');d.style.color=col;document.body.appendChild(d);const rgb=getComputedStyle(d).color;document.body.removeChild(d);const m=rgb.match(/d+/g);if(!m||m.length<3)return '#808080';return '#'+[m[0],m[1],m[2]].map(v=>parseInt(v).toString(16).padStart(2,'0')).join('');}
+function colorToHex(col){if(/^#[0-9a-f]{6}$/i.test(col))return col;const d=document.createElement('div');d.style.color=col;document.body.appendChild(d);const rgb=getComputedStyle(d).color;document.body.removeChild(d);const m=rgb.match(/\d+/g);if(!m||m.length<3)return '#808080';return '#'+[m[0],m[1],m[2]].map(v=>parseInt(v).toString(16).padStart(2,'0')).join('');}
 let _cpTarget=null;
 function ctxColor(name){
   _cpTarget=name;
@@ -1790,7 +1950,7 @@ function cpApply(){if(!_cpTarget)return;setCustomFolderColor(_cpTarget,document.
 function cpRemove(){if(!_cpTarget)return;setCustomFolderColor(_cpTarget,'none');cpClose();renderSidebar();invalidateVaultGraph();setGraphVault(true);}
 function cpClose(){document.getElementById('color-pop').classList.remove('show');_cpTarget=null;}
 document.addEventListener('click',e=>{closeCtx();if(!document.getElementById('color-pop').contains(e.target))cpClose();});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeCtx();cpClose();closePalette();closeVaultModal();pickerCancel();_confirmCancel();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeCtx();cpClose();closePalette();closeVaultModal();pickerCancel();_confirmCancel();closeSettings();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
 
 // ═════════════════════ DRAG & DROP / UPLOAD ═════════════════════
 document.addEventListener('dragenter',e=>{if(e.dataTransfer.types.includes('Files')){dragCounter++;document.getElementById('drop-overlay').classList.add('active');}});
@@ -1968,6 +2128,78 @@ async function removeVault(name){
     logActivity('#EF4444',`Vault entfernt → ${name}`);
     if(name===activeVault&&r.activeVault){activeVault=r.activeVault;await loadVault();}
     await refreshVaultSelector();await renderVaultList();
+  }catch(ex){toast('Fehler: '+ex.message,'error');}
+}
+
+// ───────── Einstellungs-Menue (R7) ─────────
+const NEXUS_THEMES={
+  dark:{label:'Dark (Standard)',sw:'#0e1430',vars:{}},
+  darker:{label:'Darker',sw:'#04060a',vars:{'--bg':'#04060a','--panel':'rgba(255,255,255,.03)','--panel2':'rgba(255,255,255,.055)','--border':'rgba(255,255,255,.07)','--text':'#cdd5e3','--dim':'#6b7488','--accent':'#7C8CFF'}},
+  blue:{label:'Soft Blue',sw:'#16385f',vars:{'--bg':'#0a1326','--panel':'rgba(124,150,255,.05)','--panel2':'rgba(124,150,255,.09)','--border':'rgba(124,150,255,.16)','--text':'#dde5f5','--dim':'#8893b5','--accent':'#6AA8FF'}}
+};
+const THEME_VARS=['--bg','--panel','--panel2','--border','--text','--dim','--accent'];
+function currentTheme(){return localStorage.getItem('nexus.theme')||'dark';}
+function applyTheme(id){
+  const t=NEXUS_THEMES[id]||NEXUS_THEMES.dark;
+  THEME_VARS.forEach(v=>document.documentElement.style.removeProperty(v));
+  Object.keys(t.vars).forEach(k=>document.documentElement.style.setProperty(k,t.vars[k]));
+}
+function setTheme(id){if(!NEXUS_THEMES[id])return;localStorage.setItem('nexus.theme',id);applyTheme(id);}
+function currentEditorFs(){const n=parseInt(localStorage.getItem('nexus.editorFontSize')||'',10);return (n>=12&&n<=20)?n:14;}
+function applyEditorFs(px){document.documentElement.style.setProperty('--editor-fs',px+'px');}
+function onEditorFsInput(v){const px=parseInt(v,10)||14;localStorage.setItem('nexus.editorFontSize',String(px));applyEditorFs(px);const e=document.getElementById('set-fs-val');if(e)e.textContent=px+'px';}
+function currentGraphDefault(){return localStorage.getItem('nexus.graphDefault')||'ego';}
+function setGraphDefault(v){localStorage.setItem('nexus.graphDefault',(v==='main')?'main':'ego');}
+function openSettings(){renderSettings();const o=document.getElementById('settings-overlay');if(o)o.classList.add('show');}
+function closeSettings(){const o=document.getElementById('settings-overlay');if(o)o.classList.remove('show');}
+async function renderSettings(){
+  const body=document.getElementById('settings-body');if(!body)return;
+  const th=currentTheme();
+  let h='<div class="set-section"><div class="set-label">Farb-Theme</div><div class="set-themes">';
+  for(const id of Object.keys(NEXUS_THEMES)){const t=NEXUS_THEMES[id];
+    h+='<button class="set-theme'+(id===th?' active':'')+'" data-set-theme="'+id+'"><span class="st-sw" style="background:'+t.sw+'"></span>'+esc(t.label)+'</button>';}
+  h+='</div></div>';
+  const fs=currentEditorFs();
+  h+='<div class="set-section"><div class="set-label">Editor-Schriftgr&ouml;&szlig;e<span class="set-val" id="set-fs-val">'+fs+'px</span></div><input type="range" class="set-range" id="set-fs" min="12" max="20" step="1" value="'+fs+'" oninput="onEditorFsInput(this.value)"></div>';
+  const gd=currentGraphDefault();
+  h+='<div class="set-section"><div class="set-label">Graph beim &Ouml;ffnen einer Notiz</div><select class="set-select" id="set-graph" onchange="setGraphDefault(this.value)"><option value="ego"'+(gd==='ego'?' selected':'')+'>Ego-Graph (Notiz im Fokus)</option><option value="main"'+(gd==='main'?' selected':'')+'>Hauptgraph (gesamtes Vault)</option></select></div>';
+  h+='<div class="set-section"><div class="set-label">Hauptthemen-Farben</div><div class="set-folders" id="set-folders"></div></div>';
+  h+='<div class="set-section"><div class="set-label">Vault-Speicherort</div><div class="set-vaultroot"><input type="text" class="set-input" id="set-vaultroot" placeholder="Pfad zum Vaults-Ordner&hellip;"><button class="ft-btn" style="padding:8px 14px" onclick="saveVaultRoot()">Speichern</button></div><div class="set-hint" id="set-vaultroot-hint">Ordner, in dem neue Vaults angelegt werden. Bestehende Vaults behalten ihren Pfad.</div></div>';
+  body.innerHTML=h;
+  body.querySelectorAll('[data-set-theme]').forEach(b=>b.addEventListener('click',()=>{setTheme(b.getAttribute('data-set-theme'));renderSettings();}));
+  renderFolderColors();
+  try{const r=await api('/api/settings/vaultsRoot');const inp=document.getElementById('set-vaultroot');if(inp&&!r.error)inp.value=r.vaultsRoot||'';}catch(e){}
+}
+function renderFolderColors(){
+  const host=document.getElementById('set-folders');if(!host)return;
+  host.innerHTML='';
+  const tops=(vaultTree||[]).filter(n=>n.type==='folder');
+  if(!tops.length){host.innerHTML='<div class="set-hint">Keine Hauptordner vorhanden.</div>';return;}
+  const custom=_customFolderColors();
+  for(const n of tops){
+    const row=document.createElement('div');row.className='set-folder';
+    const inp=document.createElement('input');inp.type='color';inp.className='set-color';
+    inp.value=colorToHex(folderColor(n.name)||'#808080');
+    inp.addEventListener('change',()=>{setCustomFolderColor(n.name,inp.value);renderSidebar();invalidateVaultGraph();setGraphVault(true);renderFolderColors();});
+    const nm=document.createElement('span');nm.className='set-folder-name';nm.textContent=n.name;
+    row.appendChild(inp);row.appendChild(nm);
+    if(Object.prototype.hasOwnProperty.call(custom,n.name)){
+      const rst=document.createElement('span');rst.className='set-folder-reset';rst.textContent='↺';rst.title='Standardfarbe wiederherstellen';
+      rst.addEventListener('click',()=>{const c=_customFolderColors();delete c[n.name];localStorage['nexus.folderColors']=JSON.stringify(c);renderSidebar();invalidateVaultGraph();setGraphVault(true);renderFolderColors();});
+      row.appendChild(rst);
+    }
+    host.appendChild(row);
+  }
+}
+async function saveVaultRoot(){
+  const inp=document.getElementById('set-vaultroot');if(!inp)return;
+  const p=(inp.value||'').trim();const hint=document.getElementById('set-vaultroot-hint');
+  if(!p){if(hint)hint.textContent='Bitte einen Pfad eingeben.';return;}
+  try{
+    const r=await api('/api/settings/vaultsRoot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vaultsRoot:p})});
+    if(r.error){toast('Fehler: '+r.error,'error');if(hint)hint.textContent='⚠ '+r.error;return;}
+    toast('✓ Vault-Speicherort gespeichert','success');logActivity('#10B981','vaultsRoot → '+esc(p));
+    if(hint)hint.textContent=r.note||'Gespeichert. Bitte Nexus neu starten.';
   }catch(ex){toast('Fehler: '+ex.message,'error');}
 }
 

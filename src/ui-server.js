@@ -1,7 +1,7 @@
 // src/ui-server.js – Express Web-UI: Dateibaum, Drag&Drop, Markitdown-Konvertierung
 import express from 'express';
 import multer from 'multer';
-import { createReadStream, readdirSync, statSync, mkdirSync, renameSync, existsSync, writeFileSync } from 'fs';
+import { createReadStream, readdirSync, statSync, mkdirSync, renameSync, existsSync, writeFileSync, rmSync } from 'fs';
 import { join, extname, basename, dirname, relative, resolve, sep } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
@@ -121,6 +121,32 @@ app.post('/api/vaults/active', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Einstellungen: Vault-Speicherort (vaultsRoot) ──────────────────────────────
+// GET liefert den aktuellen Wert (fuer die Anzeige im Einstellungs-Menue),
+// POST validiert + persistiert ihn strukturell in nexus.config.json via saveConfig().
+app.get('/api/settings/vaultsRoot', (_req, res) => {
+  res.json({ vaultsRoot: cfg.vaultsRoot || dataPath('vaults') });
+});
+
+app.post('/api/settings/vaultsRoot', (req, res) => {
+  try {
+    const raw = req.body?.vaultsRoot;
+    if (typeof raw !== 'string' || !raw.trim()) return res.status(400).json({ error: 'vaultsRoot fehlt' });
+    const p = raw.trim();
+    let ok = false;
+    try { ok = existsSync(p) && statSync(p).isDirectory(); } catch { ok = false; }
+    if (!ok) return res.status(400).json({ error: 'Pfad existiert nicht oder ist kein Ordner' });
+    cfg.vaultsRoot = p;
+    saveConfig();
+    res.json({
+      ok: true,
+      vaultsRoot: p,
+      reload: true,
+      note: 'Vault-Speicherort gespeichert. Neue Vaults werden hier angelegt; bestehende Vaults behalten ihren Pfad. Bitte Nexus neu starten, damit die Aenderung vollstaendig wirkt.'
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/tree', (req, res) => {
   try {
     const { vault } = getVault(req.query.vault);
@@ -237,6 +263,59 @@ app.post('/api/save', (req, res) => {
 });
 
 // ── Datei lesen (fuer Preview) ────────────────────────────────────────────────
+function safeFull(vaultPath, relPath) {
+  const root = resolve(vaultPath);
+  const full = resolve(vaultPath, relPath || '');
+  if (full !== root && !full.startsWith(root + sep)) return null;
+  return full;
+}
+
+app.post('/api/mkdir', (req, res) => {
+  try {
+    const { vault: vaultName, path: relPath } = req.body || {};
+    if (typeof relPath !== 'string' || !relPath.trim()) return res.status(400).json({ error: 'path fehlt' });
+    const { vault } = getVault(vaultName);
+    const full = safeFull(vault.path, relPath);
+    if (!full) return res.status(400).json({ error: 'Pfad ausserhalb des Vaults' });
+    if (existsSync(full)) return res.status(409).json({ error: 'Existiert bereits' });
+    mkdirSync(full, { recursive: true });
+    res.json({ ok: true, path: relPath.replace(/\\/g, '/') });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/rename', (req, res) => {
+  try {
+    const { vault: vaultName, oldPath, newPath } = req.body || {};
+    if (typeof oldPath !== 'string' || typeof newPath !== 'string' || !oldPath || !newPath)
+      return res.status(400).json({ error: 'oldPath/newPath fehlt' });
+    const { vault, tools } = getVault(vaultName);
+    const from = safeFull(vault.path, oldPath);
+    const to   = safeFull(vault.path, newPath);
+    if (!from || !to) return res.status(400).json({ error: 'Pfad ausserhalb des Vaults' });
+    if (from === resolve(vault.path)) return res.status(400).json({ error: 'Ungueltiger Pfad' });
+    if (!existsSync(from)) return res.status(404).json({ error: 'Quelle nicht gefunden' });
+    if (existsSync(to)) return res.status(409).json({ error: 'Ziel existiert bereits' });
+    mkdirSync(dirname(to), { recursive: true });
+    renameSync(from, to);
+    const result = tools.reindex();
+    res.json({ ok: true, oldPath: oldPath.replace(/\\/g, '/'), newPath: newPath.replace(/\\/g, '/'), indexed: result.indexed });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/delete', (req, res) => {
+  try {
+    const { vault: vaultName, path: relPath } = req.body || {};
+    if (typeof relPath !== 'string' || !relPath) return res.status(400).json({ error: 'path fehlt' });
+    const { vault, tools } = getVault(vaultName);
+    const full = safeFull(vault.path, relPath);
+    if (!full || full === resolve(vault.path)) return res.status(400).json({ error: 'Ungueltiger Pfad' });
+    if (!existsSync(full)) return res.status(404).json({ error: 'Nicht gefunden' });
+    rmSync(full, { recursive: true, force: true });
+    const result = tools.reindex();
+    res.json({ ok: true, path: relPath.replace(/\\/g, '/'), indexed: result.indexed });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/file', (req, res) => {
   try {
     const { vault: v } = getVault(req.query.vault);
