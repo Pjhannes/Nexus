@@ -436,6 +436,47 @@ body.row-resizing{cursor:row-resize;user-select:none}
 .set-body .set-input{flex:1;min-width:0;padding:8px 11px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;color:var(--text);outline:none;font-size:12px;font-family:Consolas,monospace}
 .set-body .set-input:focus{border-color:var(--accent)}
 .set-hint{font-size:11px;color:var(--dim);margin-top:7px;line-height:1.5}
+/* Usage Widget (R9) */
+#usage-widget{display:flex;align-items:center;gap:5px;cursor:pointer;padding:2px 8px;border-radius:5px;transition:.15s;white-space:nowrap;font-size:11px;line-height:1}
+#usage-widget:hover{background:var(--panel2)}
+#usage-popover{position:fixed;bottom:28px;right:14px;width:300px;background:rgba(11,14,24,.97);border:1px solid var(--border);border-radius:12px;box-shadow:0 -6px 30px rgba(0,0,0,.75);z-index:888;display:none;overflow:hidden}
+#usage-popover.show{display:block}
+.uw-head{display:flex;align-items:center;padding:9px 13px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;color:var(--text);gap:7px}
+.uw-close{margin-left:auto;color:var(--dim);cursor:pointer;width:18px;height:18px;line-height:16px;text-align:center;border-radius:4px;font-size:14px}
+.uw-close:hover{background:rgba(255,255,255,.1);color:var(--text)}
+.uw-refresh{color:var(--dim);cursor:pointer;width:18px;height:18px;line-height:16px;text-align:center;border-radius:4px;font-size:14px;margin-left:auto}
+.uw-refresh:hover{background:rgba(255,255,255,.1);color:var(--text)}
+.uw-refresh.spin{animation:uwSpin .6s linear infinite}
+@keyframes uwSpin{to{transform:rotate(360deg)}}
+.uw-body{padding:11px 13px 10px}
+.uw-row{margin-bottom:10px}
+.uw-label{display:flex;align-items:center;margin-bottom:4px;font-size:10.5px;color:var(--dim);gap:6px}
+.uw-pct{font-weight:600;font-size:11.5px}
+.uw-reset{margin-left:auto;font-size:10px}
+.uw-bar-track{height:4px;background:rgba(255,255,255,.07);border-radius:99px;overflow:hidden}
+.uw-bar-fill{height:100%;border-radius:99px;transition:width .4s}
+.uw-divider{height:1px;background:var(--border);margin:10px 0 9px}
+.uw-auth-title{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:7px}
+.uw-auth-row{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.uw-auth-row label{font-size:10.5px;color:var(--dim);white-space:nowrap;width:68px;flex-shrink:0}
+.uw-inp{flex:1;min-width:0;padding:4px 7px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:11px;outline:none;font-family:Consolas,monospace}
+.uw-inp:focus{border-color:var(--accent)}
+.uw-auth-btns{display:flex;gap:6px;margin-top:8px;justify-content:flex-end}
+.uw-btn{font-size:10.5px;padding:3px 9px;border-radius:5px;border:1px solid var(--border);background:var(--panel2);color:var(--dim);cursor:pointer;transition:.12s}
+.uw-btn:hover{color:var(--text);border-color:var(--accent)}
+.uw-btn.primary{border-color:var(--accent);color:var(--accent);background:rgba(124,140,255,.1)}
+.uw-btn.primary:hover{background:rgba(124,140,255,.2)}
+.uw-msg{font-size:11px;color:var(--dim);text-align:center;padding:8px 0;font-style:italic}
+.uw-sb-bar{display:inline-flex;flex-direction:column;gap:2px;justify-content:center;vertical-align:middle;margin-right:2px}
+.uw-sb-track{width:30px;height:3px;background:rgba(255,255,255,.12);border-radius:99px;overflow:hidden;display:block}
+.uw-sb-fill{height:100%;border-radius:99px;display:block;transition:width .4s}
+.set-toggle-group{display:flex;gap:4px;flex-wrap:wrap}
+.set-toggle{font-size:10.5px;padding:3px 10px;border-radius:5px;border:1px solid var(--border);background:var(--panel2);color:var(--dim);cursor:pointer;transition:.12s}
+.set-toggle:hover{color:var(--text);border-color:var(--accent)}
+.set-toggle.active{border-color:var(--accent);color:var(--accent);background:rgba(124,140,255,.15)}
+.set-thresh-row{display:flex;align-items:center;gap:7px;margin-top:8px;font-size:11px;color:var(--dim);flex-wrap:wrap}
+.set-thresh-inp{width:46px;padding:3px 6px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:11px;text-align:center;outline:none}
+.set-thresh-inp:focus{border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -532,7 +573,7 @@ body.row-resizing{cursor:row-resize;user-select:none}
     <span><span class="dot-status"></span><span class="ok">MCP bereit</span></span>
     <span id="sb-index">&mdash;</span>
     <span id="sb-watcher">Watcher aktiv</span>
-    <span class="ml" id="sb-vault">&mdash;</span>
+    <span class="ml" id="sb-vault">&mdash;</span><span id="usage-widget" onclick="openUsagePopover()" title="Claude-Verbrauch">— / —</span>
   </div>
 </div>
 
@@ -598,6 +639,7 @@ body.row-resizing{cursor:row-resize;user-select:none}
     <div class="pal-footer"><span>Visuelle Einstellungen: lokal &middot; Vault-Speicherort: nexus.config.json</span></div>
   </div>
 </div>
+<div id="usage-popover"><div class="uw-head">&#x26A1; Claude-Verbrauch<span class="uw-refresh" id="uw-refresh-btn" onclick="uwManualRefresh()" title="Jetzt aktualisieren">&#x27F3;</span><span class="uw-close" onclick="closeUsagePopover()">&#xD7;</span></div><div class="uw-body" id="uw-body"></div></div>
 <input id="file-input" type="file" multiple style="display:none" onchange="uploadFiles(this.files,currentFolder)">
 <script>
 // ───────── State ─────────
@@ -1950,7 +1992,7 @@ function cpApply(){if(!_cpTarget)return;setCustomFolderColor(_cpTarget,document.
 function cpRemove(){if(!_cpTarget)return;setCustomFolderColor(_cpTarget,'none');cpClose();renderSidebar();invalidateVaultGraph();setGraphVault(true);}
 function cpClose(){document.getElementById('color-pop').classList.remove('show');_cpTarget=null;}
 document.addEventListener('click',e=>{closeCtx();if(!document.getElementById('color-pop').contains(e.target))cpClose();});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeCtx();cpClose();closePalette();closeVaultModal();pickerCancel();_confirmCancel();closeSettings();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeCtx();cpClose();closePalette();closeVaultModal();pickerCancel();_confirmCancel();closeSettings();closeUsagePopover();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
 
 // ═════════════════════ DRAG & DROP / UPLOAD ═════════════════════
 document.addEventListener('dragenter',e=>{if(e.dataTransfer.types.includes('Files')){dragCounter++;document.getElementById('drop-overlay').classList.add('active');}});
@@ -2165,6 +2207,24 @@ async function renderSettings(){
   h+='<div class="set-section"><div class="set-label">Graph beim &Ouml;ffnen einer Notiz</div><select class="set-select" id="set-graph" onchange="setGraphDefault(this.value)"><option value="ego"'+(gd==='ego'?' selected':'')+'>Ego-Graph (Notiz im Fokus)</option><option value="main"'+(gd==='main'?' selected':'')+'>Hauptgraph (gesamtes Vault)</option></select></div>';
   h+='<div class="set-section"><div class="set-label">Hauptthemen-Farben</div><div class="set-folders" id="set-folders"></div></div>';
   h+='<div class="set-section"><div class="set-label">Vault-Speicherort</div><div class="set-vaultroot"><input type="text" class="set-input" id="set-vaultroot" placeholder="Pfad zum Vaults-Ordner&hellip;"><button class="ft-btn" style="padding:8px 14px" onclick="saveVaultRoot()">Speichern</button></div><div class="set-hint" id="set-vaultroot-hint">Ordner, in dem neue Vaults angelegt werden. Bestehende Vaults behalten ihren Pfad.</div></div>';
+  const _uc=getUsageCfg();
+  h+='<div class="set-section"><div class="set-label">Claude Usage-Widget</div>';
+  h+='<div style="margin-bottom:6px;font-size:10.5px;color:var(--dim)">Anzeige</div>';
+  h+='<div class="set-toggle-group">';
+  h+='<button class="set-toggle'+(_uc.display==='pct'?' active':'')+'" onclick="setUsageCfg(&quot;display&quot;,&quot;pct&quot;);renderUsageWidget();renderSettings()">Prozent</button>';
+  h+='<button class="set-toggle'+(_uc.display==='bar'?' active':'')+'" onclick="setUsageCfg(&quot;display&quot;,&quot;bar&quot;);renderUsageWidget();renderSettings()">Balken</button>';
+  h+='<button class="set-toggle'+(_uc.display==='both'?' active':'')+'" onclick="setUsageCfg(&quot;display&quot;,&quot;both&quot;);renderUsageWidget();renderSettings()">Beides</button>';
+  h+='</div>';
+  h+='<div class="set-thresh-row"><span>Warnung ab</span><input class="set-thresh-inp" type="number" min="1" max="99" value="'+_uc.warn+'" oninput="setUsageCfg(&quot;warn&quot;,+this.value);renderUsageWidget()"><span>%</span><span style="margin-left:6px">Kritisch ab</span><input class="set-thresh-inp" type="number" min="1" max="100" value="'+_uc.crit+'" oninput="setUsageCfg(&quot;crit&quot;,+this.value);renderUsageWidget()"><span>%</span></div>';
+  h+='<div style="margin-top:10px;margin-bottom:6px;font-size:10.5px;color:var(--dim)">Position</div>';
+  h+='<div class="set-toggle-group">';
+  h+='<button class="set-toggle'+(_uc.position==='right'?' active':'')+'" onclick="setUsageCfg(&quot;position&quot;,&quot;right&quot;);applyUsagePosition();renderSettings()">Rechts</button>';
+  h+='<button class="set-toggle'+(_uc.position==='left'?' active':'')+'" onclick="setUsageCfg(&quot;position&quot;,&quot;left&quot;);applyUsagePosition();renderSettings()">Links (neben Watcher)</button>';
+  h+='</div>';
+  h+='<div style="margin-top:10px;margin-bottom:6px;font-size:10.5px;color:var(--dim)">Aktualisierungsintervall</div>';
+  h+='<div class="set-toggle-group">';
+  [1,5,15,30].forEach(function(m){h+='<button class="set-toggle'+(_uc.refreshMin===m?' active':'')+'" onclick="setUsageCfg(&quot;refreshMin&quot;,'+m+');applyUsageInterval();renderSettings();">'+m+'&nbsp;min</button>';});
+  h+='</div></div>';
   body.innerHTML=h;
   body.querySelectorAll('[data-set-theme]').forEach(b=>b.addEventListener('click',()=>{setTheme(b.getAttribute('data-set-theme'));renderSettings();}));
   renderFolderColors();
@@ -2203,6 +2263,170 @@ async function saveVaultRoot(){
   }catch(ex){toast('Fehler: '+ex.message,'error');}
 }
 
+
+// ── R9: Claude Usage Widget ──────────────────────────────────────────
+const CLAUDE_AUTH_KEY='nexus.claudeAuth';
+let _usageData=null,_usagePopoverOpen=false,_usageInterval=null;
+function getUsageAuth(){try{return JSON.parse(localStorage.getItem(CLAUDE_AUTH_KEY)||'null');}catch(e){return null;}}
+function setUsageAuth(a){localStorage.setItem(CLAUDE_AUTH_KEY,JSON.stringify(a));}
+function getUsageCfg(){const d={display:'pct',warn:75,crit:90,position:'right',refreshMin:5};try{return Object.assign({},d,JSON.parse(localStorage.getItem('nexus.usageCfg')||'{}'));}catch(e){return d;}}
+function setUsageCfg(k,v){const c=getUsageCfg();c[k]=v;localStorage.setItem('nexus.usageCfg',JSON.stringify(c));}
+function usageColor(p){const c=getUsageCfg();return p>=c.crit?'#ef4444':p>=c.warn?'#f59e0b':'var(--accent)';}
+function fmtReset(iso){
+  if(!iso)return '';
+  const d=new Date(iso),now=new Date(),ms=d-now;
+  if(ms<=0)return 'bald';
+  const h=Math.floor(ms/3600000),m=Math.floor((ms%3600000)/60000);
+  if(h>=24)return Math.floor(h/24)+'d';
+  if(h>0)return h+'h '+m+'m';
+  return m+'m';
+}
+function renderUsageWidget(){
+  const el=document.getElementById('usage-widget');if(!el)return;
+  const auth=getUsageAuth();
+  if(!auth){el.innerHTML='— / —';el.style.color='var(--dim)';return;}
+  if(!_usageData){el.innerHTML='↺ …';el.style.color='var(--dim)';return;}
+  if(_usageData._error){el.innerHTML='<span style="color:#e07b7b">⚠ Fehler</span>';return;}
+  const s=Math.round((_usageData.five_hour||{}).utilization||0);
+  const w=Math.round((_usageData.seven_day||{}).utilization||0);
+  const cs=usageColor(s),cw=usageColor(w);
+  const cfg=getUsageCfg();
+  el.style.color='var(--dim)';
+  const bar='<span class="uw-sb-bar">'
+    +'<span class="uw-sb-track"><span class="uw-sb-fill" style="width:'+s+'%;background:'+cs+'"></span></span>'
+    +'<span class="uw-sb-track"><span class="uw-sb-fill" style="width:'+w+'%;background:'+cw+'"></span></span>'
+    +'</span>';
+  const pct='<span style="color:'+cs+';font-weight:600">'+s+'%</span> · '+w+'%';
+  if(cfg.display==='bar')el.innerHTML=bar;
+  else if(cfg.display==='both')el.innerHTML=bar+pct;
+  else el.innerHTML=pct;
+}
+function renderUsagePopoverBody(){
+  const body=document.getElementById('uw-body');if(!body)return;
+  const auth=getUsageAuth()||{};
+  let html='';
+  if(_usageData&&!_usageData._error){
+    const s=Math.round((_usageData.five_hour||{}).utilization||0);
+    const w=Math.round((_usageData.seven_day||{}).utilization||0);
+    const sr=fmtReset((_usageData.five_hour||{}).resets_at);
+    const wr=fmtReset((_usageData.seven_day||{}).resets_at);
+    html+='<div class="uw-row"><div class="uw-label"><span>Session (5h)</span>'
+      +'<span class="uw-pct" style="color:'+usageColor(s)+'">'+s+'%</span>'
+      +(sr?'<span class="uw-reset">⟳ '+sr+'</span>':'')
+      +'</div><div class="uw-bar-track"><div class="uw-bar-fill" style="width:'+s+'%;background:'+usageColor(s)+'"></div></div></div>';
+    html+='<div class="uw-row"><div class="uw-label"><span>Woche (7d)</span>'
+      +'<span class="uw-pct" style="color:'+usageColor(w)+'">'+w+'%</span>'
+      +(wr?'<span class="uw-reset">⟳ '+wr+'</span>':'')
+      +'</div><div class="uw-bar-track"><div class="uw-bar-fill" style="width:'+w+'%;background:'+usageColor(w)+'"></div></div></div>';
+    html+='<div class="uw-divider"></div>';
+  } else if(auth.sessionKey){
+    html+='<div class="uw-msg">'+(_usageData&&_usageData._error?'⚠ '+esc(_usageData._error):'⟳ Lädt…')+'</div><div class="uw-divider"></div>';
+  }
+  html+='<div class="uw-auth-title">Zugangsdaten</div>';
+  html+='<div class="uw-auth-row"><label>Session-Key</label>'
+    +'<input id="uw-sk" class="uw-inp" type="password" placeholder="sk-ant-…" value="'+esc(auth.sessionKey||'')+'" autocomplete="off"></div>';
+  html+='<div class="uw-auth-row"><label>Org-ID</label>'
+    +'<input id="uw-org" class="uw-inp" type="text" placeholder="UUID…" value="'+esc(auth.orgId||'')+'" autocomplete="off">'
+    +'<button class="uw-btn" onclick="uwAutoDetect()" title="Org-ID automatisch ermitteln">⟳</button></div>';
+  html+='<div class="uw-auth-btns">'
+    +'<button class="uw-btn" onclick="closeUsagePopover()">Schließen</button>'
+    +'<button class="uw-btn primary" onclick="uwSaveAndFetch()">Speichern</button></div>';
+  body.innerHTML=html;
+}
+async function uwAutoDetect(){
+  const sk=(document.getElementById('uw-sk')?document.getElementById('uw-sk').value:'').trim();
+  if(!sk){toast('Session-Key eingeben','error');return;}
+  const orgInp=document.getElementById('uw-org');
+  if(orgInp){orgInp.placeholder='⟳ Ermittle…';orgInp.disabled=true;}
+  try{
+    const r=await fetch('/api/claude-orgs?sessionKey='+encodeURIComponent(sk));
+    const orgs=await r.json();
+    if(orgInp){orgInp.placeholder='UUID…';orgInp.disabled=false;}
+    if(Array.isArray(orgs)&&orgs.length>0){
+      const org=orgs.find(function(o){return o.isTeam;})||orgs[0];
+      if(orgInp)orgInp.value=org.id;
+      toast('Org gefunden: '+org.name,'success');
+    }else{
+      toast(orgs.error?'Fehler: '+orgs.error:'Keine Org gefunden','error');
+    }
+  }catch(e){
+    if(orgInp){orgInp.placeholder='UUID…';orgInp.disabled=false;}
+    toast('Fehler: '+e.message,'error');
+  }
+}
+async function uwSaveAndFetch(){
+  const sk=(document.getElementById('uw-sk')?document.getElementById('uw-sk').value:'').trim();
+  const orgId=(document.getElementById('uw-org')?document.getElementById('uw-org').value:'').trim();
+  if(!sk){toast('Session-Key fehlt','error');return;}
+  if(!orgId){toast('Org-ID fehlt – ⟳ nutzen','error');return;}
+  setUsageAuth({sessionKey:sk,orgId:orgId});
+  toast('Zugangsdaten gespeichert','success');
+  _usageData=null;renderUsageWidget();renderUsagePopoverBody();
+  await fetchUsageData();
+  renderUsageWidget();renderUsagePopoverBody();
+  if(_usageInterval)clearInterval(_usageInterval);
+  _usageInterval=setInterval(fetchUsageData,getUsageCfg().refreshMin*60*1000);
+}
+async function fetchUsageData(){
+  const auth=getUsageAuth();
+  if(!auth||!auth.sessionKey||!auth.orgId){renderUsageWidget();return;}
+  try{
+    const r=await fetch('/api/claude-usage?sessionKey='+encodeURIComponent(auth.sessionKey)+'&orgId='+encodeURIComponent(auth.orgId));
+    const d=await r.json();
+    _usageData=d.error?{_error:d.error}:d;
+  }catch(e){_usageData={_error:e.message};}
+  renderUsageWidget();
+}
+async function uwManualRefresh(){
+  const btn=document.getElementById('uw-refresh-btn');
+  if(btn)btn.classList.add('spin');
+  await fetchUsageData();
+  renderUsagePopoverBody();
+  if(btn)btn.classList.remove('spin');
+}
+function applyUsageInterval(){
+  if(_usageInterval)clearInterval(_usageInterval);
+  const auth=getUsageAuth();
+  if(auth&&auth.sessionKey&&auth.orgId)
+    _usageInterval=setInterval(fetchUsageData,getUsageCfg().refreshMin*60*1000);
+}
+function openUsagePopover(){
+  const pop=document.getElementById('usage-popover');if(!pop)return;
+  renderUsagePopoverBody();pop.classList.add('show');_usagePopoverOpen=true;
+  setTimeout(function(){document.addEventListener('click',_uwClickOut,{capture:true});},10);
+}
+function closeUsagePopover(){
+  const pop=document.getElementById('usage-popover');
+  if(pop)pop.classList.remove('show');
+  _usagePopoverOpen=false;
+  document.removeEventListener('click',_uwClickOut,{capture:true});
+}
+function _uwClickOut(e){
+  const pop=document.getElementById('usage-popover'),w=document.getElementById('usage-widget');
+  if(pop&&!pop.contains(e.target)&&w&&!w.contains(e.target))closeUsagePopover();
+}
+function applyUsagePosition(){
+  const el=document.getElementById('usage-widget');if(!el)return;
+  const cfg=getUsageCfg();
+  const sb=el.closest('.statusbar');if(!sb)return;
+  if(cfg.position==='left'){
+    const watcher=document.getElementById('sb-watcher');
+    if(watcher)sb.insertBefore(el,watcher);
+  } else {
+    sb.appendChild(el);
+  }
+}
+function initUsageWidget(){
+  applyUsagePosition();
+  renderUsageWidget();
+  const auth=getUsageAuth();
+  if(auth&&auth.sessionKey&&auth.orgId){
+    fetchUsageData();
+    _usageInterval=setInterval(fetchUsageData,getUsageCfg().refreshMin*60*1000);
+  }
+}
+
+initUsageWidget();
 init();
 </script>
 </body>

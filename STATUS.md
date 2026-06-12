@@ -28,7 +28,7 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 | ~~R6~~ | ~~P1~~ | ~~**Splitscreen-Verbesserung: Tab per D&D in 2. Fenster ziehen; rechtes Panel (Graph/Outline) sync zur aktiven Datei**~~ | ~~Opus~~ | ✅ Session 20 |
 | ~~R7~~ | ~~P2~~ | ~~**Einstellungs-Menü** – Button unten links öffnet Panel: Farb-Theme, Hauptthemen-Farben, Vault-Pfad, weitere sinnvolle Optionen; Persistence in localStorage / nexus.config.json~~ | ~~Sonnet~~ | ✅ Session 21 |
 | R8 | P2 | **Claude in Suche oben rechts einbinden** – wie im Preview; Claude-API-Key konfigurierbar; auch auf anderem PC nutzbar | **Opus** | API-Integration + Key-Management + Security; architektonisch komplex |
-| R9 | P2 | **Claude Usage-Widget unten rechts** – nach GitHub `SlavomirDurej/claude-usage-widget`; in Claude-Aktivitäts-Zeile; Login-Daten änderbar | **Sonnet** | Externe Lib einbinden + Config-UI; klar abgegrenzt |
+| ~~R9~~ | ~~P2~~ | ~~**Claude Usage-Widget unten rechts** – nach GitHub `SlavomirDurej/claude-usage-widget`; in Claude-Aktivitäts-Zeile; Login-Daten änderbar~~ | ~~Sonnet~~ | ✅ Session 22 |
 | R10 | P2 | **Installer verbessern** – kein CMD-Fenster, vollwertige Electron-App auf Pauls PC; NSIS-Installer für Fremd-PC (Arbeit von Session 11 finalisieren: `npm run dist` testen, SmartScreen-Workaround) | **Sonnet** | electron-builder schon konfiguriert; Hauptarbeit ist Windows-Test + Feinschliff |
 | R11 | P3 | **3 weitere UI-Design-Vorschläge für index.html** – Alternativen zum aktuellen Look, nur Mockups/HTML | **Opus** | Kreativ-intensiv; Opus generiert hochwertigere Design-Varianten |
 | R12 | P3 | **Obsidian-Regeln und Arbeitsweisen in Nexus übernehmen** – alle sinnvollen Obsidian-Workflows (Templates, Daily Notes, Kanban, Tags, Properties…) als Nexus-Features oder MCP-Tools abbilden | **Opus** | Großer Scope; braucht Analyse der Obsidian-Funktionen + Architektur-Entscheidungen |
@@ -47,6 +47,26 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 9. **R11** (Design-Vorschläge)
 10. **R12** (Obsidian-Regeln)
 11. **R13** (Vergleich)
+
+---
+
+## Stand: 2026-06-12 (Session 22 – R9 Claude Usage-Widget)
+
+5 Patches via `scripts/safe-edit.mjs` auf `public/index.html` + 2 neue Backend-Endpoints in `src/ui-server.js`. Verifiziert: `verify:html` OK (2367 Zeilen, Ende `</html>`, Inline-Script `node --check` grün), `md-render.test.mjs` 25/25.
+
+### Erledigt
+- [x] **R9 + R9b – Claude Usage-Widget + Einstellungen.** `<span id="usage-widget">` in der Statusleiste ganz rechts (nach `#sb-vault`). Kompakte Anzeige: `XX% · YY%` (Session 5h / Woche 7d) farbkodiert (grün→orange→rot ab 75%/90%). Klick öffnet Popover `#usage-popover` (fixed, bottom-right) mit:
+  - **Auslastungs-Balken** für 5h-Session + 7d-Woche (Utilization 0–100%, Reset-Countdown).
+  - **Zugangsdaten-Formular**: Session-Key (password input) + Org-ID (text input) mit ⟳-Auto-Detect-Button (`/api/claude-orgs`). Speichern → `localStorage['nexus.claudeAuth']`.
+  - Ohne Credentials: Widget zeigt `— / —`.
+  - Esc + Click-outside schließen das Popover.
+  - Auto-Refresh alle 5 min via `setInterval`.
+  - **R9b – Widget-Einstellungen** im Einstellungs-Menü (⚙): Anzeige-Modus (Prozent / Balken / Beides), konfigurierbare Schwellenwerte (Warnung / Kritisch in %), Position (Rechts Standard / Links neben Watcher). Persistence in `localStorage['nexus.usageCfg']`. Mini-Doppelbalken im Statusbar (`.uw-sb-bar`). `applyUsagePosition()` verschiebt Widget per `insertBefore`/`appendChild`. Alles sofort wirksam beim Klicken.
+- [x] **Backend:** `GET /api/claude-usage?sessionKey=&orgId=` → Proxy auf `https://claude.ai/api/organizations/${orgId}/usage` (Cookie-Auth server-side, umgeht CORS). `GET /api/claude-orgs?sessionKey=` → Org-Liste + Filter auf `capabilities.includes('chat')`.
+
+### TODO Paul
+- [ ] App neu starten (`npm run app`), Session-Key aus Browser-DevTools holen (`claude.ai` → Application → Cookies → `sessionKey`), Widget klicken → Zugangsdaten eingeben → Org-ID per ⟳ ermitteln → Speichern. Widget sollte Verbrauch anzeigen.
+- [ ] Git-Commit: `git add public/index.html src/ui-server.js STATUS.md && git commit -m "Session 22: R9 Claude Usage-Widget (Statusbar, Proxy-Endpoints, localStorage-Auth)"`
 
 ---
 
@@ -507,6 +527,8 @@ node src/ui-server.js
 ## Usage-Log (Regel 22)
 | Session | Datum | Inhalt | Start % | End % |
 |---|---|---|---|---|
+| 22 | 2026-06-12 | R9 Claude Usage-Widget: 5 Patches safe-edit (CSS/Statusbar/Popover-HTML/Esc-Handler/JS), 2 Backend-Proxy-Endpoints (/api/claude-usage + /api/claude-orgs), localStorage nexus.claudeAuth; verify:html 2367 Zeilen + 25/25 gruen | - | - |
+| 21 | 2026-06-11 | R7 Einstellungs-Menü: Theme/Ordnerfarben/Vault-Pfad/Editor-Font/Graph-Default + vaultsRoot-Endpoint; 10 Patches safe-edit; verify:html 2210 Zeilen + 25/25 gruen | - | - |
 | 20b | 2026-06-11 | R6a korrigiert: Tab-Splitscreen in die MITTE (#center-body/#note-pane2/#rz-center, openCenterSplit/closeCenterSplit/initCenterSplitDrop/initCenterResizer), alter Right-Panel-Overlay-Ansatz entfernt; rechtes Panel bleibt daneben; 8 Patches via safe-edit; verify:html 2100 Zeilen + 25/25 gruen | - | - |
 | 20 | 2026-06-11 | R6 Splitscreen-Upgrade: R6b Panel-Sync (_panelPath-Guard, applyActivePanel/syncFromActivation/graphToMain in switchTab/updateActiveTab/wireRendered/newTab/closeTab) + R6a Tab-D&D Split-Preview (#split-preview Overlay, openSplitPreview/closeSplitPreview/initSplitDrop, Drop-Feedback); 16 Patches via safe-edit; verify:html 2070 Zeilen + 25/25 gruen | - | - |
 | 19 | 2026-06-11 | R5 Sidebar-Farbfeld Variante B: isTop in makeFolderEl, folder-gradient CSS (color-mix Gradient), folder-label; verify:html 1937 Zeilen + 25/25 gruen |
