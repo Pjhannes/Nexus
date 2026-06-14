@@ -50,6 +50,192 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 
 ---
 
+## Stand: 2026-06-15 (Session 27c – Studio: Farb-Regression behoben + Subfolder-Auto-Scroll)
+
+Paul-Report (Screenshot + Mockup `design-mockups/variante-b-soft-dark.html` als Farb-Referenz): 27b-Titelleisten-Fix
+machte es **schlimmer** (Titelleiste fälschlich `--panel`/#2a2928), und die eigentliche „weiße Linie" war eine
+**vertikale** Linie an der Notizfenster-Rundung. Live im Browser-Preview (`getComputedStyle`) diagnostiziert.
+
+### Erledigt
+- [x] **Vertikale weiße Linie an der Rundung = Rail-`border-right`.** Ursache exakt gemessen: `.col.side` trug die
+  Basis-Regel `border-right:1px solid var(--border)` (#3a3836) bei x=60 – die abgerundete Karten-Ecke (radius oben-links)
+  weicht dort zurück und legt diese gerade Linie frei. Fix: `.app[data-layout="softdark"] .col.side{border-right:none}`.
+- [x] **Farben wie im Mockup** („oben + hinter den Icons gleiche Farbe"): Studio-Titelleiste `var(--panel)`→**`var(--bg)`**
+  (#1f1e1d). Damit Titelleiste **und** Rail beide #1f1e1d – identisch zum Mockup (`titlebar/rail = --bg`). Karte bleibt
+  #2a2928 (wie zuvor). Verifiziert: titlebar bg rgb(31,30,29), rail bg rgb(31,30,29), rail `border-right:0px`.
+- [x] **Subfolder-Auto-Scroll im Flyout** (Wunsch „genau so wie das Hochscrollen"): Klappt man im Themen-Flyout einen
+  Unterordner auf, wird das **ganze Flyout (`top`) animiert verschoben**, bis der **Mittelpunkt der Unterordner-Reihe
+  exakt auf dem Mittelpunkt des Themen-Icons** liegt (Abstand Reihe↔Oberkante bleibt gleich, oberer Rand wandert mit).
+  Nur beim Aufklappen, nicht beim Theme-Öffnen (dessen Platzierung bleibt unverändert). Umsetzung: zweiter Click-Listener
+  je `.folder-row` (makeFolderEl ruft nur `stopPropagation`, nicht `stopImmediatePropagation` → feuert nach dem
+  Aufklappen); `newTop = curTop + (iconCenter − rowCenter)`, animiert via neuem `tween()` (easeOutCubic, 320 ms);
+  Icon-Referenz in `_railFlyoutBtn`.
+  - *Nachjustierung (Paul-Report „Ausrichtung"):* zuerst auf „knapp unter den Kopf" gescrollt – jetzt exakte
+    Mittelpunkt-zu-Mittelpunkt-Ausrichtung wie gewünscht.
+  - *Nachjustierung 2 (Paul „solange oben schieben reicht; sonst im Fenster scrollen"):* `newTop` wird bei `<8`
+    auf 8 geklemmt und der **Rest per Innen-Scroll** des Flyouts nachgeholt (`scrollRest=8-newTop`, beide gleichzeitig,
+    gleicher easeOut). Reicht auch der Scroll-Spielraum nicht (Reihe nahe Inhalts-Unterkante), wird so weit gescrollt
+    wie möglich. 3 Fälle live verifiziert (alle exakt bzw. physikalisches Maximum):
+    Platz oben → exakt; Top erreicht + Scroll-Spielraum → exakt (rowCenterFinal=133=iconCenter); Top erreicht + Reihe
+    unten → bis maxScroll.
+
+- [x] **Trennlinie oben unter dem Vault-Icon** (Paul: „genau diese Trennlinie auch oben"): neues
+  `<div class="rail-sep" id="rail-sep-top">` zwischen `.vault-row` und `#side-scroll`; `#rail-sep-top{display:none}`,
+  im Studio `display:block;align-self:center` (sonst linksbündig, da `.side` nur `flex-direction:column` ohne
+  `align-items:center`). Identisch zur unteren `.rail-sep` (24×1px, `--border`), zentriert, fix (scrollt nicht mit).
+
+### Verifikation (Browser-Preview, getComputedStyle/Geometrie)
+- [x] `npm run verify:html` → **OK** (2808 Zeilen, Inline-Script `node --check` grün).
+- [x] Trennlinie oben: klassisch `display:none`; Studio `display:block`, `#3a3836`, 24×1px, `sepCenterX==railCenterX` (zentriert),
+  unter dem Vault-Icon und über den Theme-Icons.
+- [x] Titelleiste/Rail = #1f1e1d, Rail-`border-right`=0 (Linie weg).
+- [x] Rail-Auto-Scroll: letztes (15.) Thema öffnen → Flyout-Unterkante 814 ≤ vh 826 (komplett sichtbar).
+- [x] Subfolder-Ausrichtung: synthetischer Test (Icon-Mitte=225) → `newTop` so berechnet, dass `rowCenterAfter==225`
+  (`aligned:true`), exakte Mittelpunkt-Deckung. **Animation selbst** nur im echten Fenster sichtbar – der Headless-Preview
+  ist `visibilityState:hidden`, dort feuert `requestAnimationFrame` nicht (rafFired=false). Logik grün, finaler Augenschein
+  steht bei Paul aus. Temp. Preview/launch.json wieder entfernt.
+
+### TODO Paul
+- [ ] Nexus neu starten, **Studio**: (1) keine vertikale Linie mehr an der Fenster-Rundung; (2) Titelleiste + Icon-Leiste
+  gleiche Farbe wie Mockup (#1f1e1d); (3) Unterordner im Flyout aufklappen → Reihe gleitet sanft auf Höhe des Themen-Icons.
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 27c: Studio – vertikale Rundungs-Linie (Rail border-right) weg, Titelleiste/Rail = --bg wie Mockup, Subfolder-Auto-Scroll im Flyout"`
+
+---
+
+## Stand: 2026-06-14 (Session 27b – Studio: Feinschliff Notizfenster-Top + Flyout-Auto-Scroll)
+
+Paul-Report („fast perfekt") mit Screenshot, 6 Punkte – alle in `public/index.html` (Studio-Scope + Flyout-JS):
+
+### Erledigt
+- [x] **Weiße Linie oben am Notizfenster weg.** Ursache (per Browser-Preview/`getComputedStyle` verifiziert): Karte
+  `.col:nth-child(3)` = `--panel` (#2a2928, heller) lag bündig unter der dunkleren Titelleiste (`rgba(31,30,29,.6)`
+  über `--bg` #1f1e1d) → die hellere Kartenoberkante las sich als helle Linie. Fix: **Studio-Titelleiste
+  `background:var(--panel)`** → eine durchgehende Oberfläche, kein Kontrast-Naht mehr.
+- [x] **Tab-Schatten auch unten sichtbar.** `.tabbar` (Studio) `padding-bottom 0→16px` (Schatten liegt jetzt
+  innerhalb der Scrollport-Padding-Box statt am Clip-Rand) + aktiver Tab-Schatten kräftiger
+  (`0 2px 10px /.25 → 0 3px 12px /.35`). Horizontales Tab-Scrollen bleibt (kein `overflow`-Override).
+- [x] **Notizinhalt bis ganz oben.** `.note-content` (Studio) `padding-top:30px→12px` → Text rückt nach oben,
+  keine „unsichtbare Abschneidung" mehr; zusammen mit der durchgehenden Titelleiste läuft die Fläche bis oben.
+- [x] **Karte nur oben-links gerundet** (wie Mockup): `border-radius:16px 16px 0 0 → 16px 0 0 0`.
+- [x] **Flyout erscheint wieder neben jedem Icon** (vorher ab ~8. Icon „abgedockt"): alte Hart-Klammer
+  (`innerHeight-min(0.7*ih,440)`) entfernt; Flyout sitzt jetzt direkt neben dem Icon (`top=r.top`), bei Bedarf siehe
+  nächster Punkt.
+- [x] **Icon-Leiste scrollt automatisch & animiert nach oben,** wenn das Flyout sonst unten abgeschnitten würde:
+  in `openRailFlyout()` Flyout-Höhe messen → nötiges `delta` berechnen → `#side-scroll` per **`smoothScrollTop()`**
+  (rAF, easeOutCubic, 360 ms, „flüssig, nicht zu schnell") nach oben scrollen, **begrenzt auf `scrollHeight-clientHeight`**
+  (letztes Thema kann nicht weiter hoch). Reicht das Scrollen nicht, wird das Flyout am unteren Rand verankert
+  (`min(finalTop, vh-12-foH)`), sonst greift sein `max-height:70vh` + interner Scroll.
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (2774 Zeilen, Inline-Script `node --check` grün).
+- [x] Weiße-Linie-Ursache live im Browser-Preview gemessen (Karte rgb(42,41,40) heller als Titelleiste/BG);
+  Studio-Palette greift nur nach `applyLayout('softdark')` (Inline-Theme-Vars sonst Override – bekanntes Muster aus 26e).
+  Temp. `static-public`-launch.json + Preview-Server wieder entfernt.
+
+### TODO Paul
+- [ ] Nexus neu laden, **Studio**: (1) keine helle Linie mehr oben am Notizfenster; (2) Tab-Schatten rundum inkl. unten;
+  (3) Notiztext beginnt direkt oben; (4) Fenster nur oben-links gerundet; (5) Themen-Flyout erscheint neben jedem Icon;
+  (6) tief sitzendes Thema aufklappen → Icon-Leiste gleitet sanft nach oben, ganzes Flyout sichtbar (letztes Thema bleibt).
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 27b: Studio – weiße Top-Linie/Titelleiste, Tab-Schatten unten, Notiztext bis oben, nur oben-links gerundet, Flyout neben Icon + animierter Rail-Auto-Scroll"`
+
+---
+
+## Stand: 2026-06-14 (Session 27 – Studio: rechtes Graph-Panel als schwebendes Fenster)
+
+Paul-Wunsch (mit Mockup): Im **Studio-Layout** soll das rechte Fenster (Graph/Gliederung) wie im Mockup
+aussehen, aber über die **gesamte Höhe** des Feldes – mit **kleinem Abstand am Rand** (schwebendes Fenster
+„das darüber liegt"), **leichtem Schatten + abgerundeten Ecken**. Inhalt unverändert. Die **Resize-Linie**
+zum seitlichen Vergrößern soll **genau an der Kante des Fensters** sitzen. Reine CSS-Änderung in
+`public/index.html`, nur im `.app[data-layout="softdark"]`-Scope.
+
+### Erledigt
+- [x] **`.right-panel` (Studio) = schwebende Karte:** `margin:10px 10px 10px 0` (oben/rechts/unten Abstand,
+  links 0 → Lücke kommt vom Resizer), `border:1px solid var(--border)`, `border-radius:14px` (alle Ecken),
+  `box-shadow:0 10px 34px rgba(0,0,0,.45)`, `overflow:hidden`. Ersetzt das bisherige bündige Panel
+  (nur `border-top` + nur Ecke oben-rechts). Volle Feldhöhe minus 10px oben/unten.
+- [x] **Resize-Linie genau an der Fensterkante:** Studio-Grid-Track `#rz-r` von `5px`→`12px` (greifbarer
+  Bereich = linker „Schwebe-Abstand"); `#rz-r` transparent (kein Panel-BG/`border-top` mehr); `#rz-r::after`
+  auf `inset:10px 0 10px auto; right:0; width:3px` → die (auf Hover/Drag amberne) Linie steht bündig an der
+  linken Kante des Fensters und ist genau so hoch wie das Fenster (10px oben/unten wie der Karten-Abstand).
+- [x] Inhalt (Graph/Gliederung/Split, Toggle, Canvas) **unverändert**.
+
+### Nachbesserung (Paul-Report mit Screenshot)
+- [x] **Keine optische Abgrenzung mehr** zwischen Notizfläche und dem Bereich unter dem Panel:
+  `.app[data-layout="softdark"] .main{background:var(--panel)}` → die ganze Inhaltsfläche rechts der Icon-Leiste
+  ist eine durchgehende `--panel`-Oberfläche. Die Notizseite „läuft optisch durch", das rechte Panel liegt als
+  **schwebende Karte** (jetzt **border:none**, nur Schatten `0 8px 30px rgba(0,0,0,.55)` + radius) darüber.
+  Der Resizer-Streifen zeigt jetzt ebenfalls `--panel` (kein dunkler Spalt mehr).
+- [x] **Graph-Buttons nicht mehr blau:** `.gbtn`-Hartblau `rgba(15,19,32,.85)` → `var(--pop)` (global, theme-aware);
+  im Studio zusätzlich `var(--field)`. Folgen damit dem Akzent/Theme statt Blau.
+- [x] **Graph-Header abgegrenzt + Buttons in einer Reihe:** Controls (Label / Notiz-Graph-Badge / Haupt / Index /
+  ⚙) in neuen `<div class="graph-head">` gewrappt. Default `display:contents` → **klassisches Layout unverändert**
+  (Buttons bleiben absolut positioniert). Im Studio: `.graph-head` = Flex-Reihe mit `border-bottom`, `.graph-wrap`
+  = Flex-Spalte, `#graph-canvas{flex:1;height:auto}` → der **Graph beginnt erst unter der Header-Leiste** und kann
+  nicht mehr bis zu den Buttons reichen. Settings/Filter-Popover `top:46px` (unter den Header gerückt).
+
+### Nachbesserung 2 (Rail-Flyout im Mockup-Stil)
+- [x] **Sidebar-Flyout (Icon-Leiste → Ordner) jetzt wie das Mockup:** statt grauer Farb-Punkte (Ordner wurden
+  im Flyout auf `depth=1` gerendert → `.dot`) werden die Ordner jetzt auf `depth=0` gerendert → **Ordner-Emoji
+  (`folderIcon`, Default 📁) + weißes Label + Count rechts** wie in `variante-b-soft-dark.html`.
+- [x] **Flyout-Reihen-CSS** (`#rail-flyout .folder-row/.tree-file`): runde Hover-Flächen (`--panel2`),
+  aktive/offene Reihe = `--amber-soft`, Per-Ordner-Farbverlauf im Flyout neutralisiert (`folder-gradient`→`none`),
+  Padding/Gap/Radius an Mockup angeglichen; Container `padding:10px 8px`, `width:252px`. D&D, Kontextmenü und
+  Öffnen bleiben erhalten (weiterhin `makeFolderEl/makeFileEl`).
+
+### Nachbesserung 3 (Trennlinien weg + Icon-Reihenfolge per D&D)
+- [x] **Trennlinie unter der Titelleiste entfernt** (wie Mockup): `.app[data-layout="softdark"] .titlebar`
+  → `border-bottom:none`. Titelleiste/Breadcrumb läuft jetzt nahtlos in die Fläche.
+- [x] **Icon-Reihenfolge (Themen) per Drag & Drop sortierbar** in der Studio-Icon-Leiste:
+  - `orderedTopFolders()` liest gespeicherte Reihenfolge (`localStorage['nexus.railOrder']`, Array der Pfade),
+    unbekannte/neue Ordner werden in Baum-Reihenfolge angehängt; `persistRailOrder()` speichert nach dem Ziehen.
+  - `renderRail()`: jeder Ordner-Button `draggable`; Live-Umsortierung beim `dragover` über `railAfterEl()`
+    (Einfügeposition nach Cursor-Y) + **FLIP-Animation** (`railFlip()`, `transform`-Transition 160 ms,
+    cubic-bezier) → die Icons gleiten beim Sortieren weich an ihre neue Position.
+  - Optik: gezogenes Icon `opacity:.4; scale(.82)` + Schatten (`.rail-dragging`), `cursor:grab/grabbing`,
+    Tooltip-Hinweis „(zum Sortieren ziehen)". Klick=Flyout, Rechtsklick=Kontextmenü bleiben erhalten.
+
+### Nachbesserung 4 (Notiz-Fenster, Dateien in der Leiste, fixer +-Button, Vault-Icon)
+- [x] **Mittlere Notizfläche = schwebendes Fenster:** `.col:nth-child(3)` im Studio jetzt `border:none`,
+  `border-radius:16px`, `margin:10px 0 10px 10px`, `box-shadow:0 8px 30px rgba(0,0,0,.5)` → rundum saubere
+  Rundung + Schatten, schwebt wie das Graph-Panel auf der `--panel`-Fläche (12px-Resizer-Lücke dazwischen).
+- [x] **Dateien in der Icon-Leiste** (nicht nur Ordner): `orderedTopItems()` + `renderRail()` rendern jetzt auch
+  Top-Level-**Dateien** (z. B. `START.md`) als Rail-Button (`railFileIcon()`: 📝/📄/🌐/🖼/📘/📊), Klick = öffnen,
+  Rechtsklick = Kontextmenü, per D&D mitsortierbar.
+- [x] **„+ Notiz" fest angepinnt** (wie Einstellungen): neuer `#rail-bottom`-Container zwischen Scroll-Liste und
+  Einstellungen (`flex:0 0 auto`) → scrollt nicht mehr weg. **Dezente Abgrenzung** über kurzen, zentrierten
+  `.rail-sep` (24px, kein durchgehender Strich) statt voller Linie.
+- [x] **Vault-Auswahl-Icon** 🗂 → **📚** (passender für „Wissensspeicher/Vault").
+
+### Nachbesserung 5 (Overlay-Modell wie Mockup: Panel ÜBER dem Notizfenster, kein Kasten dahinter)
+- [x] **Kasten hinter den Fenstern entfernt:** `.main` nicht mehr `--panel`, jetzt `background:transparent`
+  (App-BG `--bg` scheint durch). Studio-Grid auf `var(--rail-w) 0 1fr` reduziert + `.main{position:relative}`.
+- [x] **Notizfenster = volle Basis-Fläche:** mittlere Spalte spannt jetzt die ganze Breite (Schiene→rechter Rand),
+  `border-radius:16px 16px 0 0` (**oben gerundet, unten bündig**), kein Rand/Schatten. Inhalt bleibt links neben
+  dem Panel: `padding-right:calc(var(--col-r) + 22px)` (Text zentriert sich im sichtbaren Bereich).
+- [x] **Rechtes Panel liegt ÜBER dem Notizfenster (wie Mockup-Overlay):** `.right-panel` jetzt `position:absolute`
+  (`top/right/bottom:10px`, `width:var(--col-r)`, `z-index:20`, Schatten `0 10px 36px`) → schwebt als Fenster auf
+  der durchlaufenden Notizfläche, keine optische Abgrenzung dahinter.
+- [x] **Resizer** `#rz-r` absolut an der linken Panel-Kante (`right:calc(var(--col-r)+10px)`), Linie bündig an der
+  Kante (Hover=amber); Resize-Logik (`--col-r`) unverändert, Notiz-`padding` folgt automatisch.
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (2749 Zeilen, Ende `</html>`, Inline-Script `node --check` grün).
+
+### TODO Paul
+- [ ] Studio: kein Kasten mehr hinter den Fenstern; Notizfenster oben gerundet/unten bündig; Graph-Panel schwebt
+  rechts darüber (Resize an der Kante). Wie im Mockup.
+- [ ] Studio: `START.md` & andere Top-Level-Dateien sind als
+  Icon in der Leiste sichtbar/öffenbar; „+ Notiz" bleibt unten fest (über Einstellungen) mit kurzem Trenner; Vault-Icon = 📚.
+- [ ] Studio-Layout: Icons in der Leiste ziehen → Reihenfolge ändert sich animiert + bleibt nach Reload erhalten.
+- [ ] Studio-Layout: Icon-Leiste → Ordner anklicken → Flyout sieht aus wie das Mockup (Ordner-Emoji, saubere Reihen).
+- [ ] Nexus neu laden / `npm run app`, **Studio**-Layout: (1) rechtes Fenster schwebt mit Abstand+Schatten+runden
+  Ecken über volle Höhe; Resize-Linie an der linken Fensterkante (Hover = amber). (2) Keine dunkle Trennlinie/Spalt
+  mehr zwischen Notiz und Panel-Bereich – Fläche läuft durch. (3) Graph-Buttons warm statt blau, in einer Reihe,
+  Graph beginnt erst unter der Header-Leiste.
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 27: Studio – rechtes Graph-Panel als schwebendes Fenster (Margin/Schatten/Radius), Resize-Linie an Fensterkante"`
+
+---
+
 ## Stand: 2026-06-14 (Session 26e – Pro-Layout-Farbmodell: Standard↔Studio mit getrennter Farbe, Umbenennung)
 
 Paul präzisierte das Zielmodell + es gab einen **echten Logikfehler** (nicht nur Cache): Im Studio-Layout blieben

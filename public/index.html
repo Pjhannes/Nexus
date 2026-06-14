@@ -279,6 +279,7 @@ a.wikilink.broken{color:#e07b7b;border-bottom-style:dashed;border-bottom-color:r
 #note-pane2 .np2-body .pdf-frame{height:100%}
 #note-pane2 .np2-pre{white-space:pre-wrap;word-break:break-word;font-family:Consolas,monospace;font-size:12px;line-height:1.6;color:#cdd6e8;padding:16px 18px}
 .graph-wrap{flex:1;position:relative;background:rgba(5,7,13,.55);min-height:0}
+.graph-head{display:contents}
 canvas{display:block;width:100%;height:100%}
 .graph-label{position:absolute;top:12px;left:14px;font-size:10px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;pointer-events:none}
 .graph-mode{position:absolute;top:9px;right:12px;font-size:10px;color:var(--accent);background:var(--accent-10);border:1px solid var(--accent-30);border-radius:99px;padding:2px 10px;pointer-events:none}
@@ -287,7 +288,7 @@ canvas{display:block;width:100%;height:100%}
 .graph-tip{position:absolute;pointer-events:none;background:var(--pop);border:1px solid var(--border);border-radius:7px;padding:4px 9px;font-size:11.5px;color:var(--text);display:none;z-index:8;white-space:nowrap;box-shadow:0 6px 20px rgba(0,0,0,.6)}
 #graph-canvas{cursor:grab}
 .graph-btns{position:absolute;top:32px;right:12px;display:flex;gap:5px;z-index:9}
-.gbtn{background:rgba(15,19,32,.85);border:1px solid var(--border);color:var(--dim);border-radius:7px;padding:3px 9px;font-size:11px;cursor:pointer;line-height:1.4}
+.gbtn{background:var(--pop);border:1px solid var(--border);color:var(--dim);border-radius:7px;padding:3px 9px;font-size:11px;cursor:pointer;line-height:1.4}
 .gbtn:hover{color:var(--text);border-color:var(--accent)}
 .graph-settings{position:absolute;top:62px;right:12px;width:196px;background:var(--pop);border:1px solid var(--border);border-radius:10px;padding:8px 12px 10px;display:none;z-index:10;box-shadow:0 10px 30px rgba(0,0,0,.6)}
 .graph-settings.open{display:block}
@@ -512,10 +513,19 @@ body.row-resizing{cursor:row-resize;user-select:none}
 .ip-grid button:hover{background:var(--panel2);border-color:var(--border)}
 
 /* Rail-Flyout (Variante B) */
-#rail-flyout{position:fixed;width:248px;max-height:70vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:8px;z-index:55;display:none}
+#rail-flyout{position:fixed;width:252px;max-height:70vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:10px 8px;z-index:55;display:none}
 #rail-flyout.show{display:block}
-#rail-flyout .fo-head{display:flex;align-items:center;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);padding:6px 10px 8px}
+#rail-flyout .fo-head{display:flex;align-items:center;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);padding:4px 10px 9px}
 #rail-flyout .fo-head .fo-new{margin-left:auto;color:var(--accent);cursor:pointer;letter-spacing:0;text-transform:none}
+/* Flyout-Reihen im Mockup-Stil (saubere Karten-Optik statt Farb-Punkte) */
+#rail-flyout .folder-row{padding:7px 10px;gap:10px;border-radius:10px;border-left:none;font-size:13px;color:var(--dim)}
+#rail-flyout .folder-row.folder-gradient,#rail-flyout .folder-row.folder-gradient:hover{background:none;border-left:none}
+#rail-flyout .folder-row:hover,#rail-flyout .folder-row.folder-gradient:hover{background:var(--panel2);color:var(--text)}
+#rail-flyout .folder-row.active,#rail-flyout .folder-row.folder-gradient.active{background:var(--amber-soft);color:var(--text)}
+#rail-flyout .folder-label{font-weight:500;color:var(--text)}
+#rail-flyout .folder-children{margin:1px 0}
+#rail-flyout .tree-file{padding:6px 10px;border-radius:10px;font-size:12.5px;gap:8px}
+#rail-flyout .tree-file:hover{background:var(--panel2);color:var(--text)}
 
 /* ════════ Layout: Variante B (Soft Dark) – data-layout="softdark" ════════ */
 /* WICHTIG: auf :root (=html), NICHT body. Die abgeleiteten color-mix-Variablen
@@ -528,8 +538,9 @@ body.row-resizing{cursor:row-resize;user-select:none}
   --app-bg:#1f1e1d;--app-font:'Inter','Segoe UI',system-ui,sans-serif;
 }
 .app[data-layout="softdark"]{font-family:var(--app-font);background:var(--bg)}
-.app[data-layout="softdark"] .titlebar{background:rgba(31,30,29,.6)}
-.app[data-layout="softdark"] .main{grid-template-columns:var(--rail-w,60px) 0 minmax(0,1fr) 5px var(--col-r,360px)}
+.app[data-layout="softdark"] .titlebar{background:var(--bg);border-bottom:none}
+.app[data-layout="softdark"] .col.side{border-right:none}
+.app[data-layout="softdark"] .main{grid-template-columns:var(--rail-w,60px) 0 1fr;position:relative;background:transparent}
 .app[data-layout="softdark"] #rz-l{pointer-events:none}
 /* Icon-Rail */
 .app[data-layout="softdark"] .side{background:var(--bg);backdrop-filter:none;overflow:visible;position:relative;z-index:30;min-height:0}
@@ -537,7 +548,7 @@ body.row-resizing{cursor:row-resize;user-select:none}
 .app[data-layout="softdark"] .side .vault-add{display:none}
 .app[data-layout="softdark"] #vault-sel-wrap{flex:0 0 auto}
 .app[data-layout="softdark"] #vault-sel-btn{width:calc(var(--rail-w,60px) - 18px);height:calc(var(--rail-w,60px) - 18px);justify-content:center;padding:0;border-radius:calc(var(--rail-w,60px) * .2);background:transparent;border:none}
-.app[data-layout="softdark"] #vault-sel-btn::before{content:"🗂";font-size:calc(var(--rail-w,60px) * .3)}
+.app[data-layout="softdark"] #vault-sel-btn::before{content:"📚";font-size:calc(var(--rail-w,60px) * .3)}
 .app[data-layout="softdark"] #vault-sel-btn:hover{background:var(--panel)}
 .app[data-layout="softdark"] #vault-sel-btn .vs-label,.app[data-layout="softdark"] #vault-sel-btn .vs-chev{display:none}
 .app[data-layout="softdark"] #vault-sel-drop{left:50px;right:auto;width:200px;top:6px}
@@ -548,23 +559,39 @@ body.row-resizing{cursor:row-resize;user-select:none}
 .app[data-layout="softdark"] .rail-btn{position:relative;width:calc(var(--rail-w,60px) - 18px);height:calc(var(--rail-w,60px) - 18px);border-radius:calc(var(--rail-w,60px) * .2);display:flex;align-items:center;justify-content:center;font-size:calc(var(--rail-w,60px) * .285);color:var(--dim);cursor:pointer;transition:.18s;flex:0 0 auto}
 .app[data-layout="softdark"] .rail-btn:hover{background:var(--panel);color:var(--text)}
 .app[data-layout="softdark"] .rail-btn.active{background:var(--amber-soft);color:var(--accent)}
+.app[data-layout="softdark"] .rail-btn[draggable="true"]{cursor:grab}
+.app[data-layout="softdark"] .rail-btn.rail-dragging{opacity:.4;transform:scale(.82);cursor:grabbing;background:var(--panel);box-shadow:0 8px 22px rgba(0,0,0,.45)}
+#rail-bottom{display:none}
+.app[data-layout="softdark"] #rail-bottom{display:flex;flex-direction:column;align-items:center;gap:4px;padding:2px 0 4px;flex:0 0 auto}
+.rail-sep{width:24px;height:1px;background:var(--border);border-radius:1px;margin:3px 0;flex:0 0 auto;opacity:.7}
+#rail-sep-top{display:none}
+.app[data-layout="softdark"] #rail-sep-top{display:block;align-self:center;margin:2px 0 4px}
 .app[data-layout="softdark"] .rail-btn .dot{position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;box-shadow:none}
 .app[data-layout="softdark"] .rail-btn .tip{position:absolute;left:52px;top:50%;transform:translateY(-50%);background:var(--panel2);border:1px solid var(--border);color:var(--text);font-size:12px;padding:5px 11px;border-radius:8px;white-space:nowrap;opacity:0;pointer-events:none;transition:.15s;box-shadow:0 6px 24px rgba(0,0,0,.4);z-index:60}
 .app[data-layout="softdark"] .rail-btn:hover .tip{opacity:1;left:56px}
 .app[data-layout="softdark"] .side-settings{justify-content:center;padding:10px 0;border-top:none}
 .app[data-layout="softdark"] .side-settings span:not(.ss-ic){display:none}
 .app[data-layout="softdark"] .side-settings .ss-ic{font-size:calc(var(--rail-w,60px) * .3)}
-/* Center als gerundete Karte + Pillen-Tabs */
-.app[data-layout="softdark"] .main>.col:nth-child(3){background:var(--panel);border:1px solid var(--border);border-right:none;border-bottom:none;border-radius:18px 0 0 0}
-.app[data-layout="softdark"] .tabbar{background:transparent;border-bottom:none;padding:8px 10px 0}
+/* Notizfenster = volle Basis-Fläche (oben gerundet, unten bündig); rechtes Panel liegt darüber */
+.app[data-layout="softdark"] .main>.col:nth-child(3){background:var(--panel);border:none;border-radius:16px 0 0 0;margin:0;box-shadow:none;padding-right:calc(var(--col-r,360px) + 22px)}
+.app[data-layout="softdark"] .tabbar{background:transparent;border-bottom:none;padding:8px 10px 16px}
 .app[data-layout="softdark"] .tab{border-radius:10px;border:none}
-.app[data-layout="softdark"] .tab.active{background:var(--panel2);box-shadow:0 2px 10px rgba(0,0,0,.25);border:none}
-.app[data-layout="softdark"] .note-content{max-width:760px;margin:0 auto}
-.app[data-layout="softdark"] .right-panel{background:var(--panel);margin:0;border:none;border-top:1px solid var(--border);border-radius:0 18px 0 0;overflow:hidden;box-shadow:none}
-.app[data-layout="softdark"] #rz-r{background:var(--panel);border-top:1px solid var(--border)}
+.app[data-layout="softdark"] .tab.active{background:var(--panel2);box-shadow:0 3px 12px rgba(0,0,0,.35);border:none}
+.app[data-layout="softdark"] .note-content{max-width:760px;margin:0 auto;padding-top:12px}
+/* Rechtes Panel schwebt als Fenster ÜBER dem Notizfenster (wie das Mockup-Overlay) */
+.app[data-layout="softdark"] .right-panel{position:absolute;top:10px;right:10px;bottom:10px;width:var(--col-r,360px);margin:0;background:var(--panel);border:none;border-radius:14px;overflow:hidden;box-shadow:0 10px 36px rgba(0,0,0,.6);z-index:20}
+.app[data-layout="softdark"] #rz-r{position:absolute;top:0;bottom:0;right:calc(var(--col-r,360px) + 10px);width:14px;background:transparent;border:none;z-index:21}
+.app[data-layout="softdark"] #rz-r::after{inset:10px auto 10px 0;left:auto;right:0;width:3px;border-radius:2px}
 .app[data-layout="softdark"] #rz-r:hover::after,.app[data-layout="softdark"] #rz-r.drag::after{background:var(--accent)}
 .app[data-layout="softdark"] #right-toggle{background:transparent}
-.app[data-layout="softdark"] .graph-wrap{background:transparent}
+.app[data-layout="softdark"] .graph-wrap{background:transparent;display:flex;flex-direction:column}
+.app[data-layout="softdark"] .graph-head{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);flex:0 0 auto;position:relative;z-index:9}
+.app[data-layout="softdark"] .graph-label{position:static;flex:0 0 auto}
+.app[data-layout="softdark"] .graph-mode{position:static;margin-left:auto}
+.app[data-layout="softdark"] .graph-btns{position:static;flex:0 0 auto}
+.app[data-layout="softdark"] #graph-canvas{flex:1 1 auto;height:auto;min-height:0}
+.app[data-layout="softdark"] .gbtn{background:var(--field)}
+.app[data-layout="softdark"] .graph-settings,.app[data-layout="softdark"] .graph-filter{top:46px}
 .app[data-layout="softdark"] .activity{background:transparent}
 .app[data-layout="softdark"] #note-pane2{background:var(--panel)}
 .app[data-layout="softdark"] #note-pane2 .np2-head{background:var(--panel2)}
@@ -618,10 +645,12 @@ body.row-resizing{cursor:row-resize;user-select:none}
         <div id="vault-sel-wrap"><div id="vault-sel-btn" onclick="toggleVaultDrop()"><span class="vs-label" id="vault-sel-label">Vault</span><span class="vs-chev">&#9660;</span></div><div id="vault-sel-drop"></div></div>
         <div class="vault-add" title="Vaults verwalten" onclick="openVaultModal()">+</div>
       </div>
+      <div class="rail-sep" id="rail-sep-top"></div>
       <div class="side-scroll" id="side-scroll">
         <div class="side-section">Vault <span class="new-note-btn" title="Neue Notiz" onclick="newNote()">+ Notiz</span></div>
         <div id="folder-list"></div>
       </div>
+      <div id="rail-bottom"></div>
       <div class="side-settings" onclick="openSettings()" title="Einstellungen oeffnen"><span class="ss-ic">&#9881;</span><span>Einstellungen</span></div>
     </div>
 
@@ -647,13 +676,15 @@ body.row-resizing{cursor:row-resize;user-select:none}
       <div id="outline-panel"></div>
       <div id="rz-split"></div>
       <div class="graph-wrap">
-        <div class="graph-label">Graph</div>
-        <div class="graph-mode" id="graph-mode">Vault</div>
-        <div class="graph-btns">
-          <button class="gbtn" id="graph-home" title="Zur Hauptansicht">&#8962; Haupt</button>
-          <button class="gbtn" id="graph-filter" title="Nach Hauptthemen filtern" style="display:none">&#9662; Filter</button>
-          <button class="gbtn" id="graph-index" title="Index-Dateien (mit &bdquo;index&ldquo; im Namen) anzeigen/ausblenden" style="display:none">Index</button>
-          <button class="gbtn" id="graph-gear" title="Graph-Einstellungen">&#9881;</button>
+        <div class="graph-head">
+          <div class="graph-label">Graph</div>
+          <div class="graph-mode" id="graph-mode">Vault</div>
+          <div class="graph-btns">
+            <button class="gbtn" id="graph-home" title="Zur Hauptansicht">&#8962; Haupt</button>
+            <button class="gbtn" id="graph-filter" title="Nach Hauptthemen filtern" style="display:none">&#9662; Filter</button>
+            <button class="gbtn" id="graph-index" title="Index-Dateien (mit &bdquo;index&ldquo; im Namen) anzeigen/ausblenden" style="display:none">Index</button>
+            <button class="gbtn" id="graph-gear" title="Graph-Einstellungen">&#9881;</button>
+          </div>
         </div>
         <canvas id="graph-canvas"></canvas>
         <div class="graph-tip" id="graph-tip"></div>
@@ -1081,28 +1112,105 @@ function renderSidebar(){
   list.ondragleave=e=>{if(e.target===list)list.classList.remove('drop-root');};
   list.ondrop=e=>{if(!_movingPath)return;e.preventDefault();const src=_movingPath;_movingPath=null;clearDropHL();moveInto(src,'');};
 }
+function railOrder(){try{return JSON.parse(localStorage['nexus.railOrder']||'[]');}catch(e){return [];}}
+function orderedTopItems(){
+  const tops=vaultTree.filter(n=>n.type==='folder'||n.type==='file');
+  const byPath=new Map(tops.map(n=>[n.path,n]));
+  const out=[];
+  for(const p of railOrder()){if(byPath.has(p)){out.push(byPath.get(p));byPath.delete(p);}}
+  for(const n of tops){if(byPath.has(n.path))out.push(n);}
+  return out;
+}
+function railFileIcon(ext){
+  if(ext==='.md')return '📝';if(ext==='.pdf')return '📄';
+  if(ext==='.html'||ext==='.htm')return '🌐';if(IMG_EXT.includes(ext))return '🖼';
+  if(['.docx','.doc'].includes(ext))return '📘';if(['.xlsx','.xls','.csv'].includes(ext))return '📊';
+  return '📄';
+}
+function persistRailOrder(){
+  const list=document.getElementById('folder-list');if(!list)return;
+  const order=[...list.querySelectorAll('.rail-btn[draggable="true"]')].map(el=>el.dataset.path);
+  localStorage['nexus.railOrder']=JSON.stringify(order);
+}
+let _railDrag=null;
+function railAfterEl(list,y){
+  const els=[...list.querySelectorAll('.rail-btn[draggable="true"]')].filter(el=>el!==_railDrag);
+  for(const el of els){const r=el.getBoundingClientRect();if(y<r.top+r.height/2)return el;}
+  return null;
+}
+function railFlip(list,mutate){
+  const items=[...list.querySelectorAll('.rail-btn')].filter(el=>el!==_railDrag);
+  const first=new Map(items.map(el=>[el,el.getBoundingClientRect().top]));
+  mutate();
+  for(const el of items){
+    const dy=first.get(el)-el.getBoundingClientRect().top;
+    if(!dy)continue;
+    el.style.transition='none';el.style.transform=`translateY(${dy}px)`;
+    requestAnimationFrame(()=>{el.style.transition='transform .16s cubic-bezier(.2,.7,.3,1)';el.style.transform='';});
+  }
+}
 function renderRail(){
   const list=document.getElementById('folder-list');list.innerHTML='';
-  list.ondragover=null;list.ondragleave=null;list.ondrop=null;
-  for(const node of vaultTree){
-    if(node.type!=='folder')continue;
-    const b=document.createElement('div');b.className='rail-btn';b.dataset.path=node.path;
-    const col=folderColor(node.name);const cnt=countFiles(node.children??[]);
-    b.title=node.name+' · '+cnt.toLocaleString('de')+' Dateien';
-    b.innerHTML=`<span>${folderIcon(node.name)}</span>`+(col?`<span class="dot" style="background:${col}"></span>`:'');
-    b.addEventListener('click',e=>{e.stopPropagation();openRailFlyout(node,b);});
-    b.addEventListener('contextmenu',e=>showCtx(e,node.path,'folder'));
+  for(const node of orderedTopItems()){
+    const b=document.createElement('div');b.className='rail-btn';b.dataset.path=node.path;b.draggable=true;
+    if(node.type==='folder'){
+      const col=folderColor(node.name);const cnt=countFiles(node.children??[]);
+      b.title=node.name+' · '+cnt.toLocaleString('de')+' Dateien  (zum Sortieren ziehen)';
+      b.innerHTML=`<span>${folderIcon(node.name)}</span>`+(col?`<span class="dot" style="background:${col}"></span>`:'');
+      b.addEventListener('click',e=>{e.stopPropagation();openRailFlyout(node,b);});
+      b.addEventListener('contextmenu',e=>showCtx(e,node.path,'folder'));
+    }else{
+      b.classList.add('rail-file');
+      b.title=node.name+'  (zum Sortieren ziehen)';
+      b.innerHTML=`<span>${railFileIcon(node.ext)}</span>`;
+      b.addEventListener('click',e=>{e.stopPropagation();closeRailFlyout();openFile(node.path);});
+      b.addEventListener('contextmenu',e=>showCtx(e,node.path,'file',node.ext));
+    }
+    b.addEventListener('dragstart',e=>{_railDrag=b;closeRailFlyout();e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain','rail');requestAnimationFrame(()=>b.classList.add('rail-dragging'));});
+    b.addEventListener('dragend',()=>{b.classList.remove('rail-dragging');if(_railDrag){_railDrag=null;persistRailOrder();}});
     list.appendChild(b);
   }
-  const add=document.createElement('div');add.className='rail-btn';add.title='Neue Notiz';add.innerHTML='<span>＋</span>';
-  add.addEventListener('click',e=>{e.stopPropagation();newNote();});
-  list.appendChild(add);
+  list.ondragover=e=>{
+    if(!_railDrag)return;e.preventDefault();e.dataTransfer.dropEffect='move';
+    const ref=railAfterEl(list,e.clientY);
+    if(ref){if(_railDrag.nextSibling!==ref&&_railDrag!==ref)railFlip(list,()=>list.insertBefore(_railDrag,ref));}
+    else if(list.lastElementChild!==_railDrag)railFlip(list,()=>list.appendChild(_railDrag));
+  };
+  list.ondrop=e=>{if(_railDrag)e.preventDefault();};
+  list.ondragleave=null;
+  // Fest angepinnter "+ Notiz"-Button mit dezenter Abgrenzung (oberhalb der Einstellungen)
+  const bottom=document.getElementById('rail-bottom');
+  if(bottom){
+    bottom.innerHTML='';
+    const sep=document.createElement('div');sep.className='rail-sep';bottom.appendChild(sep);
+    const add=document.createElement('div');add.className='rail-btn rail-add';add.title='Neue Notiz';add.innerHTML='<span>＋</span>';
+    add.addEventListener('click',e=>{e.stopPropagation();newNote();});
+    bottom.appendChild(add);
+  }
 }
-let _railFlyoutPath=null;
+function smoothScrollTop(el,to,dur){
+  const from=el.scrollTop, diff=to-from, t0=performance.now();
+  if(Math.abs(diff)<1){el.scrollTop=to;return;}
+  function step(now){
+    const p=Math.min(1,(now-t0)/dur);
+    const e=1-Math.pow(1-p,3); // easeOutCubic – flüssig, nicht zu schnell
+    el.scrollTop=from+diff*e;
+    if(p<1)requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+// Generischer easeOutCubic-Tween (z.B. um die Flyout-top-Position animiert zu verschieben)
+function tween(from,to,dur,apply){
+  const diff=to-from, t0=performance.now();
+  if(Math.abs(diff)<1){apply(to);return;}
+  function step(now){const p=Math.min(1,(now-t0)/dur);apply(from+diff*(1-Math.pow(1-p,3)));if(p<1)requestAnimationFrame(step);}
+  requestAnimationFrame(step);
+}
+let _railFlyoutPath=null, _railFlyoutBtn=null;
 function openRailFlyout(node,btn){
   const fo=document.getElementById('rail-flyout');if(!fo)return;
   if(_railFlyoutPath===node.path){closeRailFlyout();return;}
-  _railFlyoutPath=node.path;
+  _railFlyoutPath=node.path; _railFlyoutBtn=btn;
   document.querySelectorAll('#folder-list .rail-btn').forEach(x=>x.classList.toggle('active',x.dataset.path===node.path));
   fo.innerHTML='';
   const head=document.createElement('div');head.className='fo-head';
@@ -1110,14 +1218,51 @@ function openRailFlyout(node,btn){
   head.querySelector('.fo-new').addEventListener('click',e=>{e.stopPropagation();ctxNewNote(node.path);});
   fo.appendChild(head);
   for(const child of (node.children??[])){
-    if(child.type==='folder')fo.appendChild(makeFolderEl(child,1));
-    else fo.appendChild(makeFileEl(child,18));
+    if(child.type==='folder')fo.appendChild(makeFolderEl(child,0));
+    else fo.appendChild(makeFileEl(child,30));
   }
   fo.querySelectorAll('.tree-file').forEach(f=>f.addEventListener('click',()=>closeRailFlyout()));
+  // Unterordner im Flyout aufklappen -> sanft so scrollen, dass die Reihe auf Höhe des Themen-Icons rückt
+  // (gleiches Gefühl wie das Hochscrollen der Icon-Leiste). Zweiter Listener auf der Reihe: makeFolderEl ruft
+  // nur stopPropagation (nicht stopImmediatePropagation), daher feuert dieser nach dem Auf-/Zuklappen.
+  fo.querySelectorAll('.folder-row').forEach(row=>{
+    row.addEventListener('click',()=>requestAnimationFrame(()=>{
+      const cw=row.nextElementSibling;
+      if(!cw||!cw.classList.contains('folder-children')||!cw.classList.contains('open'))return;
+      const icon=_railFlyoutBtn; if(!icon)return;
+      // Mittelpunkt der Unterordner-Reihe auf den Mittelpunkt des Themen-Icons bringen:
+      // zuerst das ganze Flyout (top) animiert verschieben; reicht der Platz oben nicht (top<8),
+      // wird der Rest durch Scrollen IM Flyout erledigt – beides gleichzeitig, gleicher easeOut.
+      const ir=icon.getBoundingClientRect(), rr=row.getBoundingClientRect();
+      const iconCenter=ir.top+ir.height/2, rowCenter=rr.top+rr.height/2;
+      const curTop=parseFloat(fo.style.top)||fo.getBoundingClientRect().top;
+      let newTop=curTop+(iconCenter-rowCenter), scrollRest=0;
+      if(newTop<8){scrollRest=8-newTop;newTop=8;}            // Oberkante erreicht -> Rest scrollen
+      tween(curTop,newTop,320,v=>{fo.style.top=v+'px';});
+      if(scrollRest>0.5){
+        const maxScroll=Math.max(0,fo.scrollHeight-fo.clientHeight);
+        smoothScrollTop(fo,Math.min(maxScroll,fo.scrollTop+scrollRest),320);
+      }
+    }));
+  });
   const r=btn.getBoundingClientRect();
+  const side=document.getElementById('side-scroll');
   fo.style.left=(r.right+8)+'px';
-  fo.style.top=Math.max(8,Math.min(r.top,window.innerHeight-Math.min(window.innerHeight*0.7,440)))+'px';
-  fo.classList.add('show');
+  fo.style.top='0px';
+  fo.classList.add('show'); // sichtbar -> Höhe messbar
+  // Flyout immer direkt neben dem Icon; falls es unten rausragen würde, die Icon-Leiste
+  // animiert nach oben scrollen (so weit der Inhalt es hergibt), damit das ganze Fenster passt.
+  const foH=fo.offsetHeight, vh=window.innerHeight, margin=12;
+  let finalTop=r.top;
+  if(side){
+    const need=Math.max(0,(r.top+foH+margin)-vh);
+    const delta=Math.min(need, Math.max(0,side.scrollHeight-side.clientHeight)-side.scrollTop);
+    finalTop=r.top-Math.max(0,delta);
+    if(delta>0.5)smoothScrollTop(side,side.scrollTop+delta,360);
+  }
+  // Wenn die Leiste nicht weit genug scrollen kann (z.B. letztes Thema): Flyout am unteren Rand verankern.
+  finalTop=Math.max(8,Math.min(finalTop,vh-margin-foH));
+  fo.style.top=finalTop+'px';
 }
 function closeRailFlyout(){const fo=document.getElementById('rail-flyout');if(fo)fo.classList.remove('show');_railFlyoutPath=null;document.querySelectorAll('#folder-list .rail-btn.active').forEach(x=>x.classList.remove('active'));}
 function makeFolderEl(node,depth){
