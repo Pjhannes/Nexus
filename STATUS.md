@@ -29,8 +29,8 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 | ~~R7~~ | ~~P2~~ | ~~**Einstellungs-Menü** – Button unten links öffnet Panel: Farb-Theme, Hauptthemen-Farben, Vault-Pfad, weitere sinnvolle Optionen; Persistence in localStorage / nexus.config.json~~ | ~~Sonnet~~ | ✅ Session 21 |
 | R8 | P2 | **Claude in Suche oben rechts einbinden** – wie im Preview; Claude-API-Key konfigurierbar; auch auf anderem PC nutzbar | **Opus** | API-Integration + Key-Management + Security; architektonisch komplex |
 | ~~R9~~ | ~~P2~~ | ~~**Claude Usage-Widget unten rechts** – nach GitHub `SlavomirDurej/claude-usage-widget`; in Claude-Aktivitäts-Zeile; Login-Daten änderbar~~ | ~~Sonnet~~ | ✅ Session 22 |
-| R10 | P2 | **Installer verbessern** – kein CMD-Fenster, vollwertige Electron-App auf Pauls PC; NSIS-Installer für Fremd-PC (Arbeit von Session 11 finalisieren: `npm run dist` testen, SmartScreen-Workaround) | **Sonnet** | electron-builder schon konfiguriert; Hauptarbeit ist Windows-Test + Feinschliff |
-| R11 | P3 | **3 weitere UI-Design-Vorschläge für index.html** – Alternativen zum aktuellen Look, nur Mockups/HTML | **Opus** | Kreativ-intensiv; Opus generiert hochwertigere Design-Varianten |
+| ~~R10~~ | ~~P2~~ | ~~**Professioneller Installer & vollwertige Windows-App** – neues Icon, NSIS-Optionen, Erster-Start-Wizard, kein CMD, Taskleisten-Identität, In-App-Anleitung (Claude-Connect + Session-Key)~~ | ~~Sonnet~~ | ✅ Session 23 (Build `npm run dist` läuft auf Pauls Windows-PC) |
+| ~~R11~~ | ~~P3~~ | ~~**3 weitere UI-Design-Vorschläge für index.html** – Alternativen zum aktuellen Look, nur Mockups/HTML~~ | ~~Opus~~ | ✅ Session 24 (Mockups B/G/I als umschaltbare Design-Presets eingebaut) |
 | R12 | P3 | **Obsidian-Regeln und Arbeitsweisen in Nexus übernehmen** – alle sinnvollen Obsidian-Workflows (Templates, Daily Notes, Kanban, Tags, Properties…) als Nexus-Features oder MCP-Tools abbilden | **Opus** | Großer Scope; braucht Analyse der Obsidian-Funktionen + Architektur-Entscheidungen |
 | R13 | P3 | **Abschließender Obsidian-vs-Nexus-Vergleich** – wo Obsidian noch besser ist; ehrliche Lücken-Liste | **Sonnet** | Reine Analyse/Recherche; kein Code |
 
@@ -41,12 +41,404 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 3. **R5** (Sidebar-Farbfeld: erst Designs zeigen, dann implementieren)
 4. ~~**R6** (Splitscreen-Upgrade)~~ ✅ Session 20
 5. ~~**R7** (Einstellungs-Menü)~~ ✅ Session 21
-6. **R10** (Installer finalisieren)
+6. ~~**R10** (Installer finalisieren)~~ ✅ Session 23
 7. **R8** (Claude in Suche)
 8. **R9** (Usage-Widget)
 9. **R11** (Design-Vorschläge)
 10. **R12** (Obsidian-Regeln)
 11. **R13** (Vergleich)
+
+---
+
+## Stand: 2026-06-14 (Session 26e – Pro-Layout-Farbmodell: Standard↔Studio mit getrennter Farbe, Umbenennung)
+
+Paul präzisierte das Zielmodell + es gab einen **echten Logikfehler** (nicht nur Cache): Im Studio-Layout blieben
+Slider/Akzent blau, wenn als Theme „Darker" gewählt war. Ursache: `applyTheme()` setzt `--accent` **inline** auf
+`:root`; **Inline schlägt die Layout-CSS-Regel** `:root[data-layout=softdark]`. Deshalb wurde es nur warm, wenn man
+vorher das Theme auf Gelb stellte; der Akzent-Picker scheiterte am selben Inline-Override.
+
+### Zielmodell (vom User, umgesetzt)
+- **Zwei Layouts, jedes mit eigener, getrennt gemerkter Farbe** – kein „Gelb-Bleed" mehr.
+- **Standard**: Auswahl unter den 6 Farben; **Default = Tiefsee (blau)**.
+- **Studio** (neuer Name, Kontrast zu Standard): bringt automatisch warme Palette mit + **Akzentfarben-Picker**.
+- Zurück auf Standard → vorherige Standard-Farbe kommt zurück (nicht die Studio-Farbe).
+
+### Erledigt
+- [x] **`applyLayout()` ist jetzt die Single-Source der Farbe pro Layout:** Studio → `THEME_VARS` inline **entfernen**
+  (damit die `:root[data-layout]`-Palette + `--sd-accent` greifen) + `applySdAccent(currentSdAccent())`; Standard →
+  `--sd-accent` entfernen + `applyTheme(currentTheme())`. Behebt „blau trotz Studio" **und** den toten Akzent-Picker.
+- [x] **`currentTheme()` Default `dark`→`darker`** (Standard startet auf Tiefsee/blau).
+- [x] **`setTheme()`** wendet nur im Standard-Layout sofort an (speichert immer) – kein versehentliches Inline-Override im Studio.
+- [x] **init()** vereinfacht: nur noch `applyLayout(currentLayout())` setzt Theme/Akzent (keine doppelten Aufrufe).
+- [x] **Umbenennung:** Layout „Soft Dark (Variante B)"→**„Studio"**; Sektion „Design & Optik"→**„Farbe"**;
+  6 Themes→**Nacht / Tiefsee / Himmel / Bernstein / Kupfer / Wald**; Picker-Label „(Soft Dark)"→„(Studio)".
+
+### Live-Verifikation (Browser-Preview, getComputedStyle) – ALLES grün
+- [x] Default-Theme=`darker`; Standard-Akzent blau `#7C8CFF`; Studio-Akzent amber `#e8a94a`, BG `#1f1e1d`.
+- [x] Studio-Akzent auf Grün → Markierung grün; **zurück auf Standard → wieder blau** (kein Bleed).
+- [x] Labels korrekt. `verify:html` OK (2663) + `md-render` 25/25. Preview/launch.json wieder entfernt.
+
+### TODO Paul (NEUSTART nötig wegen no-store aus 26d + neuem JS)
+- [ ] Nexus **komplett neu starten**. Dann: Standard zeigt die 6 Farben (Default Tiefsee/blau); Studio ist sofort
+  warm + Akzent-Picker wirkt; Hin-/Herschalten behält je Layout die Farbe. Bei Bedarf einmal Strg+Shift+R.
+- [ ] Git-Commit: `git add public/index.html src/ui-server.js STATUS.md && git commit -m "Session 26e: Pro-Layout-Farbmodell (Standard↔Studio getrennt), Theme-Inline-Override im Studio behoben, Umbenennung Nacht/Tiefsee/Himmel/Bernstein/Kupfer/Wald + Studio"`
+
+---
+
+## Stand: 2026-06-14 (Session 26d – Eigentliche Wurzel: Electron cachte alte HTML → UI-Server jetzt no-store)
+
+Paul: nach 26c „geht gar nicht mehr", Akzentfarbe wirkungslos, **Slider sogar blau**; warm wird es nur, wenn er
+**erst das Theme „Soft Dark" (Design & Optik) und dann das Layout** wählt. Diagnose daraus eindeutig:
+- Das **Theme** „Soft Dark" funktioniert (setzt `--accent` **inline** auf `:root` → color-mix-Vars lösen korrekt auf).
+- Das **Layout** allein (`:root[data-layout]`-CSS-Regel) griff bei ihm nicht, obwohl die Datei auf der Platte korrekt
+  ist und im Browser-Preview nachweislich funktioniert. ⇒ **Electron lädt eine veraltete, gecachte `index.html`**
+  (die 26c-Zwischenversion mit dem kaputten `*/`-Kommentar, in der die Layout-Regel tot war). Soft-Reload (Strg+R)
+  reichte nicht.
+
+### Erledigt
+- [x] **UI-Server liefert `index.html` mit `Cache-Control: no-store` + `etag:false`/`lastModified:false`**
+  (`src/ui-server.js`, `express.static`-Optionen). Damit kann Electron nach UI-Änderungen nie wieder eine veraltete
+  Version anzeigen. **Greift erst nach komplettem App-Neustart** (Server läuft im Electron-Prozess), danach lädt die
+  korrigierte (im Preview verifizierte) HTML frisch.
+- [x] `node --check src/ui-server.js` OK, `verify:html` OK (2646).
+
+### TODO Paul (wichtig: NEUSTART, nicht nur Reload)
+- [ ] Nexus **komplett schließen und neu starten** (nicht nur Strg+R) bzw. `npm run app`. Dann **Soft Dark als
+  Layout** wählen → Suche/Einstellungen/Neue Notiz/Hashtags/Slider/Markierungen warm; Akzentfarbe wirkt sofort.
+  Das „erst Theme, dann Layout"-Workaround ist dann nicht mehr nötig.
+- [ ] Falls wider Erwarten noch alt: einmalig Strg+Shift+R (harter Reload, ignoriert Cache).
+- [ ] Git-Commit: `git add public/index.html src/ui-server.js STATUS.md && git commit -m "Session 26d: UI-Server no-store für index.html (behebt Electron-Stale-Cache hinter den Soft-Dark-Popup-Bugs)"`
+
+---
+
+## Stand: 2026-06-14 (Session 26c – Soft-Dark-Popups: zwei verkettete Bugs, jetzt LIVE verifiziert)
+
+Paul-Report nach 26b: Popups (Suche/Einstellungen/Neue Notiz) + **Hashtags weiterhin blau** im Soft Dark.
+Diesmal **live im Browser-Preview reproduziert + gefixt** (statischer `npx serve public`, `getComputedStyle`-Messungen).
+
+**Zwei verkettete Ursachen gefunden:**
+1. **color-mix löst `var(--accent)` am Definitions-Element auf.** Die abgeleiteten `--accent-*`/`--pop`-Variablen
+   stehen im `:root{}`-Block → ihr `var(--accent)` wird auf `:root` (=html) ausgewertet, wo `--accent` blau ist.
+   26b setzte die Soft-Dark-Palette aber auf **`body`**. Ergebnis: Element *erbt* zwar Amber (`--accent` am Element
+   = amber), aber `--accent-12` war bereits auf html zu **blau** aufgelöst und vererbte sich blau. → Fix: Palette auf
+   **`:root[data-layout="softdark"]`** + `applyLayout()` setzt `data-layout` zusätzlich auf `document.documentElement`.
+2. **Selbst verursachter CSS-Kommentar-Bug.** Mein Erklär-Kommentar enthielt die Zeichenfolge `--accent-*/--pop` –
+   das `*/` **beendet den CSS-Kommentar vorzeitig**, der Rest wurde als kaputtes CSS geparst und zerstörte die direkt
+   folgende `:root[data-layout="softdark"]`-Regel (sie „existierte", aber keine Deklaration griff). Kommentar ohne
+   `*/`-Sequenz neu formuliert. **Lehre:** in CSS-Kommentaren nie `*/` im Fließtext (auch nicht in `--var-*/...`).
+
+### Live-Verifikation (Browser-Preview, getComputedStyle)
+- [x] Soft Dark: `--accent`=`#e8a94a`, `--bg`=`#1f1e1d`, Popup-Markierung **amber** (vorher blau), Hashtag-Farbe+BG
+  **amber**, Popup-BG warm, Body-BG warm (kein blauer Radial mehr).
+- [x] Akzent-Picker: `setSdAccent('#33aa55')` → Markierung+Hashtag **grün**; Reset → zurück amber.
+- [x] Klassisch/Standard-Theme bleibt korrekt blau (Theme-Design).
+- [x] `npm run verify:html` OK (2646 Zeilen) + `md-render` 25/25. Preview-Server + temp. `launch.json` wieder entfernt.
+
+### Hinweis für Paul (wichtig zum Verständnis)
+- Die Popups folgen dem **Akzent des aktiven Themes/Layouts**. Im **Standard-Theme ist der Akzent blau** → Popups
+  bleiben dort blau (so gewollt). Für warme Popups: **Soft Dark** wählen (Layout in ⚙, oder Theme „Soft Dark" unter
+  Design & Optik) – dann sind Markierungen/Hashtags/Suche/Settings warm, und der Akzent-Picker färbt alles um.
+
+### TODO Paul
+- [ ] App neu laden, **Soft Dark** aktivieren → Suche/Einstellungen/Neue Notiz/Hashtags sind warm statt blau; Akzent-
+  farbe testen. (Falls weiterhin blau: harter Reload `Strg+Shift+R`, da Electron CSS cachen kann.)
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 26c: Soft-Dark Popups/Hashtags – :root[data-layout] statt body + CSS-Kommentar-Bug (*/) behoben, live verifiziert"`
+
+---
+
+## Stand: 2026-06-14 (Session 26b – Soft-Dark-Layout: echte Popup-Ursache + 5 Layout-Features)
+
+Folge-Report Paul: „**alle** Popups (Einstellungen, neue Notiz, Suche) sind im **Soft-Dark-Layout** noch blau"
++ 5 weitere Wünsche. **Echte Ursache der blauen Popups gefunden:** `.app` schließt in `index.html:683`, aber
+**alle Overlays** (`#ctx-menu`, Command-Palette/Suche, Prompt/Neue Notiz, Confirm, Picker, Settings, Usage)
+liegen **außerhalb** `.app`. Die Soft-Dark-**Layout**-Variablen saßen aber auf `.app[data-layout="softdark"]`
+→ erreichten die Overlays nie, die fielen auf das blaue `:root` zurück. (Session 26 hatte nur die *Theme*-
+Variablen gekoppelt – im *Layout*-Pfad greift das nicht.)
+
+### Erledigt
+- [x] **Popup-Fix (Kern).** Soft-Dark-Palette von `.app[data-layout="softdark"]` auf **`body[data-layout="softdark"]`**
+  verschoben; `applyLayout()` setzt `data-layout` jetzt **zusätzlich auf `document.body`**. Overlays sind Kinder
+  von `<body>` → erben `--bg/--panel/--accent/--pop/…` jetzt korrekt. Damit ziehen Settings, Neue-Notiz-Dialog,
+  Suche, Rechtsklick-Menü, Usage etc. im Soft-Dark mit.
+- [x] **Akzentfarbe (Soft Dark) einstellbar.** Neue Settings-Sektion (nur Soft-Dark): `<input type=color>` →
+  `setSdAccent()` setzt `--sd-accent` auf `:root`; Palette liest `--accent:var(--sd-accent,#e8a94a)`. Alle
+  bisher gelben Töne (`--amber-soft`, np2-tag-Border, Such-Glow) auf **`color-mix(... var(--accent) …)`** umgestellt
+  → „alles Gelbe" wird zur neuen Akzentfarbe. „↺" setzt auf Amber zurück. Persistenz `localStorage['nexus.sdAccent']`.
+- [x] **Icon-Leiste Breite einstellbar.** CSS-Var `--rail-w` (Default 60px) steuert Grid-Spalte; Rail-Buttons +
+  Vault-Button + Icons über `calc(var(--rail-w) …)` → **skalieren mit, bleiben quadratisch**. Slider 48–96px
+  (nur Soft-Dark), `applyRailW()`, Persistenz `localStorage['nexus.railW']`; danach `refitGraph()`.
+- [x] **Gliederungs-Off-by-one behoben.** Klick scrollte rect-basiert, Scroll-Spy markierte aber via `offsetTop`
+  (anderes Koordinatensystem) → die Überschrift *darüber* wurde aktiv. Beide nutzen jetzt
+  `getBoundingClientRect` + gemeinsamen `_olOffset()` (Oberkante note-area + ggf. sticky Toolbar) + 2px Toleranz.
+- [x] **Rechtes Panel = bündige eigene Fläche (Soft Dark).** Kein dunkleres Feld / keine Rahmenlinie mehr:
+  `.right-panel` ohne `margin/border/box-shadow`, `background:var(--panel)`, nur `border-top` + `border-radius:0 18px 0 0`
+  (Fenster-Optik wie Center-Karte); `#rz-r` blendet ein (`background:var(--panel)`, Hover-Akzent) → weiterhin
+  nur **vergrößerbar, nicht verschiebbar**, ohne sichtbaren dunklen Spalt.
+- [x] **Graph-Glow einstellbar bis aus.** Modul-Var `_graphGlow` (0..1) multipliziert `shadowBlur`; Slider 0–100 %
+  (0 = aus, beide Layouts), `setGraphGlow()`+`wakeGraph()`, Persistenz `localStorage['nexus.graphGlow']`.
+
+### Verifikation (Session 26b)
+- [x] `npm run verify:html` → **OK** (2644 Zeilen, Ende `</html>`, Inline-Script `node --check` grün).
+- [x] `node test/md-render.test.mjs` → **25/25**.
+- [ ] **Live-Test offen (Paul):** Build-Checks + Logik geprüft, aber **nicht** im laufenden Electron gerendert.
+
+### TODO Paul
+- [ ] App neu laden / `npm run app`, **Soft Dark** wählen und prüfen: (1) Popups (⚙, Neue Notiz, Suche, Rechtsklick,
+  Usage) sind warm statt blau. (2) ⚙ → Akzentfarbe ändern → alles Gelbe wechselt. (3) ⚙ → Icon-Leiste-Breite-Slider →
+  Rail wird breiter, Icons größer & quadratisch. (4) Gliederungspunkt klicken → genau dieser Abschnitt wird markiert.
+  (5) Rechtes Panel: kein dunkler Rand/Rahmen, nur per Trennlinie vergrößerbar. (6) ⚙ → Graph-Glow bis „aus".
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 26b: Soft-Dark Popups (body-Vars) + Akzentfarbe/Rail-Breite/Graph-Glow-Settings, Gliederungs-Off-by-one, rechtes Panel bündig"`
+
+---
+
+## Stand: 2026-06-14 (Session 26 – Alle Popups/Overlays an das aktive Farb-Theme gekoppelt)
+
+Paul-Report: Statusleiste unten, Markierung eines Gliederungsabschnitts, HTML/Dataview-Vorschau, Scrollbar,
+Datei-Markierung beim Anklicken, Claude-Usage-Fenster, Einstellungen, Neue-Notiz-Dialog, Rechtsklick-Menü –
+**„generell jedes Popup-Fenster ist noch blau"** und sollte sich automatisch dem aktuellen Farbschema anpassen.
+Ursache: Zahlreiche UI-Elemente nutzten **hartkodierte Blautöne** statt der Theme-CSS-Variablen, die seit
+Session 21/24 nur `--bg/--panel/--accent/…` umschalten. Reine Front-End-Änderung in `public/index.html`
+(direkte `Edit`-Patches, Windows-nativ – kein Mount/Stale-Problem).
+
+### Lösung (ein zentraler Mechanismus statt Einzelfarben)
+- [x] **Abgeleitete Theme-Variablen in `:root`** via `color-mix()` – leiten sich aus `--accent`/`--bg`/`--dim` ab
+  und folgen damit **automatisch jedem Theme (auch künftigen), ohne pro Theme gepflegt zu werden:**
+  - Akzent-Tints `--accent-04/08/10/12/14/20/30` (ersetzen alle `rgba(124,140,255,.XX)`), `--accent-soft`,
+    `--accent-tx` (helle Tag-/Chip-Schrift, ersetzt `#9fb0ff`).
+  - Oberflächen `--pop` (Popover/Menü/Palette-BG), `--bar` (Titel-/Datei-/Statusleiste, translucent),
+    `--scrim` (Overlay-Backdrop), `--field` (Eingaben/Selects/Buttons).
+  - Scrollbar `--sb-track/--sb-thumb/--sb-thumb-h`.
+- [x] **Alle hartkodierten Blautöne ersetzt:**
+  - `.palette` (Command-Palette **+ Settings-Modal + Neue-Notiz-Prompt + Confirm + Folder-Picker**, teilen sich
+    die Klasse) `rgba(13,17,30,.95)`/`rgba(124,140,255,.35)` → `var(--pop)`/`var(--accent-30)`.
+  - `.statusbar`, `.titlebar`, `.file-toolbar`, `#note-pane2 .np2-head` `rgba(10,13,22,.6/.7/.75)` → `var(--bar)`.
+  - `#ctx-menu` (Rechtsklick), `#color-pop`, `#icon-pop`, `.graph-tip`, `#toast`, `.graph-settings`,
+    `.graph-filter`, `#usage-popover`, `#vault-sel-drop` `#0f1320`/`#151b2c`/`rgba(11,14,24,.96/.97)` → `var(--pop)`.
+  - `#outline-panel .ol-row.active` (Gliederungs-Markierung), `.tree-file.selected` (Datei-Markierung),
+    Drop-Targets, Tags/Chips, Blockquote, `.folder-row.active`-Gradient, CodeMirror-Selektion → `--accent-*`.
+  - `.set-select`/`#vault-sel-btn` (`#0d1017`/`#2a2f42`) → `var(--field)`/`var(--border)`; Scrollbar
+    (`#1a1d2a`/`#3a3f55`/`#5a6080`) → `--sb-*`.
+  - `.overlay`-Backdrop `rgba(4,6,12,.55)` → `var(--scrim)`.
+- [x] **HTML-Vorschau-iframe** (`renderHtmlView`, „Dataview/Web"-Fenster): iframes erben **keine** CSS-Variablen –
+  daher liest die Funktion jetzt zur Laufzeit `getComputedStyle` von `--bg`/`--text`/`--dim` und injiziert die
+  konkreten Farben in das `srcdoc`-`<style>` (BG, Text, Scrollbar) statt der bisherigen blauen Festwerte.
+- Bewusst **unverändert** (Theme-Identität, kein Bug): `--app-bg`-Gradient des Standard-Themes (`#0e1430`),
+  `COLORS`-Ordnerpalette, `NEXUS_THEMES`-Definitionen inkl. „Soft Blue", Graph-Canvas-Knotenfarben.
+
+### Verifikation (Session 26)
+- [x] `npm run verify:html` → **OK** (2616 Zeilen, Ende `</html>`, Inline-Script `node --check` grün).
+- [x] `node test/md-render.test.mjs` → **25/25**.
+- [x] Grep: keine hartkodierten Blau-Token mehr außer den o.g. absichtlichen (Theme-Defs/Palette/iframe-Fallbacks).
+
+### TODO Paul
+- [ ] App neu laden (Strg+R) / `npm run app`: ein **anderes Theme** wählen (⚙ → Design & Optik, z.B. Soft Dark /
+  Focus Reader) und prüfen, dass **alle** Popups mitziehen: Statusleiste, Rechtsklick-Menü, Einstellungen,
+  Neue-Notiz-Dialog, Usage-Fenster, Gliederungs- & Datei-Markierung, Scrollbar, HTML-Vorschau.
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 26: Alle Popups/Overlays an aktives Farb-Theme gekoppelt (color-mix-Variablen statt hartkodierter Blautöne)"`
+
+---
+
+## Stand: 2026-06-13 (Session 25 – Echte Layout-Umschaltung: Variante B als alternatives Layout)
+
+> **Fix (nach Paul-Report „mittlerer Bereich amber, kein Text, rechts kein Graph"):** Ursache war
+> `.app[data-layout="softdark"] #rz-l{display:none}` – ein `display:none`-Grid-Item wird komplett aus
+> dem Grid entfernt, dadurch verschoben sich die 4 verbliebenen Items um eine Spalte: Center landete im
+> 0px-Track (1px breit), `#rz-r` erbte den 1fr-Track (der amberne „Rand" = Resizer im Hover) und das rechte
+> Panel kollabierte auf 5px (daher kein Graph/Gliederung). **Lösung:** `#rz-l{pointer-events:none}` statt
+> `display:none` – das Item bleibt im Grid (0px-Track), Mapping wieder 1:1. Headless verifiziert: Tracks
+> `60 0 975 5 360`, Notiz rendert, Graph 360px. **Lehre:** Grid-Items nie per `display:none` ausblenden,
+> wenn die Spaltenanzahl fix ist – `visibility/pointer-events` nutzen.
+>
+> **Fix 2 (Rail überdeckt Statusleiste + blaue Reste + rechtes Panel):** (a) Rail lief unten über die
+> Statusleiste, weil `.side` (Grid-Item, `min-height:auto`) auf Inhaltshöhe wuchs und `overflow:visible`
+> (nötig, damit das Vault-Dropdown seitlich aus den 60px austritt) nichts klippte. Lösung: `.side{min-height:0}`
+> → schrumpft auf die Grid-Zelle, dadurch greift `#side-scroll{min-height:0;overflow-y:auto;overflow-x:hidden}`
+> und die Icons scrollen intern. Rail-Tooltips von CSS-`.tip` auf **natives `title`** umgestellt (Scroll-Container
+> würde ein CSS-Tooltip abschneiden). (b) **Rechtes Panel** als warme Floating-Card: `background:var(--panel)`,
+> `margin:10px 12px 12px 6px`, `border-radius:16px`, Box-Shadow; `#right-toggle/.graph-wrap/.activity` transparent.
+> (c) **Blaue Reste warm umgefärbt:** Scrollbar (`::-webkit-scrollbar-thumb`→`var(--border)`/`--dim`),
+> Split-2.-Pane `#note-pane2` + `.np2-head/.np2-tag` (war `rgba(7,9,15)`/blau → `var(--panel)`/`--panel2`/`--amber-soft`),
+> Drop-Targets + `.folder-row.active` + `.tree-file.selected` + `#vault-sel-drop` + Such-Glow → amber.
+> Headless verifiziert (1280×720, 14 Themen): kein Statusleisten-Overlap (side-bottom=statusbar-top=694), Rail scrollt,
+> Vault-Dropdown tritt aus (right=259), rechtes Panel warm `rgb(42,41,40)`+radius16, Split-Pane warm, 0 Konsolenfehler.
+
+Folgeauftrag zu Session 24: nicht nur Farb-Skins, sondern eine **echte Layout-Umschaltung**. Variante B
+(Soft Dark) 1:1 als alternatives Layout, in ⚙ umschaltbar, **ohne Funktionsverlust**. Reine Front-End-Änderung
+in `public/index.html`, **15 Patches via `scripts/safe-edit.mjs`** (14 + 1 Folge-Fix, Windows-nativ, Read-Back-Hash OK).
+Plan-Datei: `~/.claude/plans/abstract-dreaming-walrus.md` (vom User freigegeben).
+
+Entscheidungen (vom User bestätigt): Baum-Zugriff via **schwebendem Flyout** (1:1 Mockup); Farben **gekoppelt**
+(B-Layout bringt warme Palette + Inter mit, Farb-Theme-Auswahl in B ausgeblendet).
+
+### Erledigt
+- [x] **Layout-Infrastruktur.** `localStorage['nexus.layout']` ∈ {`classic`,`softdark`} (Default classic).
+  `currentLayout()/applyLayout()/setLayout()` setzen `.app[data-layout=…]`; `init()` ruft `applyLayout(currentLayout())`.
+  **DOM-IDs/JS-Verdrahtung unverändert** → Umschaltung primär CSS + gezielte JS-Ergänzungen.
+- [x] **CSS-Scope `.app[data-layout="softdark"]`** (neuer Block im `<style>`): warme Palette + `font-family`/`background`
+  direkt auf `.app` (wichtig: `body` liest `--app-font`/`--app-bg` aus `:root`, daher reicht die Var allein nicht –
+  Folge-Fix). `.main`-Grid → `60px 0 1fr 5px var(--col-r)`, `#rz-l` aus; Icon-Rail (`.rail-btn`+Tooltip), Center als
+  gerundete Karte, Pillen-Tabs, rechtes Panel/Statusbar warm.
+- [x] **Icon-Rail + Flyout.** `renderSidebar()` verzweigt: bei softdark → `renderRail()` (ein `.rail-btn` je
+  Top-Level-Ordner mit `folderIcon`+Farb-Dot+Tooltip, dazu „+ Notiz"). Klick → `openRailFlyout(node,btn)`:
+  überlagerndes `#rail-flyout` mit Kopf + Unterbaum, **gebaut mit den bestehenden `makeFolderEl()/makeFileEl()`**
+  → D&D, Kontextmenü, Öffnen gratis. `closeRailFlyout()` bei Klick außerhalb / Escape / Layout-Wechsel / Dateiklick.
+- [x] **Editierbare Themen-Icons (beide Layouts).** `DEFAULT_ICONS` + `localStorage['nexus.folderIcons']`,
+  `folderIcon()`. `makeFolderEl()` zeigt bei Top-Level `<span class="folder-ic">`. Icon-Popover `#icon-pop`
+  (Emoji-Eingabe + 32 Presets), Kontextmenü „🖼 Icon ändern…", und Auto-Öffnen beim Anlegen eines Top-Level-Ordners.
+- [x] **Settings.** Neue Sektion „Layout" (Standard / Soft Dark); „Design & Optik" nur noch im klassischen Layout.
+- [x] **Unverändert/nur restyled:** Tab-D&D-Reorder, Tab-Dualscreen (Center-Split), `setRightMode` (Graph/Gliederung/Split),
+  Graph-Canvas, `#rz-r`, Vault-Switch, Usage-Widget.
+
+### Verifikation (Session 25) – inkl. echtem Headless-Lauf
+- [x] `npm run verify:html` → OK (2580 Zeilen, Inline-Script `node --check` grün, Ende `</html>`); `md-render` 25/25.
+- [x] **Live-Test** über Wegwerf-Stub-Server (echte index.html + API-Stubs) + Preview-Browser, **0 Konsolenfehler**:
+  - Umschalten classic→softdark→classic sauber; Rail mit 4 Buttons + korrekten Icons; `.side` 60px.
+  - Flyout öffnet (Kopf „Uni", Unterordner + Dateien aus `makeFolderEl/makeFileEl`), schließt bei Layout-Wechsel.
+  - Nach Folge-Fix: Schrift = **Inter**, `.app`-Hintergrund warm `rgb(31,30,29)`, Center-Karte `border-radius:18px`.
+  - Icon-Popover: 32 Presets, Setzen→`localStorage`+Tree-Icon aktualisiert, Entfernen→Default zurück.
+  - (Center-Spaltenbreite nur im 0-px-Headless-Viewport „0" – reines Artefakt, kein Bug.)
+- [x] Stub-Server/Preview/launch.json wieder entfernt; safe-edit-Backups in `.nexus-backups/`.
+
+### TODO Paul
+- [ ] App neu laden (Strg+R) / `npm run app`: ⚙ → Layout → „Soft Dark (Variante B)". Prüfen: Icon-Rail, Flyout
+  (Datei öffnen, Rechtsklick, D&D), Icon ändern, Tab-D&D + Tab in die Mitte ziehen (Dualscreen), Graph/Gliederung/Split,
+  Vault-Switch (Rail-Icon oben), Einstellungen (Rail-Zahnrad). Zurück auf „Standard" → klassisch unverändert.
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 25: Echte Layout-Umschaltung – Variante B (Icon-Rail+Flyout, editierbare Icons, Layout-Setting)"`
+- [ ] Optional Folgesession: Varianten G (Kanban) und I (Focus Reader) nach demselben Muster als Layouts.
+
+---
+
+## Stand: 2026-06-13 (Session 24 – R11 Drei Design-Mockups als umschaltbare Optik)
+
+Paul-Wunsch: die drei Dark-Mockups aus `design-mockups/` (Variante B Soft Dark, G Kanban/Board,
+I Focus Reader) **zusätzlich** zum aktuellen Look einbauen, in den Einstellungen umschaltbar.
+Umgesetzt als Erweiterung des bestehenden, verifizierten Theme-Mechanismus (Session 21) statt als
+parallele Layout-Engine – d.h. die Mockups sind **vollwertige Design-Presets** (Palette + Seiten-
+Hintergrund + Schrift), die über die bereits funktionierende „Design & Optik"-Sektion (⚙) gewählt
+werden. Reine Front-End-Änderung in `public/index.html`, **6 Patches via `scripts/safe-edit.mjs`**
+(Windows-nativ, kein Mount → Read-Back-Hash OK).
+
+### Erledigt
+- [x] **Themebare App-Basis.** `:root` um `--app-bg` (bisher hart kodierter Radial-Gradient),
+  `--app-font` (`'Segoe UI',Inter,…`) und `--reader-font` (Default = `--app-font`) ergänzt.
+  `body{background:var(--app-bg);font:…var(--app-font)}` zieht jetzt aus diesen Variablen;
+  `.md-body{font-family:var(--reader-font)}` macht die **Lese-Schrift des Notizinhalts** themebar
+  (Default unverändert). Alte Optik bleibt damit 1:1 Standard.
+- [x] **`THEME_VARS`** um `--app-bg`/`--app-font`/`--reader-font` erweitert → sauberes Zurücksetzen
+  beim Umschalten (bestehende Themes setzen sie nicht → Fallback auf `:root`-Defaults).
+- [x] **3 neue Presets in `NEXUS_THEMES`:**
+  - `softdark` **Soft Dark (Variante B)** – warmes Braun `#1f1e1d`, Amber-Accent `#e8a94a`, Inter, flacher BG.
+  - `kanban` **Kanban / Board (Variante G)** – warmes Dunkel mit Verlaufs-BG, Accent `#d99a3d`, Inter.
+  - `reader` **Focus Reader (Variante I)** – grünstichiges Dunkel `#151715`, Accent `#8fc5a3`,
+    seitlicher Verlaufs-BG **und Serifen-Lesefont** (`Georgia,'Times New Roman',serif`) im Notizinhalt.
+  Jeder mit `sw`-Swatch; erscheinen automatisch in der Einstellungs-Sektion (Loop über `NEXUS_THEMES`),
+  Klick → `setTheme()` (Persistenz `localStorage['nexus.theme']`, beim Start via `applyTheme(currentTheme())`).
+- [x] **Label** der Einstellungs-Sektion „Farb-Theme" → **„Design & Optik"** (deckt jetzt komplette Designs ab).
+
+### Scope-Hinweis (ehrlich)
+- Eingebaut sind **Farb-/Typografie-Skins** auf dem bestehenden Layout, nicht die abweichenden
+  Layouts der Mockups (Icon-Rail, Kanban-Lanes, Paper-Spalte). Die Focus-Reader-Serifenschrift macht
+  Variante I deutlich eigenständig; B und G teilen sich (wie in den Mockups) die warme Palette und
+  unterscheiden sich v.a. in Accent/BG. Echte Layout-Umschaltung wäre eine eigene, größere Aufgabe
+  (Richtung R12) und wurde bewusst nicht in die 2440-Zeilen-Datei gezwängt.
+
+### Verifikation (Session 24)
+- [x] `npm run verify:html` → **OK** (2440 Zeilen, Ende `</html>`, Inline-Script `node --check` grün).
+- [x] `node test/md-render.test.mjs` → **25/25**.
+- [x] safe-edit Read-Back-Hash grün (Windows-nativ, kein Mount); Temp-Generator/JSON wieder entfernt.
+
+### TODO Paul
+- [ ] App neu laden (Strg+R) / `npm run app`: ⚙ → „Design & Optik" → Soft Dark / Kanban / Focus Reader
+  durchklicken (sofort wirksam, bleibt nach Reload). Bei Focus Reader: Notiz öffnen → Serifen-Lesefont.
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 24: R11 drei Design-Mockups als umschaltbare Optik (Theme-Presets B/G/I)"`
+
+---
+
+## Stand: 2026-06-12 (Session 23 – R10 Professioneller Installer & vollwertige Windows-App)
+
+Version → **0.3.1**. Schwerpunkt: Nexus fühlt sich wie eine echte Windows-App an
+(Installer-Doppelklick, Erster-Start-Wizard, kein CMD-Fenster, Nexus-Identität in der
+Taskleiste, geführte Claude-/Usage-Einrichtung). Reine Datei-Edits (Write/Edit), **kein
+`safe-edit` nötig** (public/index.html unberührt).
+
+### Erledigt
+- [x] **Teil 1 – Neues App-Icon.** `scripts/gen-icon.mjs` (NEU, devDeps `sharp` + `png-to-ico`)
+  erzeugt aus EINER SVG-Definition `build/icon.png` (256×256, transparent) + `build/icon.ico`
+  (multi-size 16/24/32/48/64/128/256). Design = vertrautes Diamant-Motiv, **leicht abgewandelt**:
+  weicher Glow um die Cyan-Elemente + feiner Ring rundherum. Icons sind **bereits generiert** und
+  in `build/` abgelegt (png 40 KB, ico 372 KB, 7 Größen verifiziert). Regenerieren: `npm run gen:icon`.
+- [x] **Teil 2 – NSIS-Installer (`package.json` build-Block).** `nsis`: `oneClick:false`,
+  `perMachine:false`, `allowElevation:false`, `allowToChangeInstallationDirectory:true`
+  (korrekter electron-builder-Key statt des in der Vorgabe genannten `allowDirChange`),
+  `installerIcon/uninstallerIcon/installerHeaderIcon = build/icon.ico`,
+  `installerLanguages:["de_DE","en_US"]`, `language:"1031"`, `createDesktopShortcut`,
+  `createStartMenuShortcut`, `shortcutName:"Nexus"`, `runAfterFinish:true`,
+  `deleteAppDataOnUninstall:false`. `win.requestedExecutionLevel:"asInvoker"` (kein UAC).
+- [x] **Teil 3 – Erster-Start-Wizard.** `public/wizard.html` (NEU, 3 Seiten, Nexus-Dark-Theme):
+  (1) Willkommen, (2) Vault-Speicherort mit nativem **„Durchsuchen…"** (`dialog.showOpenDialog`,
+  kein CMD), (3) Einstellungen (Autostart via `app.setLoginItemSettings`, „jetzt starten",
+  „Anleitung anzeigen"). „Fertigstellen" schreibt `nexus.config.json` in userData (Seeding wanderte
+  aus `ensureDataDir` in `wizard:finish`), startet Hauptfenster und/oder Hilfe. IPC via
+  `electron/preload.cjs` (contextBridge `nexusAPI`) ↔ `ipcMain.handle` in `main.js`
+  (`wizard:browse/default-vault-path/finish/cancel`). Re-Run gefahrlos testbar mit `NEXUS_FORCE_WIZARD=1`
+  (überschreibt vorhandene Config nicht).
+- [x] **Teil 4 – Kein CMD-Fenster, nie.** `win.requestedExecutionLevel:asInvoker`;
+  Main-Logs nur via `log()` → stderr + `%APPDATA%\Nexus\nexus.log` (kein sichtbares stdout, MCP-stdout
+  bleibt sauber); `windowsHide:true` an beiden `spawn`-Aufrufen in `ui-server.js` (markitdown + opener)
+  → kein aufblitzendes Konsolenfenster. `nodeIntegration:false` bleibt.
+- [x] **Taskleiste + Electron verstecken.** `app.setName('Nexus')`, `app.setAppUserModelId('de.hunold.nexus')`,
+  `app.setAboutPanelOptions({applicationName:'Nexus'})`, BrowserWindow-`icon` = `build/icon.ico`/`.png`,
+  Fenstertitel „Nexus", deutsches Menü ohne Electron-Verweise. → Taskleiste zeigt Nexus-Logo + „Nexus".
+- [x] **In-App-Anleitung (Claude-Connect + Session-Key).** `public/help.html` (NEU): Schritt 1 Button
+  „Mit Claude Desktop verbinden" (IPC `help:connect-claude` → schreibt/merged claude_desktop_config.json,
+  Ergebnis-Status im Fenster), Schritt 2 Schritt-für-Schritt zum `sessionKey`-Cookie fürs Usage-Widget
+  (+ Button „claude.ai öffnen" via `app:open-external`). Erreichbar über **Menü „Hilfe → Einrichtung &
+  Usage-Key…"** und optional automatisch am Wizard-Ende.
+- [x] **Teil 6 – `SETUP.md`** komplett neu: Doppelklick-Flow, SmartScreen-Schritt, Wizard, In-App-Anleitung,
+  Build-Hinweis (läuft auf Windows), Pfadtabelle inkl. Log.
+
+### Verifikation (Session 23)
+- [x] `npm run verify:html` → **OK** (public/index.html 2434 Zeilen, Ende `</html>`, Inline-Script `node --check` grün; Datei unberührt).
+- [x] `node test/md-render.test.mjs` → **25/25 bestanden**.
+- [x] `node --check` grün: `scripts/gen-icon.mjs` (real, Mount-synchron), `electron/preload.cjs`,
+  `electron/main.js` (Kontrollfluss/Struktur via 1:1-Reproduktion, da Mount stale), package.json-Build-Block (valides electron-builder-JSON).
+- [x] Icon real erzeugt: `file` → PNG 256×256 RGBA + „MS Windows icon resource – 7 icons".
+- [x] `ui-server.js`: nur additive `windowsHide:true`-Flags (kanonisch via Grep an Z. 233 + 375 bestätigt; war vorher gültig).
+
+### Mount-Hinweis (wie Sessions 14/21)
+- Der Linux-Mount lieferte für **per Write überschriebene** Dateien (main.js, preload.cjs, package.json)
+  und für ui-server.js (310-Zeilen-Stub) erneut **stale/abgeschnittene** Kopien; die kanonischen Windows-Dateien
+  sind vollständig korrekt (per `Read`/`Grep` gegengelesen: main.js `registerIpc`@286, `window-all-closed`@372;
+  ui-server.js windowsHide@233/375). `node --check`/JSON-Parse über den Mount schlugen deshalb fälschlich fehl
+  → Verifikation in sauberen /tmp-Reproduktionen. **Auf Pauls Windows-PC zur Sicherheit nachfahren:**
+  `node --check electron/main.js`, `node --check src/ui-server.js`.
+
+### Build-Ergebnis (2026-06-12, Pauls Windows-PC)
+- [x] `npm install` + `npm run dist` erfolgreich. Ergebnis in `D:\Nexus\dist\`:
+  **`Nexus Setup 0.3.1.exe`** (NSIS, ~104 MB) + **`Nexus-0.3.1-portable.exe`** (~104 MB).
+- [x] **Build-Stolperstein dokumentiert:** `electron-builder` brach zunächst beim Entpacken des
+  `winCodeSign`-Caches ab → `Cannot create symbolic link … Dem Client fehlt ein erforderliches Recht`
+  (macOS-`.dylib`-Symlinks im Archiv; Windows verlangt für Symlinks ein Sonderrecht). **Fix:** Windows-
+  **Entwicklermodus** aktivieren (Einstellungen → Für Entwickler) ODER einmalig im **Admin-Terminal**
+  `npm run dist`; danach ist der Cache entpackt und folgende Builds laufen normal. Ggf. vorher
+  `rmdir /s /q "%LOCALAPPDATA%\electron-builder\Cache\winCodeSign"`. Kein Code-/Config-Bezug.
+
+### TODO Paul (Windows-PC)
+- [ ] Installer testen: Doppelklick → SmartScreen „Trotzdem ausführen" → Ordnerwahl → Wizard (Vault-Pfad, Autostart) →
+  Fenster öffnet, Taskleiste zeigt Nexus-Logo + „Nexus". Erststart-Config in `%APPDATA%\Nexus`.
+- [ ] „Hilfe → Einrichtung & Usage-Key…": Claude-Connect (dann Claude Desktop neu starten) + Session-Key-Anleitung.
+- [ ] Git-Commit: `git add -A && git commit -m "Session 23: R10 Installer/Wizard/Icon/Taskleiste/In-App-Anleitung (v0.3.1)"`
+
+| Session | Datum | Inhalt | Start % | End % |
+|---|---|---|---|---|
+| 26e | 2026-06-14 | Pro-Layout-Farbmodell: echter Logikbug behoben (Theme setzt `--accent` inline → schlug Studio-Layout-CSS, daher blau/Picker tot) – `applyLayout` entfernt im Studio die THEME_VARS-Inline-Styles + setzt `--sd-accent`, im Standard `applyTheme`; jedes Layout merkt Farbe getrennt (kein Bleed). currentTheme-Default `darker` (Tiefsee). Umbenannt: Layout→Studio, Sektion→Farbe, 6 Themes→Nacht/Tiefsee/Himmel/Bernstein/Kupfer/Wald. Live im Preview verifiziert (Standard blau↔Studio amber↔grün↔zurück blau). verify:html OK (2663) + 25/25 | ~98 | ~99 |
+| 26d | 2026-06-14 | UI-Server liefert index.html mit `Cache-Control: no-store` (express.static-Optionen) – behebt Electron-Stale-Cache, das hinter „Soft-Dark-Popups bleiben blau trotz Fix" steckte. node --check + verify:html OK | ~98 | ~98 |
+| 26c | 2026-06-14 | Soft-Dark-Popups/Hashtags weiterhin blau – live im Browser-Preview reproduziert: (1) color-mix-Vars lösen `var(--accent)` auf `:root` auf → Palette muss auf `:root[data-layout]` (nicht `body`), `applyLayout` setzt Attribut auch auf documentElement; (2) eigener CSS-Kommentar mit `*/` in „--accent-*/--pop" beendete Kommentar vorzeitig & zerstörte die Regel. Beide gefixt, per getComputedStyle bestätigt (Markierung/Hashtag/Popup amber, Accent-Picker grün/Reset ok). verify:html OK (2646) + 25/25 | ~98 | ~98 |
+| 26b | 2026-06-14 | Soft-Dark-Layout: echte Popup-Ursache (Overlays liegen außerhalb `.app`) → Palette auf `body[data-layout]` + `applyLayout` setzt body-Attribut; Akzentfarbe-Setting (`--sd-accent`, `--amber-soft` & Gelb-Töne via `color-mix`); Icon-Leiste-Breite-Slider (`--rail-w`, Buttons skalieren quadratisch); Gliederungs-Off-by-one (Klick+Scroll-Spy beide rect-basiert, `_olOffset`); rechtes Panel bündig ohne dunkles Feld/Rahmen (`#rz-r` blendet ein); Graph-Glow-Slider bis aus (`_graphGlow`). verify:html OK (2644) + 25/25 | ~97 | ~98 |
+| 26 | 2026-06-14 | Alle Popups/Overlays an aktives Farb-Theme gekoppelt: abgeleitete `color-mix`-Variablen in `:root` (`--accent-04…30`, `--pop`/`--bar`/`--scrim`/`--field`, `--sb-*`) ersetzen alle hartkodierten Blautöne (`rgba(124,140,255,*)`, `rgba(10,13,22/11,14,24/13,17,30,*)`, `#0f1320/#0d1017/#2a2f42/#151b2c`, Scrollbar-Hex, `#9fb0ff`). Betrifft Palette/Settings/Prompt/Confirm/Picker, Statusleiste, Rechtsklick-/Color-/Icon-Menü, Graph-Popover, Usage-Fenster, Gliederungs- & Datei-Markierung, Vault-Dropdown, Scrollbar; HTML-Vorschau-iframe injiziert berechnete Farben (kein CSS-Var-Erbe). verify:html OK (2616) + 25/25 | ~97 | ~97 |
+| 25 | 2026-06-13 | Echte Layout-Umschaltung: Variante B (Soft Dark) als alternatives Layout über `.app[data-layout]` – 60px-Icon-Rail mit editierbaren Themen-Icons (`folderIcon`/`#icon-pop`/`nexus.folderIcons`) + schwebendes Flyout (reuse `makeFolderEl/makeFileEl`), Center-Karte, Pillen-Tabs, gekoppelte warme Palette+Inter; Settings-Sektion „Layout"; alle Funktionen erhalten (Tab-D&D, Center-Split, Graph/Gliederung/Split). 15 Patches via safe-edit; verify:html OK + 25/25 + Headless-Preview-Lauf (0 Konsolenfehler) | ~96 | ~97 |
+| 24 | 2026-06-13 | R11: 3 Design-Mockups (B Soft Dark / G Kanban / I Focus Reader) als umschaltbare Theme-Presets in NEXUS_THEMES eingebaut; `:root` um `--app-bg`/`--app-font`/`--reader-font` erweitert, body+`.md-body` themebar; THEME_VARS ergänzt; Sektion „Design & Optik"; 6 Patches via safe-edit; verify:html OK + 25/25 | ~95 | ~96 |
+| 23 | 2026-06-12 | R10: neues Icon (gen-icon.mjs, Glow+Ring), NSIS-Optionen+Icons, Erster-Start-Wizard (wizard.html+IPC), kein CMD/windowsHide/stderr-Log, Taskleisten-Identität, In-App-Anleitung (help.html: Claude-Connect + Session-Key), SETUP.md neu; verify:html OK + 25/25; Build erfolgreich: Setup+portable je ~104 MB (winCodeSign-Symlink-Fix: Entwicklermodus/Admin) | ~88 | ~95 |
 
 ---
 

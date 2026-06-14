@@ -35,7 +35,14 @@ function getVault(name) {
 // ── Express ───────────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json());
-app.use(express.static(join(__dir, '..', 'public')));
+// index.html nie cachen – sonst lädt Electron nach UI-Änderungen eine veraltete Version (stale CSS/JS)
+app.use(express.static(join(__dir, '..', 'public'), {
+  etag: false,
+  lastModified: false,
+  setHeaders(res, path) {
+    if (path.endsWith('.html')) res.setHeader('Cache-Control', 'no-store, must-revalidate');
+  }
+}));
 
 // ── Dateibaum ─────────────────────────────────────────────────────────────────
 function buildTree(root, relBase, ignoreSet, depth = 0) {
@@ -230,7 +237,7 @@ app.post('/api/convert/markitdown', (req, res) => {
   if (!existsSync(fullPath)) return res.status(404).json({ error: 'Datei nicht gefunden' });
 
   const outPath = fullPath.replace(/\.[^.]+$/, '.md');
-  const proc = spawn('python', ['-m', 'markitdown', fullPath, '-o', outPath], { shell: true });
+  const proc = spawn('python', ['-m', 'markitdown', fullPath, '-o', outPath], { shell: true, windowsHide: true });
 
   let stderr = '';
   proc.stderr.on('data', d => stderr += d.toString());
@@ -325,12 +332,53 @@ app.get('/api/file', (req, res) => {
   } catch (e) { res.status(500).send(e.message); }
 });
 
+// ── R9: Claude Usage Proxy ───────────────────────────────────────────────────
+app.get('/api/claude-usage', async (req, res) => {
+  const { sessionKey, orgId } = req.query;
+  if (!sessionKey || !orgId) return res.status(400).json({ error: 'Fehlende Parameter: sessionKey, orgId' });
+  try {
+    const resp = await fetch(
+      `https://claude.ai/api/organizations/${encodeURIComponent(orgId)}/usage`,
+      { headers: {
+          'Cookie': `sessionKey=${sessionKey}`,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json',
+          'Referer': 'https://claude.ai/'
+      }}
+    );
+    if (!resp.ok) return res.status(resp.status).json({ error: `HTTP ${resp.status}` });
+    res.json(await resp.json());
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/claude-orgs', async (req, res) => {
+  const { sessionKey } = req.query;
+  if (!sessionKey) return res.status(400).json({ error: 'Fehlende Parameter: sessionKey' });
+  try {
+    const resp = await fetch('https://claude.ai/api/organizations', {
+      headers: {
+        'Cookie': `sessionKey=${sessionKey}`,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+        'Referer': 'https://claude.ai/'
+      }
+    });
+    if (!resp.ok) return res.status(resp.status).json({ error: `HTTP ${resp.status}` });
+    const data = await resp.json();
+    if (Array.isArray(data)) {
+      const chat = data.filter(o => Array.isArray(o.capabilities) && o.capabilities.includes('chat'));
+      return res.json(chat.map(o => ({ id: o.uuid || o.id, name: o.name, isTeam: o.raven_type === 'team' })));
+    }
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Server starten ────────────────────────────────────────────────────────────
 const port = cfg.ui?.port ?? 3000;
 app.listen(port, () => {
   console.log(`[Nexus UI] http://localhost:${port}`);
   if (cfg.ui?.autoOpen && !process.versions.electron) {
     const opener = process.platform === 'win32' ? 'start' : 'open';
-    spawn(opener, [`http://localhost:${port}`], { shell: true, detached: true });
+    spawn(opener, [`http://localhost:${port}`], { shell: true, detached: true, windowsHide: true });
   }
 });
