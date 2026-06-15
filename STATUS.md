@@ -31,7 +31,7 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 | ~~R9~~ | ~~P2~~ | ~~**Claude Usage-Widget unten rechts** – nach GitHub `SlavomirDurej/claude-usage-widget`; in Claude-Aktivitäts-Zeile; Login-Daten änderbar~~ | ~~Sonnet~~ | ✅ Session 22 |
 | ~~R10~~ | ~~P2~~ | ~~**Professioneller Installer & vollwertige Windows-App** – neues Icon, NSIS-Optionen, Erster-Start-Wizard, kein CMD, Taskleisten-Identität, In-App-Anleitung (Claude-Connect + Session-Key)~~ | ~~Sonnet~~ | ✅ Session 23 (Build `npm run dist` läuft auf Pauls Windows-PC) |
 | ~~R11~~ | ~~P3~~ | ~~**3 weitere UI-Design-Vorschläge für index.html** – Alternativen zum aktuellen Look, nur Mockups/HTML~~ | ~~Opus~~ | ✅ Session 24 (Mockups B/G/I als umschaltbare Design-Presets eingebaut) |
-| R12 | P3 | **Obsidian-Regeln und Arbeitsweisen in Nexus übernehmen** – alle sinnvollen Obsidian-Workflows (Templates, Daily Notes, Kanban, Tags, Properties…) als Nexus-Features oder MCP-Tools abbilden | **Opus** | Großer Scope; braucht Analyse der Obsidian-Funktionen + Architektur-Entscheidungen |
+| R12 🔄 | P3 | **Obsidian-Regeln und Arbeitsweisen in Nexus übernehmen** – alle sinnvollen Obsidian-Workflows (Templates, Daily Notes, Kanban, Tags, Properties…) als Nexus-Features oder MCP-Tools abbilden | **Opus** | **In Arbeit (Session 31):** Regelwerk migriert (Scaffold + Overlay + MCP-`instructions`). Restliche Feature-Tools (R12a–f) s. Session-31-Eintrag |
 | R13 | P3 | **Abschließender Obsidian-vs-Nexus-Vergleich** – wo Obsidian noch besser ist; ehrliche Lücken-Liste | **Sonnet** | Reine Analyse/Recherche; kein Code |
 
 ### Empfohlene Reihenfolge (je neues Fenster / neue Session)
@@ -47,6 +47,313 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 9. **R11** (Design-Vorschläge)
 10. **R12** (Obsidian-Regeln)
 11. **R13** (Vergleich)
+
+---
+
+## Stand: 2026-06-15 (Session 34c – Tabellen-Überschriften in Akzentfarbe)
+
+Paul-Wunsch (Screenshot): Die Kopfzeilen-Überschriften in Tabellen (z. B. „Verfahren" / „Menge")
+sollen ebenfalls in der **Akzentfarbe** stehen. Reine CSS-Änderung in `public/index.html`.
+
+### Erledigt
+- [x] `.md-table th` Textfarbe von hartem `#cdd6e8` auf **`var(--accent-tx)`** umgestellt (dieselbe
+  theme-aware Akzent-Textfarbe wie Links/Wikilinks). Header-Hintergrund unverändert. Folgt damit
+  automatisch Standard (blau) **und** allen Studio-Varianten (Bernstein/Hell).
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (2927 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [x] Theme-/Layout-sicher: nur CSS-Var, kein Hartcode; `--accent-tx` ist in allen Themes auf Lesbarkeit ausgelegt.
+- [ ] **Live-Augenschein offen (Paul):** Tabellen-Kopfzeile in Akzentfarbe (Standard + Studio).
+
+### TODO Paul
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 34c: Tabellen-Kopfzeilen in Akzentfarbe (var(--accent-tx) statt hartem #cdd6e8)"`
+
+---
+
+## Stand: 2026-06-15 (Session 34b – Bugfix: Scrollbalken im Notizfenster oben nicht klickbar)
+
+Paul-Report: Der Scrollbalken im Notizfenster ist **nicht bis ganz oben klickbar** – erst ab ca. 1 cm
+nach unten. Reine CSS-Änderung in `public/index.html`.
+
+### Ursache
+- Die schwebende Tab-Leiste (`.tabbar`, Session 33) ist `position:absolute;top/left/right:0;z-index:20`
+  und liegt über die **volle Breite** über dem oberen Bereich (≈ `--tab-h`, ~1 cm) der Notizfläche –
+  also auch über dem **oberen Ende des Scrollbalkens** am rechten Rand. Obwohl der Container optisch
+  transparent ist, fängt er die Klicks ab → das obere Stück Scrollbalken ist nicht erreichbar.
+
+### Erledigt
+- [x] `.tabbar` bekommt **`pointer-events:none`** (transparenter Container lässt Klicks durch zum
+  Scrollbalken/Inhalt darunter), `.tabbar>*` bekommt **`pointer-events:auto`** → Tabs, `+`-Button und
+  Tab-Nav bleiben voll klickbar. Leerflächen (inkl. über dem Scrollbalken) sind jetzt durchlässig.
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (2927 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [x] Theme-/Layout-sicher: nur Pointer-Events der Tab-Leiste, keine Optik-/Hartcode-Änderung; gilt für
+  Standard- und Studio-Layout (beide nutzen dieselbe `.tabbar`).
+- [ ] **Live-Augenschein offen (Paul):** Scrollbalken bis ganz oben anklickbar; Tabs/`+`/Nav weiter klickbar.
+
+### TODO Paul
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 34b: Bugfix Scrollbalken – Tab-Leiste pointer-events:none (Klicks bis oben durch), Tabs/Buttons bleiben klickbar"`
+
+---
+
+## Stand: 2026-06-15 (Session 34 – Bugfix: Gliederung quetscht Einträge statt zu scrollen)
+
+Paul-Report (2 Screenshots): In der **Gliederung**-Ansicht werden bei zu vielen Einträgen alle
+Zeilen ins Fenster gequetscht (zusammengestaucht). Soll: **gleiche Formatierung wie im Split-Tab**
+(Zeilen in natürlicher Höhe) + **Scrollbalken**. Reine CSS-Änderung in `public/index.html`.
+
+### Ursache
+- `#outline-panel` war im **Outline-Modus** (`.right-panel[data-rmode="outline"]`) als
+  `display:flex;flex-direction:column` gesetzt → jede `.ol-row` wurde damit zum Flex-Child mit
+  Default `flex-shrink:1` und wurde bei Überlauf **zusammengestaucht** statt zu überlaufen.
+- Im **Split-Modus** ist `#outline-panel` `display:block` → Zeilen behalten natürliche Höhe, Panel
+  scrollt (`overflow:auto`). Genau dieses Verhalten war erwünscht.
+
+### Erledigt
+- [x] Outline-Regel auf **`display:block`** umgestellt (wie Split). `flex:1` bleibt (Panel füllt die
+  Höhe im `.right-panel`-Flex-Column), `min-height:0` ergänzt (Flex-Child-Scroll sauber), `overflow:auto`
+  liefert den Scrollbalken. Zeilen rendern jetzt in natürlicher Höhe und scrollen bei Überlauf.
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (2926 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [x] Theme-/Layout-sicher: nur die eine Modus-Regel geändert, keine Hartcodes; Split-Verhalten unberührt.
+- [ ] **Live-Augenschein offen (Paul):** Notiz mit vielen Überschriften öffnen → „Gliederung"-Tab zeigt
+  Zeilen in voller Höhe + Scrollbalken (kein Quetschen), wie im „Split"-Tab.
+
+### TODO Paul
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 34: Bugfix Gliederung – Zeilen nicht mehr gequetscht (display:block statt flex), Scrollbalken wie im Split"`
+
+---
+
+## Stand: 2026-06-15 (Session 33 – Notiztext läuft bis ganz oben unter schwebende Milchglas-Tabs)
+
+Paul-Wunsch (Screenshot): Der Notiztext soll **bis ganz oben** im Notizfenster sichtbar sein – auch wenn Tabs
+da sind, soll der Text **unter den Tabs weiterlaufen**. Die Tabs **ganz leicht durchsichtig mit Milch-/Frost-Effekt**
+(Text verschwommen dahinter). Reine CSS-Änderung in `public/index.html`, theme-/layout-agnostisch.
+
+### Erledigt
+- [x] **Tab-Leiste aus dem Flex-Fluss genommen** (`.tabbar`): `position:absolute; top/left/right:0; z-index:20`.
+  **Container vollständig transparent** (kein Hintergrund, kein Border, kein Blur) → die Notizfläche bleibt
+  **einheitlich bis ganz oben**, kein dunkler Balken mehr. Horizontales Tab-Scrollen (overflow-x) bleibt.
+- [x] **Milch-/Frost-Effekt liegt auf den einzelnen Tab-Kacheln** (`.tab`), nicht auf der Leiste: jede Kachel hat
+  jetzt `background:color-mix(in srgb,var(--bg) 52%,transparent)` + **`backdrop-filter:blur(14px) saturate(1.3)`**
+  (+ `-webkit-`). So **schweben die Tabs über der Fläche** und der Text wird **nur direkt hinter den Tabs**
+  verschwommen, der Bereich dazwischen zeigt die Fläche/den Text scharf. Hover 64 %, aktiver Tab 80 % (solider =
+  klar erkennbar). Studio: Leiste transparent, aktiver Tab 82 % Frost (statt `--panel2`), runde Pillen (radius 10).
+- [x] **Notizinhalt füllt die volle Höhe und läuft unter die Tabs:** neue CSS-Var **`--tab-h`** auf `.col`
+  (Standard 42px). `.note-area` bekommt `padding-top:var(--tab-h)` + `scroll-padding-top:var(--tab-h)` → der
+  Scroll-Container reserviert exakt die Tab-Höhe, **alle** Inhaltstypen (Reader `.note-content`, Editor `.editor-wrap`
+  height:100%, Datei-/PDF-/Bild-Toolbars, Suchtreffer) starten sauber **unter** der schwebenden Leiste, kein
+  Funktionselement wird verdeckt. Beim Scrollen läuft der Text unter die Milchglas-Tabs (verschwommen). Reader-
+  `.note-content` Top-Padding 30→16px (Tab-Abstand kommt jetzt aus `--tab-h`).
+- [x] **Split-Zweitfenster** (`#note-pane2`) bekommt `padding-top:var(--tab-h)` → dessen Kopfzeile (`np2-head`)
+  bleibt unter der über die ganze Spaltenbreite schwebenden Tab-Leiste sichtbar.
+- [x] **Studio-Layout (softdark):** Tab-Leiste war bisher `transparent` (lag über `--panel`) → jetzt ebenfalls
+  Milchglas (`color-mix(in srgb,var(--bg) 58%,transparent)`, Position/Blur von der Basis geerbt). Höhere Leiste
+  (padding 8/16 + min-height 33 ≈ 57px) → `--tab-h:60px` im Studio-`.col`-Scope.
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (2926 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [x] Theme-/Layout-sicher: nur CSS-Vars (`--bg`, `--border`, `--tab-h`, `color-mix`, `backdrop-filter`) → folgt
+  Standard **und** allen Studio-Varianten (Standard/Dunkler/Hell). Kein Hartcode.
+- [ ] **Live-Augenschein offen (Paul):** im laufenden Electron prüfen – Text bis ganz oben, scrollt verschwommen
+  unter den Tabs; Tabs leicht durchsichtig/milchig. In Standard- **und** Studio-Layout, auch im Split.
+
+### TODO Paul
+- [ ] Nexus neu laden: Notiz öffnen, scrollen → Text läuft unter die milchigen Tabs (verschwommen sichtbar),
+  beginnt direkt oben. Editor-/Datei-/Such-Ansicht prüfen (Toolbars nicht verdeckt). Studio + Split gegentesten.
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 33: Notiztext läuft bis ganz oben unter schwebende Milchglas-Tabs (backdrop-filter, --tab-h-Reserve)"`
+
+---
+
+## Stand: 2026-06-15 (Session 32 – MCP-Ordnertools, Ordner-Icons überall, Flyout bleibt offen + breitenverstellbar)
+
+Paul-Auftrag (3 Punkte): (1) den „Nebenbefund" beheben, dass Ordner löschen/umbenennen im Mount blockiert
+ist (ging nur nach `allow_cowork_file_delete`) – Arbeiten soll für Claude **so einfach wie möglich** sein;
+(2) **alle** Ordner (auch Unterordner + neu angelegte) bekommen ein Ordner-Icon, nicht nur die obersten;
+(3) das Icon-**Popup (Rail-Flyout)** soll breitenverstellbar (nicht gespeichert) sein und **offen bleiben** –
+nur ein anderes Icon / dasselbe Icon erneut (oder Esc) schließt es.
+
+### Erledigt
+- [x] **MCP-Datei-/Ordner-Tools** (`src/tools.js` + `src/server.js`): neue Tools **`create_folder`**, **`move`**
+  (verschieben **und** umbenennen, Dateien **und** ganze Ordner), **`delete`** (Notiz oder ganzer Ordner rekursiv).
+  Alle mit Pfad-Sicherheit (`safeFull` – kein `../`-Ausbruch aus dem Vault) + automatischem `reindex`. Damit
+  braucht Claude **keine** blockierte Mount-/Datei-System-Operation mehr (`allow_cowork_file_delete` entfällt).
+  - **MCP-`instructions`** ergänzt: Tool-Liste um create_folder/move/delete erweitert + Anweisung, Ordner-Ops
+    **immer** über diese Tools zu machen (nie Datei-System/Mount). So weiß Claude Desktop es von selbst.
+- [x] **Alle Ordner bekommen ein Ordner-Icon** (`makeFolderEl`, `public/index.html`): bisher nur `depth===0`
+  (Top-Ordner) ein Icon + Unterordner nur ein grauer Punkt. Jetzt rendert **jeder** Ordner `folderIcon(name)`
+  (Unbekannte/neue → Fallback 📁); der Punkt für Unterordner entfällt. Neu angelegte Ordner bekommen das Icon
+  automatisch (Baum wird nach jeder Operation neu gerendert).
+- [x] **Rail-Flyout bleibt offen + breitenverstellbar** (`public/index.html`):
+  - **Offen bleiben:** Klick auf eine Datei im Flyout öffnet sie, lässt das Popup aber offen (kein
+    `closeRailFlyout` mehr); Klick **außerhalb** schließt nicht mehr (Rail-Teil aus dem globalen
+    `document click`-Handler entfernt). Schließen nur über **dasselbe Icon** (Toggle in `openRailFlyout`),
+    ein **anderes Icon** (öffnet dort neu) oder **Esc**. Drag/Layout-/Vault-Wechsel schließen weiterhin explizit.
+  - **Breite verstellbar (nicht gespeichert):** neuer Resizer `#rail-flyout-rz` (fixe Position, folgt der rechten
+    Kante des Flyouts via `positionFlyoutResizer()`), Ziehen ändert `fo.style.width` (200–560px). Beim **Öffnen**
+    wird `fo.style.width=''` zurückgesetzt → bewusst **keine** Persistenz. CSS: `min/max-width` am Flyout +
+    Resizer-Optik (Akzent-Linie bei Hover/Drag).
+
+### Verifikation
+- [x] `node --check src/server.js` + `node --check src/tools.js` → **OK**.
+- [x] `node test/smoke.js` (neuer Block „3b. Ordner-/Datei-Operationen"): **alle 13 neuen Asserts grün**
+  (create_folder ok/doppelt-Fehler/`../`-Fehler, move ok/Quelle-weg/fehlende-Quelle-Fehler, delete Ordner
+  rekursiv/Wurzel-Fehler). (Hinweis: das Schluss-`rmSync` des Temp-Vaults wirft auf **Windows** EPERM – offener
+  SQLite-Handle, **vorbestehend**, Linux-Sandbox nicht betroffen; alle Asserts liefen davor durch.)
+- [x] `npm run verify:html` → **OK** (2925 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [ ] **Live-Augenschein offen (Paul):** im laufenden Electron prüfen (siehe TODO).
+
+### TODO Paul
+- [ ] **Claude Desktop neu starten** → testen: „Lege Ordner X an / Verschiebe / Benenne um / Lösche Ordner Y"
+  läuft jetzt über Nexus (`create_folder`/`move`/`delete`) ohne Mount-Blockade.
+- [ ] Nexus neu laden: (1) Unterordner + neue Ordner zeigen ein Ordner-Icon; (2) Icon anklicken → Popup bleibt
+  offen (Datei öffnen / daneben klicken schließt nicht), rechte Kante ziehen verstellt die Breite (nach
+  Wieder-Öffnen Standardbreite), dasselbe Icon / anderes Icon / Esc schließt.
+- [ ] Git-Commit: `git add src/tools.js src/server.js public/index.html test/smoke.js STATUS.md && git commit -m "Session 32: MCP create_folder/move/delete (Mount-Blockade weg), Ordner-Icons für alle Ordner, Rail-Flyout bleibt offen + breitenverstellbar"`
+
+---
+
+## Stand: 2026-06-15 (Session 31 – R12: Obsidian-Regelwerk nach Nexus migriert + friend-ready Scaffold)
+
+Paul-Auftrag: R12 bearbeiten. Ziel – **mindestens das gleiche Regel-Level wie Obsidian** nach Nexus
+holen, **alle Claude-Regeln, die an Obsidian hingen, auf Nexus umschwenken**, und überflüssig
+gewordene Mechanik (durch die neue Architektur) entschlacken. **Zusatzwunsch (während der Session):**
+Regeln müssen **einfach änderbar** bleiben und als **Grundgerüst an Freunde weitergebbar** sein.
+
+### Architektur-Entscheidung (mit Paul abgestimmt)
+- **Plan + sofort erste Umsetzung** (nicht nur Konzept).
+- Regeln leben **im Vault `_System/`, Nexus-adaptiert** (eine Quelle für Claude Desktop *und* Claude Code).
+- **Original behalten**, neue Fassung daneben (`-Nexus`-Suffix) – Original-`Arbeitsweise.md` unangetastet.
+- Live-Vault = **`D:\Knowledge-base`** (was Nexus indexiert). Obsidian-Arbeitskopie unter
+  `C:\Users\pjhan\Documents\knowledge-base` wird nicht auto-synchronisiert (bewusst).
+
+### Drei-Schichten-Modell (macht „an Freunde weitergeben" zum First-Class-Feature)
+1. **Scaffold (Repo `D:\Nexus\rules\`)** – generisch, versioniert, friend-ready, **ohne** persönliche Daten.
+2. **Live-Kopie im Vault `_System/`** – aus dem Scaffold installiert, frei editierbar (Nexus-UI = Markdown-Editor).
+3. **Persönliches Overlay `_System/Mein-Setup.md`** – Themen/Farben/Methoden; wird bei Scaffold-Update **nie** überschrieben.
+- Abschnitte sind markiert: **🔒 STANDARD** (Kern, behalten) vs. **🔧 ANPASSEN** (nutzerspezifisch).
+
+### Obsidian → Nexus – Mechanik-Mapping (Kern von R12)
+| Obsidian-Mechanik | Nexus-Äquivalent |
+|---|---|
+| `app.vault.getFiles()`-JS-Snippet (Datei suchen) | `search` / `list_notes` |
+| `app.metadataCache` Tag-Suche-JS | `search { tag }` / `query { field:"tags", op:"contains" }` |
+| `getBacklinksForFile()` | `backlinks` |
+| Dataview-Blöcke (dynamische Listen) | `query` / `list_notes` **zur Laufzeit** (keine eingebetteten Blöcke nötig) |
+| Properties / Frontmatter-Filter | `query` (war Obsidian-Feature → in Nexus **bereits vorhanden**) |
+| Tags | `search { tag }` (in Nexus **bereits vorhanden**) |
+| `.obsidian/graph.json` + `snippets/farbschema.css` + Tabelle (Dreifachpflege) | **eine** Stelle: Nexus-UI-Ordnerfarben + Logik-Tabelle in `Mein-Setup.md` |
+| `cssclass: fach-xx` (Obsidian-CSS) | Nexus-UI-Styling; Feld bleibt für Obsidian-Kompat |
+| Python-Skripte (`extract_cache.py`, `pdf2md.py`, `clean_transcript.py`) | unverändert, aber via **Bash-Tool** statt Obsidian-`spawn` |
+| Obsidian Wikilink-Auto-Update beim Umbenennen | ⚠️ **Gap** – Nexus aktualisiert nicht auto; manuell via `search`+`patch` (Roadmap: `rename_note`) |
+| Obsidian Scheduled Tasks (vault-check, email, deadline-cleanup) | ⚠️ **Gap** – Nexus schedult nichts; bis dahin manuell beim Session-Start / Claude-Code-Agent / OS-Task (Roadmap: Nexus-Scheduler) |
+
+### Erledigt (Session 31)
+- [x] **Repo-Scaffold `D:\Nexus\rules\`** angelegt: `README.md` (Drei-Schichten-Modell + Weitergabe an Freunde),
+  `Arbeitsweise.md` (alle 23 Regeln generalisiert, Obsidian-Mechanik → Nexus-MCP, Gaps markiert),
+  `Session-Start.md` (MCP-Tool-Tabelle + Pflicht-Routinen), `Mein-Setup.template.md` (leeres Overlay).
+- [x] **Live-Kopien im Vault** (`D:\Knowledge-base\_System\`): `Arbeitsweise-Nexus.md` (aus Scaffold kopiert,
+  Links auf `-Nexus` gefixt, UTF-8 ohne BOM), `Session-Start-Nexus.md` (Vault-Pfad + Tool-Tabelle + Deadline-Routine).
+- [x] **Persönliches Overlay `_System/Mein-Setup.md`** mit Pauls Echtdaten: Themen-Index, Themen→Ziel-Zuordnung,
+  voller Farbcode, Uni-Modul-Pflichtstruktur, Frontmatter-Schema + Modul-Kürzel, Verweise auf R17/R18 (Volldetails
+  im Original), wiederkehrende Routinen + Scheduling-Gap.
+- [x] **MCP-`instructions` in `src/server.js`** (Linchpin): Claude Desktop bekommt beim Verbinden den Auftrag,
+  zuerst `_System/Session-Start-Nexus.md` + `Arbeitsweise-Nexus.md` + `Mein-Setup.md` zu lesen → Pflichtlektüre
+  (Regel 12) passiert automatisch, ohne Erinnerung. (`McpServer(serverInfo, { instructions })` – SDK-geprüft.)
+- [x] **`CLAUDE.md` Regel 7** auf die Nexus-adaptierte Quelle umgeschwenkt (Scaffold + Live + Overlay).
+- [x] **Original `_System/Arbeitsweise.md` / `Session-Start.md` unangetastet** (Wechsel erst nach Pauls Freigabe).
+
+### Verifikation
+- [x] `node --check src/server.js` → **OK** (instructions-Änderung syntaktisch sauber).
+- [x] SDK-Check: `McpServer`-Konstruktor reicht 2. Arg an `Server` weiter, `options.instructions` wird in der
+  `initialize`-Antwort gesendet (`node_modules/@modelcontextprotocol/sdk/.../server/index.js:50,279`).
+- [x] Live-`Arbeitsweise-Nexus.md` als UTF-8 **ohne BOM** geschrieben (Frontmatter-Parser-sicher), 18.182 Bytes.
+- [ ] **Live-Test offen (Paul):** Claude Desktop neu starten → prüfen, ob Nexus die Server-`instructions` zeigt
+  und Claude die `_System/*-Nexus.md` von selbst liest.
+
+### Roadmap R12 (verbleibende Feature-Tools – nächste Sessions)
+- **R12a – Templates:** MCP-Tool `new_from_template { template, path, vars }` (Obsidian „Templates").
+- **R12b – Daily Note:** Tool `daily_note { date? }` legt/öffnet Tagesnotiz nach Schema.
+- **R12c – Scheduler (schließt 13c/16/23-Gap):** Nexus-Daemon oder dokumentierter Claude-Code-/OS-Task-Weg
+  für Vault-Check / Email / Deadline-Cleanup.
+- **R12d – `rename_note` mit Link-Fixup (schließt Regel-9-Gap):** umbenennen + alle `[[Links]]` mitziehen.
+- **R12e – Kanban/Properties-UI:** Board-Ansicht über Frontmatter (`query`-basiert) in der Nexus-UI.
+- **R12f – First-Run-Installer:** beim ersten Start Scaffold → `_System/` kopieren (wenn fehlend) +
+  `Mein-Setup.template.md` → `Mein-Setup.md`. Macht Weitergabe an Freunde Ein-Klick.
+
+### TODO Paul
+- [ ] Claude Desktop **neu starten** → testen: liest Claude die Nexus-Regeln (`_System/*-Nexus.md`) von selbst?
+- [ ] Neue Live-Regeln gegenlesen: `_System/Arbeitsweise-Nexus.md`, `Session-Start-Nexus.md`, `Mein-Setup.md`.
+  Wenn passend: **Freigabe**, die Original-`Arbeitsweise.md`/`Session-Start.md` durch die `-Nexus`-Fassung zu ersetzen.
+- [ ] Reihenfolge für R12a–f festlegen (Vorschlag: R12f Installer → R12a Templates → R12c Scheduler).
+- [ ] Git-Commit: `git add rules/ src/server.js CLAUDE.md STATUS.md && git commit -m "Session 31: R12 – Obsidian-Regelwerk nach Nexus migriert (Scaffold+Overlay), MCP-instructions, Mapping + Roadmap"`
+  (Vault-Dateien unter `D:\Knowledge-base` liegen außerhalb des Repos und werden separat gesichert.)
+
+---
+
+## Stand: 2026-06-15 (Session 30 – Suchfenster modernisiert: Popup „Gruppiert" + Trefferseite „Karten")
+
+Paul-Wunsch: die **beiden Suchfenster** (Befehls-/Such-Popup + Volltext-Trefferseite) moderner machen, passend
+zum Rest. Erst je 2 Mockups gezeigt, Paul wählte: **Popup A „Gruppiert & getypt"** + **Trefferseite A „Karten"**.
+Reine UI-Änderung in `public/index.html`, theme-/layout-agnostisch (nur CSS-Vars, kein Hartcode).
+
+### Erledigt
+- [x] **Such-Popup „Gruppiert & getypt"** (Command-Palette, `#pal-overlay`):
+  - Neue Eingabezeile mit führendem 🔍-Icon + `Esc`-Chip (`.pal-inputrow`); Input-`border-bottom` in die Zeile verschoben.
+  - Treffer jetzt **zweizeilig**: farbige Icon-Kachel (`.pal-tile`, getönt in der Ordnerfarbe via `color-mix`) +
+    Titel (`.pal-name`) + Breadcrumb-Pfad (`.pal-sub`, `crumbHtml()`: `📁 Ordner › Datei`).
+  - **Sektions-Überschriften** (`.pal-group`): Treffer nach `group` gruppiert (Notizen / Befehle); „Alle Ergebnisse"
+    bleibt als Top-Aktion ohne Header, mit `↵`-Hint (`.pal-hint`).
+  - Auswahl (`.pal-item.sel`) zusätzlich mit **Akzent-Leiste links** (`inset 2px 0 0 var(--accent)`).
+  - JS: `noteItem()`-Helper, `palTint()`, `crumbHtml()`, `pathExt()`, `bareIcon()`; `showPalDefault`/`onPalInput`/
+    `renderPalItems` umgeschrieben (Item-Modell jetzt `{group,icon,tile,label,crumb/sub,hint,fn}`). Navigation (↑↓/↵/Esc)
+    unverändert – Header zählen nicht als Items.
+- [x] **Volltext-Trefferseite „Karten"** (`doSearch`):
+  - Kopf mit Count + Query als Akzent-Chip (`.search-head`/`.sh-q`).
+  - Jeder Treffer = **Karte** (`.result-card`, `--panel`, Border, radius 12, Hover = `--panel2`+Akzent-Border+Schatten):
+    Icon + Titel (`.rc-title`, `--accent-tx` statt hart blau), Breadcrumb-Pfad (`.rc-path`, `crumbHtml()` mit Chevrons),
+    Snippet (`.rc-snip`), Treffer-Begriff als **Akzent-Pill** (`.rc-snip b` = `--accent-14`/`--accent-tx`).
+  - Alte Klassen `results-header/result-item/result-title/result-path/result-snip` ersetzt (keine Restreferenzen mehr).
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (2890 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [x] Theme-/Layout-sicher: ausschließlich CSS-Vars (`--accent`, `--accent-tx`, `--panel`, `--panel2`, `--border`,
+  `--dim`, `--text`, `color-mix`) → folgt automatisch Standard (blau) **und** Studio-Varianten (Bernstein/Hell).
+- [ ] **Live-Augenschein offen (Paul):** im laufenden Electron prüfen (Strg+K Popup; Volltextsuche „Alle Ergebnisse").
+
+### TODO Paul
+- [ ] Nexus neu laden: (1) Strg+K → Popup zeigt Icon-Kacheln, Pfad-Breadcrumb, Sektionen, Akzent-Auswahl;
+  (2) „Alle Ergebnisse für …" → Trefferseite als Karten mit Breadcrumb + hervorgehobenen Treffern. In Standard- und Studio-Layout prüfen.
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 30: Suchfenster modernisiert – Popup gruppiert/getypt + Trefferseite als Karten"`
+
+---
+
+## Stand: 2026-06-15 (Session 29 – R8 key-frei: Nexus-MCP in Claude Desktop verifiziert)
+
+Paul-Frage: Claude-Anbindung **ohne extra API-Key**, nur mit **Claude-Pro-Abo** (Desktop-App/claude.ai)?
+
+### Ergebnis (Kernaussage)
+- **Pro-Abo ≠ API-Key.** Pro deckt claude.ai + Desktop-App ab, **keinen** API-Zugang. Die in R8 beschriebene
+  In-App-Suchbox, die direkt die Anthropic-API anruft, braucht zwingend einen (separat abgerechneten) API-Key.
+- **Key-freier Weg = Nexus als MCP-Server in Claude Desktop.** Claude Desktop läuft über das Pro-Abo; Nexus
+  ist bereits ein vollwertiger MCP-stdio-Server (`src/server.js`). Man chattet in der Desktop-App, Claude greift
+  über die Nexus-Tools auf den Vault zu. Null API-Kosten, ToS-konform.
+
+### Erledigt / verifiziert
+- [x] **Backup-Commit** des kompletten offenen Arbeitsstands vor der Anbindung (`1454b75`, 32 Dateien).
+- [x] **Config war bereits vorhanden** in `%APPDATA%\Claude\claude_desktop_config.json` (kein Schreibzugriff nötig):
+  `"nexus": { "command": "node", "args": ["D:\\Nexus\\src\\server.js"] }`. `node` = `C:\Program Files\nodejs\node.exe` (v24.16.0), auf PATH.
+- [x] **End-to-end-MCP-Handshake getestet** (initialize + tools/list über stdin): Server `nexus` v0.2.0 antwortet,
+  **alle 10 Tools** gelistet (search/outline/read_note/write_note/append_to_section/backlinks/list_notes/reindex/query/patch),
+  Vault `D:\Knowledge-base` mit **3899 Dateien** indexiert, File-Watcher aktiv. Keine Fehler.
+- [x] `loadConfig()` löst Pfade über `import.meta.url` + absolute dbPath → läuft cwd-unabhängig (egal von wo Claude Desktop startet).
+
+### TODO Paul
+- [ ] Claude Desktop neu starten → im Tool-/MCP-Menü taucht **nexus** auf → testen: „Suche in meinem Vault nach …",
+  „Lies Notiz X", „Lege Notiz Y an". Läuft über das Pro-Abo, kein Key.
+- [ ] Offen bleibt R8 als **optionale** In-App-API-Box (nur für Leute mit eigenem API-Key) – nicht zwingend.
 
 ---
 
@@ -1147,6 +1454,7 @@ node src/ui-server.js
 ## Usage-Log (Regel 22)
 | Session | Datum | Inhalt | Start % | End % |
 |---|---|---|---|---|
+| 30 | 2026-06-15 | Suchfenster modernisiert: Such-Popup „Gruppiert & getypt" (Icon-Kacheln/Breadcrumb/Sektionen/Akzent-Leiste, neue pal-Helper) + Trefferseite „Karten" (search-head/result-card, crumbHtml, Akzent-Pill-Treffer); alte result-*-Klassen ersetzt; verify:html 2890 Zeilen gruen | - | - |
 | 22 | 2026-06-12 | R9 Claude Usage-Widget: 5 Patches safe-edit (CSS/Statusbar/Popover-HTML/Esc-Handler/JS), 2 Backend-Proxy-Endpoints (/api/claude-usage + /api/claude-orgs), localStorage nexus.claudeAuth; verify:html 2367 Zeilen + 25/25 gruen | - | - |
 | 21 | 2026-06-11 | R7 Einstellungs-Menü: Theme/Ordnerfarben/Vault-Pfad/Editor-Font/Graph-Default + vaultsRoot-Endpoint; 10 Patches safe-edit; verify:html 2210 Zeilen + 25/25 gruen | - | - |
 | 20b | 2026-06-11 | R6a korrigiert: Tab-Splitscreen in die MITTE (#center-body/#note-pane2/#rz-center, openCenterSplit/closeCenterSplit/initCenterSplitDrop/initCenterResizer), alter Right-Panel-Overlay-Ansatz entfernt; rechtes Panel bleibt daneben; 8 Patches via safe-edit; verify:html 2100 Zeilen + 25/25 gruen | - | - |

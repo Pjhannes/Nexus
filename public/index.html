@@ -51,13 +51,14 @@ kbd{background:rgba(255,255,255,.1);border-radius:5px;padding:1px 6px;font-size:
 .resizer::after{content:"";position:absolute;inset:0 2px;border-radius:2px;transition:background .15s}
 .resizer:hover::after,.resizer.drag::after{background:var(--accent,#7C8CFF)}
 body.col-resizing{cursor:col-resize;user-select:none}
-.col{border-right:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column}
+.col{border-right:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column;position:relative;--tab-h:42px}
 .col:last-child{border-right:none}
-.tabbar{display:flex;align-items:stretch;gap:2px;padding:4px 4px 0;background:rgba(8,10,18,.4);border-bottom:1px solid var(--border);overflow-x:auto;flex:0 0 auto;min-height:33px}
+.tabbar{position:absolute;top:0;left:0;right:0;z-index:20;display:flex;align-items:stretch;gap:2px;padding:4px 4px 0;background:transparent;border-bottom:none;overflow-x:auto;overflow-y:hidden;min-height:33px;pointer-events:none}
+.tabbar>*{pointer-events:auto}
 .tabbar::-webkit-scrollbar{height:0}
-.tab{display:flex;align-items:center;gap:6px;max-width:200px;padding:5px 7px 5px 10px;border-radius:8px 8px 0 0;color:var(--dim);font-size:12px;cursor:pointer;white-space:nowrap;border:1px solid transparent;border-bottom:none}
-.tab:hover{background:rgba(255,255,255,.04);color:var(--text)}
-.tab.active{background:rgba(255,255,255,.06);color:var(--text);border-color:var(--border)}
+.tab{display:flex;align-items:center;gap:6px;max-width:200px;padding:5px 7px 5px 10px;border-radius:8px 8px 0 0;color:var(--dim);font-size:12px;cursor:pointer;white-space:nowrap;border:1px solid transparent;border-bottom:none;background:color-mix(in srgb,var(--bg) 52%,transparent);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3)}
+.tab:hover{background:color-mix(in srgb,var(--bg) 64%,transparent);color:var(--text)}
+.tab.active{background:color-mix(in srgb,var(--bg) 80%,transparent);color:var(--text);border-color:var(--border)}
 .tab-i{font-size:11px;flex:0 0 auto}
 .tab-t{overflow:hidden;text-overflow:ellipsis}
 .tab-x{flex:0 0 auto;opacity:.45;border-radius:4px;width:16px;height:16px;line-height:14px;text-align:center;font-size:14px}
@@ -106,8 +107,8 @@ body.col-resizing{cursor:col-resize;user-select:none}
 .tree-file.selected{background:var(--accent-14);color:var(--text)}
 
 /* Note area */
-.note-area{overflow:auto;min-height:0;scroll-behavior:smooth}
-.note-content{padding:30px 46px 90px;max-width:1000px}
+.note-area{overflow:auto;min-height:0;scroll-behavior:smooth;padding-top:var(--tab-h);scroll-padding-top:var(--tab-h)}
+.note-content{padding:16px 46px 90px;max-width:1000px}
 .md-body{font-family:var(--reader-font)}
 .note-meta{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
 .chip{font-size:11px;padding:3px 10px;border-radius:99px;border:1px solid var(--border);color:var(--dim);background:var(--panel)}
@@ -192,7 +193,7 @@ a.wikilink.broken{color:#e07b7b;border-bottom-style:dashed;border-bottom-color:r
 .md-table-wrap{overflow-x:auto;margin:14px 0;border:1px solid var(--border);border-radius:10px}
 .md-table{border-collapse:collapse;width:100%;font-size:13px}
 .md-table th,.md-table td{padding:7px 13px;border-bottom:1px solid var(--border);border-right:1px solid rgba(255,255,255,.04);text-align:left}
-.md-table th{background:rgba(255,255,255,.04);color:#cdd6e8;font-weight:600}
+.md-table th{background:rgba(255,255,255,.04);color:var(--accent-tx);font-weight:600}
 .md-table tr:last-child td{border-bottom:none}
 .md-table td:last-child,.md-table th:last-child{border-right:none}
 .md-table tr:hover td{background:rgba(255,255,255,.02)}
@@ -247,14 +248,18 @@ a.wikilink.broken{color:#e07b7b;border-bottom-style:dashed;border-bottom-color:r
 .bl-item .bl-path{font-size:11px;color:var(--dim);margin-left:auto}
 .bl-empty{color:var(--dim);font-size:12.5px;font-style:italic}
 
-/* Search results */
-.results-header{padding:14px 46px 8px;font-size:12px;color:var(--dim);border-bottom:1px solid var(--border)}
-.result-item{padding:10px 46px;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;transition:.1s}
-.result-item:hover{background:var(--panel)}
-.result-title{font-weight:600;color:#7ec8e3;font-size:13px}
-.result-path{font-size:11px;color:var(--dim);margin-top:1px}
-.result-snip{font-size:12px;margin-top:3px;color:#b9c2d4}
-.result-snip b{color:#ffe9a8;font-weight:600}
+/* Search results – Karten */
+.search-head{display:flex;align-items:center;gap:10px;padding:20px 46px 14px;flex-wrap:wrap}
+.search-head .sh-count{font-size:13px;color:var(--dim)}
+.search-head .sh-q{font-size:12.5px;color:var(--accent);background:var(--accent-12);border:1px solid var(--accent-30);border-radius:99px;padding:3px 12px;display:inline-flex;align-items:center;gap:6px}
+.search-list{padding:0 46px 44px;display:flex;flex-direction:column;gap:10px}
+.result-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:13px 16px;cursor:pointer;transition:.13s}
+.result-card:hover{border-color:var(--accent-30);background:var(--panel2);box-shadow:0 4px 18px rgba(0,0,0,.28)}
+.rc-title{display:flex;align-items:center;gap:9px;font-weight:600;color:var(--accent-tx);font-size:14px;margin-bottom:4px}
+.rc-path{font-size:11px;color:var(--dim);display:flex;align-items:center;gap:5px;margin-bottom:6px;flex-wrap:wrap}
+.rc-snip{font-size:12.5px;line-height:1.55;color:color-mix(in srgb,var(--text) 74%,transparent)}
+.rc-snip b{background:var(--accent-14);color:var(--accent-tx);border-radius:3px;padding:0 3px;font-weight:600}
+.cr-sep{opacity:.55}
 
 /* Right panel */
 .right-panel{display:flex;flex-direction:column;overflow:hidden}
@@ -262,7 +267,7 @@ a.wikilink.broken{color:#e07b7b;border-bottom-style:dashed;border-bottom-color:r
 #center-body{flex:1;display:flex;min-height:0;min-width:0}
 #note-area{min-width:0}
 #center-body.split #note-area{flex:0 0 var(--center-l,50%)}
-#note-pane2{display:none;min-width:0;flex-direction:column;border-left:1px solid var(--border);background:rgba(7,9,15,.6)}
+#note-pane2{display:none;min-width:0;flex-direction:column;border-left:1px solid var(--border);background:rgba(7,9,15,.6);padding-top:var(--tab-h)}
 #center-body.split #note-pane2{display:flex;flex:1}
 #rz-center{display:none;width:5px;cursor:col-resize;flex-shrink:0;position:relative;z-index:5}
 #center-body.split #rz-center{display:block}
@@ -331,11 +336,24 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 .overlay.show{display:flex}
 .palette{width:580px;border-radius:16px;border:1px solid var(--accent-30);background:var(--pop);box-shadow:0 30px 90px rgba(0,0,0,.7),0 0 40px var(--accent-12);overflow:hidden}
 .palette input{width:100%;padding:15px 18px;background:transparent;border:none;outline:none;color:var(--text);font-size:15px;border-bottom:1px solid var(--border)}
-.pal-results{max-height:340px;overflow-y:auto}
-.pal-item{display:flex;align-items:center;gap:11px;padding:10px 18px;font-size:13px;cursor:pointer}
+.pal-results{max-height:360px;overflow-y:auto;padding-bottom:4px}
+.pal-item{display:flex;align-items:center;gap:11px;padding:8px 18px;font-size:13px;cursor:pointer;position:relative}
 .pal-item:hover,.pal-item.sel{background:var(--accent-12)}
+.pal-item.sel{box-shadow:inset 2px 0 0 var(--accent)}
 .pal-item .dot{width:8px;height:8px;border-radius:3px;flex-shrink:0}
-.pal-item .pal-path{color:var(--dim);font-size:11px;margin-left:auto;white-space:nowrap}
+/* Such-Popup – gruppiert & getypt */
+.pal-inputrow{display:flex;align-items:center;gap:11px;padding:0 16px;border-bottom:1px solid var(--border)}
+.pal-inputrow .pal-srch{font-size:16px;color:var(--dim);flex-shrink:0}
+.pal-inputrow input{border-bottom:none;padding:15px 0}
+.pal-inputrow .pal-esc{font-size:10.5px;color:var(--dim);background:var(--panel2);border:1px solid var(--border);border-radius:5px;padding:1px 7px;flex-shrink:0}
+.pal-group{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);padding:11px 18px 5px}
+.pal-tile{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.pal-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.pal-name{font-size:13.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pal-sub{font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pal-hint{font-size:10.5px;color:var(--dim);background:var(--panel2);border:1px solid var(--border);border-radius:5px;padding:1px 7px;flex-shrink:0}
+.pal-item.sel .pal-hint{color:var(--accent);border-color:var(--accent-30)}
+.pal-footer kbd{background:var(--panel2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-size:10.5px;font-family:Consolas,monospace;color:var(--dim);margin-right:3px}
 .pal-footer{padding:7px 18px;border-top:1px solid var(--border);font-size:11px;color:var(--dim);display:flex;gap:14px}
 .vault-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;font-size:13px}
 .vault-item:hover{background:var(--panel2)}
@@ -422,7 +440,7 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 #outline-panel .ol-row.active{color:var(--accent);background:var(--accent-08)}
 #outline-panel .ol-empty{padding:12px 14px;font-size:11px;color:var(--dim);font-style:italic}
 .right-panel[data-rmode="outline"] .graph-wrap{display:none}
-.right-panel[data-rmode="outline"] #outline-panel{flex:1;display:flex;flex-direction:column;overflow:auto}
+.right-panel[data-rmode="outline"] #outline-panel{flex:1;min-height:0;display:block;overflow:auto}
 #rz-split{display:none;height:5px;cursor:row-resize;flex-shrink:0;background:transparent;position:relative;z-index:5}
 #rz-split::after{content:"";position:absolute;inset:2px 0;border-radius:2px;transition:background .15s}
 #rz-split:hover::after,#rz-split.drag::after{background:var(--accent)}
@@ -515,8 +533,13 @@ body.row-resizing{cursor:row-resize;user-select:none}
 .ip-grid button:hover{background:var(--panel2);border-color:var(--border)}
 
 /* Rail-Flyout (Variante B) */
-#rail-flyout{position:fixed;width:252px;max-height:70vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:10px 8px;z-index:55;display:none}
+#rail-flyout{position:fixed;width:252px;min-width:200px;max-width:560px;max-height:70vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:10px 8px;z-index:55;display:none}
 #rail-flyout.show{display:block}
+/* Breiten-Resizer am rechten Rand des Flyouts (nur sitzungsweise, wird nicht gespeichert) */
+#rail-flyout-rz{position:fixed;width:9px;z-index:56;display:none;cursor:ew-resize}
+#rail-flyout-rz.show{display:block}
+#rail-flyout-rz::after{content:'';position:absolute;top:14px;bottom:14px;left:50%;transform:translateX(-50%);width:2px;border-radius:2px;background:transparent;transition:background .12s}
+#rail-flyout-rz:hover::after,#rail-flyout-rz.drag::after{background:var(--accent)}
 #rail-flyout .fo-head{display:flex;align-items:center;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);padding:4px 10px 9px}
 #rail-flyout .fo-head .fo-new{margin-left:auto;color:var(--accent);cursor:pointer;letter-spacing:0;text-transform:none}
 /* Flyout-Reihen im Mockup-Stil (saubere Karten-Optik statt Farb-Punkte) */
@@ -595,9 +618,10 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
 .app[data-layout="softdark"] .side-settings .ss-ic{font-size:calc(var(--rail-w,60px) * .3)}
 /* Notizfenster = volle Basis-Fläche (oben gerundet, unten bündig); rechtes Panel liegt darüber */
 .app[data-layout="softdark"] .main>.col:nth-child(3){background:var(--panel);border:none;border-radius:16px 0 0 0;margin:0;box-shadow:none;padding-right:calc(var(--col-r,360px) + 22px)}
+.app[data-layout="softdark"] .col{--tab-h:60px}
 .app[data-layout="softdark"] .tabbar{background:transparent;border-bottom:none;padding:8px 10px 16px}
 .app[data-layout="softdark"] .tab{border-radius:10px;border:none}
-.app[data-layout="softdark"] .tab.active{background:var(--panel2);box-shadow:0 3px 12px rgba(0,0,0,.35);border:none}
+.app[data-layout="softdark"] .tab.active{background:color-mix(in srgb,var(--bg) 82%,transparent);box-shadow:0 3px 12px rgba(0,0,0,.35);border:none}
 .app[data-layout="softdark"] .note-content{max-width:760px;margin:0 auto;padding-top:12px}
 /* Rechtes Panel schwebt als Fenster ÜBER dem Notizfenster (wie das Mockup-Overlay) */
 .app[data-layout="softdark"] .right-panel{position:absolute;top:10px;right:10px;bottom:10px;width:var(--col-r,360px);margin:0;background:var(--panel);border:none;border-radius:14px;overflow:hidden;box-shadow:0 10px 36px rgba(0,0,0,.6);z-index:20}
@@ -652,6 +676,7 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
   </div>
 </div>
 <div id="rail-flyout"></div>
+<div id="rail-flyout-rz" title="Breite ziehen"></div>
 <div id="toast"></div>
 
 <div class="app">
@@ -743,9 +768,13 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
 
 <div class="overlay" id="pal-overlay" onclick="closePalette()">
   <div class="palette" onclick="event.stopPropagation()">
-    <input id="pal-input" placeholder="Notiz, Ordner oder Befehl…" oninput="onPalInput()" onkeydown="onPalKey(event)">
+    <div class="pal-inputrow">
+      <span class="pal-srch">🔍</span>
+      <input id="pal-input" placeholder="Notiz, Ordner oder Befehl…" oninput="onPalInput()" onkeydown="onPalKey(event)">
+      <span class="pal-esc">Esc</span>
+    </div>
     <div class="pal-results" id="pal-results"></div>
-    <div class="pal-footer"><span>↑↓ navigieren</span><span>↵ öffnen</span><span>Esc schließen</span></div>
+    <div class="pal-footer"><span><kbd>↑</kbd><kbd>↓</kbd> navigieren</span><span><kbd>↵</kbd> öffnen</span><span><kbd>Esc</kbd> schließen</span></div>
   </div>
 </div>
 
@@ -1233,6 +1262,7 @@ function openRailFlyout(node,btn){
   const fo=document.getElementById('rail-flyout');if(!fo)return;
   if(_railFlyoutPath===node.path){closeRailFlyout();return;}
   _railFlyoutPath=node.path; _railFlyoutBtn=btn;
+  fo.style.width=''; // Breite bei jedem Öffnen auf Standard zurück (Resize wird bewusst NICHT gespeichert)
   document.querySelectorAll('#folder-list .rail-btn').forEach(x=>x.classList.toggle('active',x.dataset.path===node.path));
   fo.innerHTML='';
   const head=document.createElement('div');head.className='fo-head';
@@ -1243,7 +1273,9 @@ function openRailFlyout(node,btn){
     if(child.type==='folder')fo.appendChild(makeFolderEl(child,0));
     else fo.appendChild(makeFileEl(child,30));
   }
-  fo.querySelectorAll('.tree-file').forEach(f=>f.addEventListener('click',()=>closeRailFlyout()));
+  // Datei anklicken öffnet die Datei, lässt das Popup aber bewusst OFFEN
+  // (Popup bleibt bestehen, bis ein anderes / dasselbe Rail-Icon geklickt wird).
+  fo.querySelectorAll('.tree-file').forEach(f=>f.addEventListener('click',()=>positionFlyoutResizer()));
   // Unterordner im Flyout aufklappen -> sanft so scrollen, dass die Reihe auf Höhe des Themen-Icons rückt
   // (gleiches Gefühl wie das Hochscrollen der Icon-Leiste). Zweiter Listener auf der Reihe: makeFolderEl ruft
   // nur stopPropagation (nicht stopImmediatePropagation), daher feuert dieser nach dem Auf-/Zuklappen.
@@ -1260,7 +1292,7 @@ function openRailFlyout(node,btn){
       const curTop=parseFloat(fo.style.top)||fo.getBoundingClientRect().top;
       let newTop=curTop+(iconCenter-rowCenter), scrollRest=0;
       if(newTop<8){scrollRest=8-newTop;newTop=8;}            // Oberkante erreicht -> Rest scrollen
-      tween(curTop,newTop,320,v=>{fo.style.top=v+'px';});
+      tween(curTop,newTop,320,v=>{fo.style.top=v+'px';positionFlyoutResizer();});
       if(scrollRest>0.5){
         const maxScroll=Math.max(0,fo.scrollHeight-fo.clientHeight);
         smoothScrollTop(fo,Math.min(maxScroll,fo.scrollTop+scrollRest),320);
@@ -1285,23 +1317,46 @@ function openRailFlyout(node,btn){
   // Wenn die Leiste nicht weit genug scrollen kann (z.B. letztes Thema): Flyout am unteren Rand verankern.
   finalTop=Math.max(8,Math.min(finalTop,vh-margin-foH));
   fo.style.top=finalTop+'px';
+  positionFlyoutResizer();
 }
-function closeRailFlyout(){const fo=document.getElementById('rail-flyout');if(fo)fo.classList.remove('show');_railFlyoutPath=null;document.querySelectorAll('#folder-list .rail-btn.active').forEach(x=>x.classList.remove('active'));}
+// Resizer an die rechte Kante des Flyouts setzen (folgt Position/Höhe des Popups).
+function positionFlyoutResizer(){
+  const fo=document.getElementById('rail-flyout'), rz=document.getElementById('rail-flyout-rz');
+  if(!fo||!rz)return;
+  if(!fo.classList.contains('show')){rz.classList.remove('show');return;}
+  const r=fo.getBoundingClientRect();
+  rz.style.left=(r.right-4)+'px';rz.style.top=r.top+'px';rz.style.height=r.height+'px';
+  rz.classList.add('show');
+}
+// Ziehen am Resizer ändert nur die Breite des Flyouts (sitzungsweise, nicht persistiert).
+(function initFlyoutResizer(){
+  const rz=document.getElementById('rail-flyout-rz');if(!rz)return;
+  rz.addEventListener('pointerdown',e=>{
+    const fo=document.getElementById('rail-flyout');if(!fo)return;
+    e.preventDefault();rz.classList.add('drag');
+    const startX=e.clientX, startW=fo.getBoundingClientRect().width;
+    const mv=ev=>{const w=Math.max(200,Math.min(560,startW+(ev.clientX-startX)));fo.style.width=w+'px';positionFlyoutResizer();};
+    const up=()=>{rz.classList.remove('drag');window.removeEventListener('pointermove',mv);window.removeEventListener('pointerup',up);};
+    window.addEventListener('pointermove',mv);window.addEventListener('pointerup',up);
+  });
+})();
+function closeRailFlyout(){const fo=document.getElementById('rail-flyout');if(fo)fo.classList.remove('show');const rz=document.getElementById('rail-flyout-rz');if(rz)rz.classList.remove('show');_railFlyoutPath=null;document.querySelectorAll('#folder-list .rail-btn.active').forEach(x=>x.classList.remove('active'));}
 function makeFolderEl(node,depth){
   const wrap=document.createElement('div');
   const color=depth===0?folderColor(node.name):'#4a5163';
   const count=countFiles(node.children??[]);
   const hasChildren=(node.children??[]).length>0;
   const isTop=depth===0;
-  const iconHtml=isTop?`<span class="folder-ic">${folderIcon(node.name)}</span>`:'';
-  const dotHtml=isTop?'':`<span class="dot" style="background:${color};color:${color}"></span>`;
+  // Alle Ordner – auch Unterordner und neu angelegte – bekommen ein Ordner-Icon
+  // (folderIcon faellt fuer namenlose/unbekannte Ordner automatisch auf 📁 zurueck).
+  const iconHtml=`<span class="folder-ic">${folderIcon(node.name)}</span>`;
   const nameHtml=isTop
     ?`<span class="folder-label">${esc(node.name)}</span>`
     :`<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(node.name)}</span>`;
   const hasColor=isTop&&color!=='';
   wrap.innerHTML=`
     <div class="folder-row${hasColor?' folder-gradient':''}" data-path="${esc(node.path)}" style="padding-left:${8+depth*14}px${hasColor?';--fc:'+color:''}">
-      ${dotHtml}${iconHtml}${nameHtml}
+      ${iconHtml}${nameHtml}
       <span class="count">${count>0?count.toLocaleString('de'):''}</span>
       ${hasChildren?'<span class="tog">▶</span>':''}
     </div><div class="folder-children"></div>`;
@@ -2187,6 +2242,12 @@ function openFolderView(folderPath){
 
 // ═════════════════════ SEARCH ═════════════════════
 function snip(s){return escHtml(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');}
+function pathExt(p){const i=p.lastIndexOf('.');return i>=0?p.slice(i):'';}
+function bareIcon(html){return html.replace(/<[^>]+>/g,'');}
+function crumbHtml(path){
+  const parts=path.split('/');const file=parts.pop();const folder=parts.join(' › ');
+  return (folder?`📁 <span class="cr-folder">${esc(folder)}</span> <span class="cr-sep">›</span> `:'')+`<span class="cr-file">${esc(file)}</span>`;
+}
 async function doSearch(q){
   if(!q||!q.trim())return;
   logActivity('#7ec8e3',`search("${esc(q)}")`);
@@ -2194,8 +2255,10 @@ async function doSearch(q){
   const area=document.getElementById('note-area');area.scrollTop=0;
   setCrumb(esc(activeVault)+' / <b>Suche: '+esc(q)+'</b>');
   if(!results.length){area.innerHTML='<div class="placeholder"><span class="big">🔍</span>Keine Ergebnisse für „'+esc(q)+'"</div>';logActivity('#7ec8e3','search → 0 Treffer');return;}
-  area.innerHTML=`<div class="results-header">${results.length} Ergebnisse für „${esc(q)}"</div>`+results.map(r=>`<div class="result-item" data-path="${esc(r.path)}"><div class="result-title">${esc(r.title||r.path.split('/').pop())}</div><div class="result-path">${esc(r.path)}</div>${r.snippet?`<div class="result-snip">${snip(r.snippet)}</div>`:''}</div>`).join('');
-  area.querySelectorAll('.result-item').forEach(it=>it.addEventListener('click',()=>openFile(it.dataset.path)));
+  const head=`<div class="search-head"><span class="sh-count">${results.length} Ergebnisse für</span><span class="sh-q">🔍 ${esc(q)}</span></div>`;
+  const list=results.map(r=>`<div class="result-card" data-path="${esc(r.path)}"><div class="rc-title">${fileIcon(pathExt(r.path))} ${esc(r.title||r.path.split('/').pop())}</div><div class="rc-path">${crumbHtml(r.path)}</div>${r.snippet?`<div class="rc-snip">${snip(r.snippet)}</div>`:''}</div>`).join('');
+  area.innerHTML=head+`<div class="search-list">${list}</div>`;
+  area.querySelectorAll('.result-card').forEach(it=>it.addEventListener('click',()=>openFile(it.dataset.path)));
   logActivity('#7ec8e3',`search → ${results.length} Treffer`);
 }
 
@@ -2203,10 +2266,17 @@ async function doSearch(q){
 let palDebounce;
 function openPalette(){document.getElementById('pal-overlay').classList.add('show');const inp=document.getElementById('pal-input');inp.value='';inp.focus();showPalDefault();}
 function closePalette(){document.getElementById('pal-overlay').classList.remove('show');}
+function palTint(col){return `background:color-mix(in srgb,${col} 20%,transparent);color:${col}`;}
+function noteItem(path,title){
+  const col=folderColor(path.split('/')[0])||'var(--accent)';
+  return {group:'Notizen',icon:bareIcon(fileIcon(pathExt(path))),tile:palTint(col),label:title||path.split('/').pop().replace('.md',''),crumb:crumbHtml(path),fn:()=>{closePalette();openFile(path);}};
+}
 function showPalDefault(){
-  palItems=[{icon:'🔄',label:'Reindexieren',path:'Befehl',fn:()=>{closePalette();reindex();}},{icon:'📥',label:'Dateien hochladen',path:'Befehl',fn:()=>{closePalette();triggerUpload();}}];
+  palItems=[];
   const first=[];(function c(ns,max=8){for(const n of ns){if(first.length>=max)break;if(n.type==='file'&&n.ext==='.md')first.push(n);else if(n.children)c(n.children,max);}})(vaultTree);
-  for(const f of first)palItems.push({dot:folderColor(f.path.split('/')[0]),label:f.name.replace('.md',''),path:f.path,fn:()=>{closePalette();openFile(f.path);}});
+  for(const f of first)palItems.push(noteItem(f.path,f.name.replace('.md','')));
+  palItems.push({group:'Befehle',icon:'🔄',tile:palTint('var(--accent)'),label:'Reindexieren',fn:()=>{closePalette();reindex();}});
+  palItems.push({group:'Befehle',icon:'📥',tile:palTint('var(--accent)'),label:'Dateien hochladen',fn:()=>{closePalette();triggerUpload();}});
   palSel=0;renderPalItems();
 }
 async function onPalInput(){
@@ -2214,13 +2284,20 @@ async function onPalInput(){
   if(!q){showPalDefault();return;}
   palDebounce=setTimeout(async()=>{
     const res=await api(`/api/search?vault=${encodeURIComponent(activeVault)}&q=${encodeURIComponent(q)}&limit=12`);
-    palItems=res.map(r=>({dot:folderColor(r.path.split('/')[0]),label:r.title||r.path.split('/').pop().replace('.md',''),path:r.path,fn:()=>{closePalette();openFile(r.path);}}));
-    palItems.unshift({icon:'🔍',label:`Alle Ergebnisse für „${q}"`,path:'',fn:()=>{closePalette();doSearch(q);}});
+    palItems=[{group:'',icon:'🔍',tile:palTint('var(--accent)'),label:`Alle Ergebnisse für „${q}"`,sub:'Volltextsuche im Vault öffnen',hint:'↵',fn:()=>{closePalette();doSearch(q);}}];
+    for(const r of res)palItems.push(noteItem(r.path,r.title));
     palSel=0;renderPalItems();
   },180);
 }
 function renderPalItems(){
-  document.getElementById('pal-results').innerHTML=palItems.map((it,i)=>`<div class="pal-item ${i===palSel?'sel':''}" onclick="palItems[${i}].fn()">${it.dot?`<span class="dot" style="background:${it.dot}"></span>`:`<span style="font-size:14px">${it.icon||'📝'}</span>`}<span class="pal-name">${esc(it.label)}</span><span class="pal-path">${esc(it.path)}</span></div>`).join('');
+  let html='',lastG=null;
+  palItems.forEach((it,i)=>{
+    const g=it.group||'';
+    if(g!==lastG){if(g)html+=`<div class="pal-group">${esc(g)}</div>`;lastG=g;}
+    const sub=it.crumb||(it.sub?esc(it.sub):'');
+    html+=`<div class="pal-item ${i===palSel?'sel':''}" onclick="palItems[${i}].fn()"><span class="pal-tile" style="${it.tile||''}">${it.icon||'📝'}</span><div class="pal-main"><div class="pal-name">${esc(it.label)}</div>${sub?`<div class="pal-sub">${sub}</div>`:''}</div>${it.hint?`<span class="pal-hint">${esc(it.hint)}</span>`:''}</div>`;
+  });
+  document.getElementById('pal-results').innerHTML=html;
 }
 function onPalKey(e){
   if(e.key==='Escape'){closePalette();return;}
@@ -2337,7 +2414,10 @@ function ctxIcon(name){
 function iconApply(){if(!_ipTarget)return;const v=(document.getElementById('ip-input').value||'').trim();setCustomFolderIcon(_ipTarget,v||null);iconClose();renderSidebar();}
 function iconRemove(){if(!_ipTarget)return;setCustomFolderIcon(_ipTarget,null);iconClose();renderSidebar();}
 function iconClose(){document.getElementById('icon-pop').classList.remove('show');_ipTarget=null;}
-document.addEventListener('click',e=>{closeCtx();if(!document.getElementById('color-pop').contains(e.target))cpClose();if(!document.getElementById('icon-pop').contains(e.target))iconClose();const _fo=document.getElementById('rail-flyout');if(_fo&&!_fo.contains(e.target)&&!(e.target.closest&&e.target.closest('.rail-btn')))closeRailFlyout();});
+document.addEventListener('click',e=>{closeCtx();if(!document.getElementById('color-pop').contains(e.target))cpClose();if(!document.getElementById('icon-pop').contains(e.target))iconClose();});
+// Hinweis: Das Rail-Flyout bleibt bewusst offen (kein Schließen bei Klick außerhalb).
+// Es schließt nur über dasselbe Rail-Icon (Toggle in openRailFlyout), ein anderes Icon
+// (öffnet dort neu) oder Esc. Beim Layout-/Vault-Wechsel + Drag wird es explizit geschlossen.
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeCtx();cpClose();iconClose();closeRailFlyout();closePalette();closeVaultModal();pickerCancel();_confirmCancel();closeSettings();closeUsagePopover();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
 
 // ═════════════════════ DRAG & DROP / UPLOAD ═════════════════════

@@ -27,7 +27,31 @@ watchVault(indexer, vaultPath, cfg.ignore ?? [], (event, p) => {
 });
 
 const T = makeTools(indexer, vaultPath);
-const server = new McpServer({ name: 'nexus', version: '0.2.0' });
+
+// Wird dem Client (z.B. Claude Desktop) beim Verbinden mitgegeben. Stoesst die
+// Pflichtlektuere an, ohne dass jemand ans Lesen erinnern muss (Arbeitsweise-Regel 12).
+// Die eigentlichen Regeln leben editierbar im Vault unter _System/ – Scaffold: D:\Nexus\rules\.
+const NEXUS_INSTRUCTIONS = [
+  'Du arbeitest auf einem persoenlichen Wissens-Vault ueber die Nexus-Tools',
+  '(search, outline, read_note, write_note, append_to_section, patch, backlinks,',
+  'list_notes, query, reindex, create_folder, move, delete). Prinzip: maximale',
+  'Information pro Token – erst outline/search-Snippet/read_note(section), nicht',
+  'blind ganze Dateien lesen; schreiben bevorzugt mit append_to_section/patch.',
+  'Ordner/Notizen anlegen, verschieben, umbenennen oder loeschen IMMER ueber',
+  'create_folder/move/delete – nie ueber Datei-System-/Mount-Operationen (die sind',
+  'blockiert). move und delete funktionieren auch fuer ganze Ordner.',
+  '',
+  'PFLICHT zu Beginn jeder Session: zuerst die Arbeitsregeln des Nutzers lesen und befolgen –',
+  'read_note "_System/Session-Start-Nexus.md", "_System/Arbeitsweise-Nexus.md" und',
+  '"_System/Mein-Setup.md" (waehrend der Migration ggf. auch die Original-Dateien',
+  '"_System/Session-Start.md"/"_System/Arbeitsweise.md"). Diese Dateien sind die Quelle',
+  'der Wahrheit fuer die Arbeitsweise und werden ueber die Tools gepflegt.',
+].join(' ');
+
+const server = new McpServer(
+  { name: 'nexus', version: '0.2.0' },
+  { instructions: NEXUS_INSTRUCTIONS }
+);
 
 server.tool(
   'search',
@@ -158,6 +182,42 @@ server.tool(
   async ({ path, patches }) => {
     const r = T.patch({ path, patches });
     return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
+  }
+);
+
+server.tool(
+  'create_folder',
+  'Legt einen neuen Ordner im Vault an (rekursiv). Nutze dies statt Datei-System-/Mount-Operationen.',
+  { path: z.string().describe('Relativer Ordnerpfad, z.B. "Uni/6. Semester/Neuer Ordner"') },
+  async ({ path }) => {
+    const r = T.createFolder({ path });
+    return { content: [{ type: 'text', text: JSON.stringify(r) }] };
+  }
+);
+
+server.tool(
+  'move',
+  'Verschiebt oder benennt eine Notiz/einen Ordner um (from -> to). Funktioniert fuer Dateien UND ' +
+  'ganze Ordner; der Index wird automatisch aktualisiert. Umbenennen = gleicher Elternordner, neuer Name. ' +
+  'Bevorzugt vor jeder Datei-System-/Mount-Operation nutzen.',
+  {
+    from: z.string().describe('Aktueller relativer Pfad (Datei oder Ordner)'),
+    to:   z.string().describe('Neuer relativer Pfad'),
+  },
+  async ({ from, to }) => {
+    const r = T.move({ from, to });
+    return { content: [{ type: 'text', text: JSON.stringify(r) }] };
+  }
+);
+
+server.tool(
+  'delete',
+  'Loescht eine Notiz oder einen ganzen Ordner (rekursiv) im Vault. Funktioniert fuer Dateien UND ' +
+  'Ordner; der Index wird automatisch aktualisiert. Nutze dies statt blockierter Mount-/Datei-System-Loeschungen.',
+  { path: z.string().describe('Relativer Pfad zur Notiz oder zum Ordner') },
+  async ({ path }) => {
+    const r = T.delete({ path });
+    return { content: [{ type: 'text', text: JSON.stringify(r) }] };
   }
 );
 

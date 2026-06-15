@@ -1,6 +1,6 @@
 // test/smoke.js – Smoke-Test für Parser, Indexer und Tool-Aufrufe
 // Läuft in der Sandbox: node test/smoke.js (aus D:\Nexus)
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
+import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
 import { parseNote } from '../src/parse.js';
 import { buildIndexer } from '../src/indexer.js';
@@ -224,6 +224,30 @@ indexer.deleteFile(delPath);
 // Nach writeNote (Neu.md) haben wir 4 Einträge; nach deleteFile wieder 3
 const afterDel = indexer.db.prepare('SELECT COUNT(*) as n FROM notes').get();
 assert('deleteFile entfernt Eintrag aus DB', afterDel.n === 3, `n=${afterDel.n}`);
+
+// ═════════════════════════════════════════════════════════════════════════════
+console.log(B('\n── 3b. Ordner-/Datei-Operationen (create_folder/move/delete) ─'));
+
+// create_folder
+const cf = tools.createFolder({ path: 'Projekte/Unterordner' });
+assert('create_folder: ok',            cf.ok === true, JSON.stringify(cf));
+assert('create_folder: Ordner da',     existsSync(join(vault, 'Projekte', 'Unterordner')));
+assert('create_folder: doppelt -> error', !!tools.createFolder({ path: 'Projekte/Unterordner' }).error);
+assert('create_folder: ../-Ausbruch -> error', !!tools.createFolder({ path: '../boom' }).error);
+
+// move (umbenennen + verschieben)
+tools.writeNote({ path: 'VerschiebMich.md', content: '# Tmp\nInhalt', create: true });
+const mv = tools.move({ from: 'VerschiebMich.md', to: 'Projekte/Unterordner/Verschoben.md' });
+assert('move: ok',                 mv.ok === true, JSON.stringify(mv));
+assert('move: Ziel existiert',     existsSync(join(vault, 'Projekte', 'Unterordner', 'Verschoben.md')));
+assert('move: Quelle weg',         !existsSync(join(vault, 'VerschiebMich.md')));
+assert('move: fehlende Quelle -> error', !!tools.move({ from: 'GibtsNicht.md', to: 'X.md' }).error);
+
+// delete (ganzer Ordner rekursiv)
+const dl = tools.delete({ path: 'Projekte' });
+assert('delete: ok',               dl.ok === true, JSON.stringify(dl));
+assert('delete: Ordner weg',       !existsSync(join(vault, 'Projekte')));
+assert('delete: Vault-Wurzel -> error', !!tools.delete({ path: '' }).error);
 
 // ═════════════════════════════════════════════════════════════════════════════
 console.log(B('\n── 4. /api/reindex (HTTP) ───────────────────────────────'));
