@@ -50,6 +50,32 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 
 ---
 
+## Stand: 2026-06-15 (Session 34d – Aktivitäts-Panel: Akzent-Schrift + Punkte raus)
+
+Paul-Wunsch (Screenshot, 2 Schritte): Das **Claude-Aktivitäts-Panel unten rechts** soll seine
+Einträge in der **Akzentfarbe** zeigen und **ohne die farbigen Punkte** auskommen – inkl. dem
+grünen Live-Punkt in der Kopfzeile „Claude-Aktivität · live". Reine CSS-Änderung in `public/index.html`.
+
+### Erledigt
+- [x] **Schriftfarbe der Log-Zeilen** (`.log-msg`) von hartem `#b9c2d4` auf **`var(--accent-tx)`** umgestellt
+  (gleiche theme-aware Akzent-Textfarbe wie Links/Tabellen-Kopf, Session 34c). Uhrzeit (`.log-time`) folgt
+  gedimmt mit (`color-mix(in srgb,var(--accent-tx) 55%,transparent)`), bleibt sekundär.
+- [x] **Farbige Puls-Punkte vor jeder Zeile** (`.log-pulse`) auf **`display:none`** – `<span>` bleibt im
+  Markup (kein JS-Eingriff), fällt aber aus dem Flex-Layout (kein Lücken-Problem).
+- [x] **Grüner Live-Punkt in der Kopfzeile** (`.activity header .live-dot`) ebenfalls **`display:none`**.
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (2927 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [x] Theme-/Layout-sicher: nur CSS-Vars (`--accent-tx`, `color-mix`), kein Hartcode; folgt Standard (blau)
+  **und** allen Studio-Varianten (Bernstein/Hell).
+- [ ] **Live-Augenschein offen (Paul):** Aktivitäts-Panel unten rechts – Text in Akzentfarbe, keine Punkte
+  (weder vor den Zeilen noch grün in der Kopfzeile).
+
+### TODO Paul
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 34d: Aktivitäts-Panel – Akzent-Schrift (var(--accent-tx)), Puls-Punkte + grüner Live-Punkt entfernt"`
+
+---
+
 ## Stand: 2026-06-15 (Session 34c – Tabellen-Überschriften in Akzentfarbe)
 
 Paul-Wunsch (Screenshot): Die Kopfzeilen-Überschriften in Tabellen (z. B. „Verfahren" / „Menge")
@@ -1454,6 +1480,7 @@ node src/ui-server.js
 ## Usage-Log (Regel 22)
 | Session | Datum | Inhalt | Start % | End % |
 |---|---|---|---|---|
+| 34d | 2026-06-15 | Aktivitäts-Panel unten rechts: Log-Schrift auf var(--accent-tx) (Uhrzeit gedimmt via color-mix), Puls-Punkte (.log-pulse) + grüner Live-Punkt (.live-dot) auf display:none; reine CSS; verify:html 2927 Zeilen gruen | - | - |
 | 30 | 2026-06-15 | Suchfenster modernisiert: Such-Popup „Gruppiert & getypt" (Icon-Kacheln/Breadcrumb/Sektionen/Akzent-Leiste, neue pal-Helper) + Trefferseite „Karten" (search-head/result-card, crumbHtml, Akzent-Pill-Treffer); alte result-*-Klassen ersetzt; verify:html 2890 Zeilen gruen | - | - |
 | 22 | 2026-06-12 | R9 Claude Usage-Widget: 5 Patches safe-edit (CSS/Statusbar/Popover-HTML/Esc-Handler/JS), 2 Backend-Proxy-Endpoints (/api/claude-usage + /api/claude-orgs), localStorage nexus.claudeAuth; verify:html 2367 Zeilen + 25/25 gruen | - | - |
 | 21 | 2026-06-11 | R7 Einstellungs-Menü: Theme/Ordnerfarben/Vault-Pfad/Editor-Font/Graph-Default + vaultsRoot-Endpoint; 10 Patches safe-edit; verify:html 2210 Zeilen + 25/25 gruen | - | - |
