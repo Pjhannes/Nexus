@@ -50,6 +50,45 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 
 ---
 
+## Stand: 2026-06-15 (Session 28 – Studio: 2 Statusbar/Outline-Fixes + 3 wählbare Farbvarianten)
+
+Paul (2 Reports), alles in `public/index.html`:
+
+### Teil A – zwei Fixes
+- [x] **„MCP bereit" unten in Akzentfarbe (nur Studio).** Text+Punkt waren hart auf Grün `#10B981`
+  (`.statusbar .ok/.dot-status`). Neu: `body[data-layout="softdark"] .statusbar .ok{color:var(--accent)}` +
+  `.dot-status{background/box-shadow:var(--accent)}`. Standard-Layout bleibt grün.
+- [x] **Graph erschien fälschlich im „Gliederung"-Tab** (sollte nur im „Split"). Ursache: Studio-Regel
+  `.app[data-layout="softdark"] .graph-wrap{display:flex}` (≙ Spezifität wie `.right-panel[data-rmode="outline"]
+  .graph-wrap{display:none}`, aber später im Quelltext → gewann). Fix: spezifischere Override
+  `.app[data-layout="softdark"] .right-panel[data-rmode="outline"] .graph-wrap{display:none}`. Split unberührt.
+
+### Teil B – 3 wählbare Studio-Farbvarianten (⚙ → „Studio-Variante", nur im Studio-Layout)
+- [x] **„Standard"** = aktuelles warmes Dark (Palette unverändert auf `:root[data-layout="softdark"]`).
+- [x] **„Dunkler"** = alle Flächen gleichmäßig dunkler (`[data-studio="dark"]`: bg #161514, panel #211f1e,
+  panel2 #282624, border #312f2d; Text/Akzent wie Standard).
+- [x] **„Creme (hell)"** = helles Theme (`[data-studio="cream"]`: bg #e6dccb = Rand, **panel #faf6ee = Notizfeld,
+  heller als der Rand**, dunkler Text #3c352a, tieferer Default-Akzent #c8893a, dunkler scrim). Hartkodierte
+  weiße Texte (Notiz-Titel-Gradient, `.md-body strong`, `.folder-label`, Outline-Hover) im Creme-Scope auf
+  `var(--text)` umgestellt. **Graph-Label-Farbe** folgt jetzt `--text` (Modul-Var `_graphLabelColor` +
+  `refreshGraphColors()`, vorher hart `rgba(219,226,238,.92)`) → auf Creme lesbar.
+- [x] **Mechanik:** `data-studio` auf html/body/.app via `applyStudioVariant()`; in `applyLayout()` bei Studio
+  gesetzt (`currentStudioVariant()`), bei Standard entfernt (`clearStudioVariant()`); Persistenz
+  `localStorage['nexus.studioVariant']`. Selector in `renderSettings()` (3 Swatch-Buttons).
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (2845 Zeilen, Inline-Script `node --check` grün).
+- [x] Creme-Kontrast rechnerisch ok: panel #faf6ee (≈250,246,238) heller als bg #e6dccb (≈230,220,203).
+- [ ] **Live-Augenschein offen (Paul):** im laufenden Electron prüfen.
+
+### TODO Paul
+- [ ] Nexus neu laden, **Studio**: (1) „● MCP bereit" unten in Akzentfarbe; (2) „Gliederung"-Tab zeigt nur
+  Gliederung, „Split" weiterhin Graph+Gliederung; (3) ⚙ → „Studio-Variante" → Standard / Dunkler / Creme (hell)
+  durchschalten – Creme: Notizfeld heller als der Rand.
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 28: Studio – MCP-bereit in Akzentfarbe, Graph nur im Split (nicht Gliederung), 3 wählbare Farbvarianten (Standard/Dunkler/Creme)"`
+
+---
+
 ## Stand: 2026-06-15 (Session 27c – Studio: Farb-Regression behoben + Subfolder-Auto-Scroll)
 
 Paul-Report (Screenshot + Mockup `design-mockups/variante-b-soft-dark.html` als Farb-Referenz): 27b-Titelleisten-Fix

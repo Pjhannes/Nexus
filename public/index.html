@@ -322,6 +322,8 @@ canvas{display:block;width:100%;height:100%}
 .statusbar{display:flex;align-items:center;gap:16px;padding:0 14px;font-size:11px;color:var(--dim);border-top:1px solid var(--border);background:var(--bar);flex-shrink:0}
 .statusbar .ok{color:#10B981}
 .statusbar .dot-status{width:6px;height:6px;border-radius:50%;background:#10B981;box-shadow:0 0 5px #10B981;display:inline-block;margin-right:4px}
+body[data-layout="softdark"] .statusbar .ok{color:var(--accent)}
+body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box-shadow:0 0 5px var(--accent)}
 .statusbar .ml{margin-left:auto}
 
 /* Command Palette */
@@ -537,6 +539,23 @@ body.row-resizing{cursor:row-resize;user-select:none}
   --amber-soft:color-mix(in srgb,var(--accent) 15%,transparent);
   --app-bg:#1f1e1d;--app-font:'Inter','Segoe UI',system-ui,sans-serif;
 }
+/* Studio-Untervariante „Dunkler": alle Flaechen gleichmaessig dunkler, Akzent/Text wie Standard */
+:root[data-layout="softdark"][data-studio="dark"]{
+  --bg:#161514;--panel:#211f1e;--panel2:#282624;--border:#312f2d;
+  --text:#e6e4e1;--dim:#948f87;--app-bg:#161514;
+}
+/* Studio-Untervariante „Creme (hell)": warmes Hell-Theme, Notizfeld heller als der Rand */
+:root[data-layout="softdark"][data-studio="cream"]{
+  --bg:#e6dccb;--panel:#faf6ee;--panel2:#f0e8d8;--border:#d6cbb5;
+  --text:#3c352a;--dim:#8a7f6c;--accent:var(--sd-accent,#c8893a);
+  --amber-soft:color-mix(in srgb,var(--accent) 16%,transparent);
+  --app-bg:#e6dccb;--scrim:color-mix(in srgb,#2a2316 38%,transparent);
+}
+/* Creme: hartkodierte weisse Texte an das helle Theme anpassen */
+body[data-studio="cream"] h1.note-title{background:linear-gradient(90deg,var(--text),var(--accent-tx));-webkit-background-clip:text;background-clip:text}
+body[data-studio="cream"] .md-body strong{color:var(--text)}
+body[data-studio="cream"] .folder-label{color:var(--text)}
+body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05)}
 .app[data-layout="softdark"]{font-family:var(--app-font);background:var(--bg)}
 .app[data-layout="softdark"] .titlebar{background:var(--bg);border-bottom:none}
 .app[data-layout="softdark"] .col.side{border-right:none}
@@ -585,6 +604,7 @@ body.row-resizing{cursor:row-resize;user-select:none}
 .app[data-layout="softdark"] #rz-r:hover::after,.app[data-layout="softdark"] #rz-r.drag::after{background:var(--accent)}
 .app[data-layout="softdark"] #right-toggle{background:transparent}
 .app[data-layout="softdark"] .graph-wrap{background:transparent;display:flex;flex-direction:column}
+.app[data-layout="softdark"] .right-panel[data-rmode="outline"] .graph-wrap{display:none}
 .app[data-layout="softdark"] .graph-head{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);flex:0 0 auto;position:relative;z-index:9}
 .app[data-layout="softdark"] .graph-label{position:static;flex:0 0 auto}
 .app[data-layout="softdark"] .graph-mode{position:static;margin-left:auto}
@@ -2144,7 +2164,7 @@ function frameGraph(){
     cx.globalAlpha=dim?0.16:1;
     if(glowAll&&!dim&&_graphGlow>0){cx.shadowColor=n.color;cx.shadowBlur=(n.fx!=null||n.deg>6?14:7)*dpr*_graphGlow;}else{cx.shadowBlur=0;}
     cx.fillStyle=n.color;cx.beginPath();cx.arc(px,py,r,0,6.283);cx.fill();cx.shadowBlur=0;
-    if(n.label&&!dim&&((hs&&hs.has(n))||(showLabels&&(graph.mode==='note'||n.deg>8)))){cx.fillStyle='rgba(219,226,238,.92)';cx.font=(10.5*dpr)+'px Segoe UI';cx.textAlign='center';cx.fillText(n.label.slice(0,26),px,py-r-5*dpr);}}
+    if(n.label&&!dim&&((hs&&hs.has(n))||(showLabels&&(graph.mode==='note'||n.deg>8)))){cx.fillStyle=_graphLabelColor;cx.font=(10.5*dpr)+'px Segoe UI';cx.textAlign='center';cx.fillText(n.label.slice(0,26),px,py-r-5*dpr);}}
   cx.globalAlpha=1;
   // Schleife anhalten, wenn beruhigt und keine Interaktion -> spart CPU/Akku. wakeGraph() startet sie bei Bedarf neu.
   if(graph.alpha>=0.004||graph.hover||graph.drag||graph._needFit){graph.raf=requestAnimationFrame(frameGraph);}else{graph.raf=0;}
@@ -2527,6 +2547,14 @@ function onGraphGlowInput(v){setGraphGlow(v);const e=document.getElementById('se
 function currentSdAccent(){return localStorage.getItem('nexus.sdAccent')||'';}
 function applySdAccent(c){if(c)document.documentElement.style.setProperty('--sd-accent',c);else document.documentElement.style.removeProperty('--sd-accent');}
 function setSdAccent(c){if(c)localStorage.setItem('nexus.sdAccent',c);else localStorage.removeItem('nexus.sdAccent');applySdAccent(c);}
+// Studio-Untervariante: 'default' (aktuell) | 'dark' (gleichmaessig dunkler) | 'cream' (helles Creme-Theme)
+function currentStudioVariant(){const v=localStorage.getItem('nexus.studioVariant');return (v==='dark'||v==='cream')?v:'default';}
+function applyStudioVariant(v){const val=(v==='dark'||v==='cream')?v:'default';document.documentElement.dataset.studio=val;document.body.dataset.studio=val;const app=document.querySelector('.app');if(app)app.dataset.studio=val;refreshGraphColors();}
+function clearStudioVariant(){document.documentElement.removeAttribute('data-studio');document.body.removeAttribute('data-studio');const app=document.querySelector('.app');if(app)app.removeAttribute('data-studio');}
+function setStudioVariant(v){localStorage.setItem('nexus.studioVariant',(v==='dark'||v==='cream')?v:'default');applyStudioVariant(v);renderSettings();requestAnimationFrame(()=>requestAnimationFrame(refitGraph));}
+// Graph-Label-Farbe folgt dem aktiven Theme (--text), damit Labels auch auf hellem Creme lesbar bleiben
+let _graphLabelColor='rgba(219,226,238,.92)';
+function refreshGraphColors(){try{const t=getComputedStyle(document.documentElement).getPropertyValue('--text').trim();if(t)_graphLabelColor=t;}catch(e){}}
 // Breite der Icon-Leiste (Soft Dark), 48..96 px; Buttons skalieren ueber calc(), bleiben quadratisch
 function currentRailW(){const n=parseInt(localStorage.getItem('nexus.railW')||'',10);return (n>=48&&n<=96)?n:60;}
 function applyRailW(px){document.documentElement.style.setProperty('--rail-w',px+'px');}
@@ -2543,11 +2571,14 @@ function applyLayout(id){
     // (Sonst ueberschreibt ein inline --accent des Standard-Themes die Layout-Farbe -> alles blau.)
     THEME_VARS.forEach(k=>document.documentElement.style.removeProperty(k));
     applySdAccent(currentSdAccent());
+    applyStudioVariant(currentStudioVariant());
   }else{
-    // Standard: gemerkte Farbe (eines der Themes) anwenden, Studio-Akzent entfernen.
+    // Standard: gemerkte Farbe (eines der Themes) anwenden, Studio-Akzent + -Variante entfernen.
     document.documentElement.style.removeProperty('--sd-accent');
+    clearStudioVariant();
     applyTheme(currentTheme());
   }
+  refreshGraphColors();
   closeRailFlyout();
 }
 function setLayout(id){localStorage.setItem('nexus.layout',(id==='softdark')?'softdark':'classic');applyLayout(id);renderSidebar();renderSettings();requestAnimationFrame(()=>requestAnimationFrame(refitGraph));}
@@ -2568,6 +2599,12 @@ async function renderSettings(){
   h+='</div></div>';
   }
   if(lay==='softdark'){
+    const sv=currentStudioVariant();
+    h+='<div class="set-section"><div class="set-label">Studio-Variante</div><div class="set-themes">';
+    h+='<button class="set-theme'+(sv==='default'?' active':'')+'" onclick="setStudioVariant(&quot;default&quot;)"><span class="st-sw" style="background:#2a2928"></span>Standard</button>';
+    h+='<button class="set-theme'+(sv==='dark'?' active':'')+'" onclick="setStudioVariant(&quot;dark&quot;)"><span class="st-sw" style="background:#161514"></span>Dunkler</button>';
+    h+='<button class="set-theme'+(sv==='cream'?' active':'')+'" onclick="setStudioVariant(&quot;cream&quot;)"><span class="st-sw" style="background:#faf6ee;border:1px solid #d6cbb5"></span>Creme (hell)</button>';
+    h+='</div></div>';
     const sa=currentSdAccent();
     h+='<div class="set-section"><div class="set-label">Akzentfarbe (Studio)</div><div class="set-folder"><input type="color" class="set-color" id="set-sd-accent" value="'+(sa||'#e8a94a')+'" oninput="setSdAccent(this.value)"><span class="set-folder-name">F&auml;rbt den gesamten Akzent um</span>'+(sa?'<span class="set-folder-reset" onclick="setSdAccent(\'\');renderSettings()" title="Standard (Bernstein)">&#8635;</span>':'')+'</div></div>';
     const rw=currentRailW();
