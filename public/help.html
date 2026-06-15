@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus – Einrichtung & Anbindung</title>
+<style>
+  :root{
+    --bg:#07090f; --panel:#10141f; --panel2:#161b29; --border:#222a3d;
+    --text:#e6e9f2; --dim:#8a93a8; --accent:#22d3ee; --accent2:#8b8cf0; --ok:#34d399;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(120% 120% at 50% 0%, #111626 0%, var(--bg) 60%);
+    color:var(--text); font:14px/1.6 "Segoe UI",system-ui,sans-serif;
+    padding:30px 38px; overflow-y:auto;
+  }
+  .logo{display:flex;align-items:center;gap:11px;margin-bottom:4px}
+  .logo svg{filter:drop-shadow(0 0 9px rgba(34,211,238,.45))}
+  .logo h1{font-size:20px;margin:0;font-weight:600;letter-spacing:.4px}
+  p{color:var(--dim);margin:6px 0}
+  h2{font-size:16px;margin:26px 0 4px;display:flex;align-items:center;gap:9px}
+  h2 .n{width:24px;height:24px;border-radius:50%;background:var(--panel2);border:1px solid var(--border);
+    display:inline-flex;align-items:center;justify-content:center;font-size:13px;color:var(--accent);flex:0 0 auto}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-top:10px}
+  ol{margin:6px 0 2px;padding-left:20px}
+  ol li{margin:5px 0;color:var(--text)}
+  ol li span{color:var(--dim)}
+  code{background:#0c1018;border:1px solid var(--border);border-radius:5px;padding:1px 6px;font:12.5px monospace;color:var(--accent)}
+  kbd{background:var(--panel2);border:1px solid var(--border);border-bottom-width:2px;border-radius:5px;padding:1px 6px;font:12px monospace}
+  button{
+    background:var(--panel2);border:1px solid var(--border);color:var(--text);
+    border-radius:9px;padding:10px 15px;font:14px/1 "Segoe UI",sans-serif;cursor:pointer;transition:.15s;margin-top:6px;
+  }
+  button:hover{border-color:var(--accent);background:#1b2233}
+  button.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;color:#06121a;font-weight:600}
+  button.primary:hover{filter:brightness(1.08)}
+  .status{margin-top:10px;font-size:13px;color:var(--ok);min-height:18px}
+  .link{color:var(--accent);cursor:pointer;text-decoration:underline}
+  .note{font-size:12.5px;color:var(--dim);margin-top:8px;padding-left:11px;border-left:2px solid var(--border)}
+  .done{display:flex;justify-content:flex-end;margin-top:28px}
+</style>
+</head>
+<body>
+  <div class="logo">
+    <svg width="30" height="30" viewBox="0 0 100 100">
+      <polygon points="50,16 84,50 50,84 16,50" fill="none" stroke="#67e8f9" stroke-width="4"/>
+      <polygon points="50,30 70,50 50,70 30,50" fill="none" stroke="#8b8cf0" stroke-width="3.5"/>
+      <rect x="42" y="42" width="16" height="16" transform="rotate(45 50 50)" fill="#22d3ee"/>
+    </svg>
+    <h1>Einrichtung & Anbindung</h1>
+  </div>
+  <p>Zwei optionale Schritte, um Nexus voll mit Claude zu verbinden.</p>
+
+  <h2><span class="n">1</span> Mit Claude Desktop verbinden</h2>
+  <div class="card">
+    <p>Trägt Nexus als Wissensquelle (MCP-Server) in Claude Desktop ein. Danach kann Claude
+       deine Notizen durchsuchen, lesen und bearbeiten.</p>
+    <button class="primary" onclick="connect()">Jetzt mit Claude Desktop verbinden</button>
+    <div class="status" id="connStatus"></div>
+    <p class="note">Nach dem Verbinden <b>Claude Desktop komplett beenden und neu starten</b>,
+       damit die Nexus-Tools geladen werden.</p>
+  </div>
+
+  <h2><span class="n">2</span> Usage-Widget aktivieren (Session-Key)</h2>
+  <div class="card">
+    <p>Das Verbrauchs-Widget unten rechts zeigt deine 5-Stunden- und Wochen-Auslastung.
+       Dafür braucht Nexus einmalig deinen <code>sessionKey</code> aus claude.ai.</p>
+    <ol>
+      <li>Öffne <span class="link" onclick="open1()">claude.ai</span> im Browser und melde dich an. <span>(falls noch nicht geschehen)</span></li>
+      <li>Drücke <kbd>F12</kbd> → Tab <b>„Application"</b> (Chrome/Edge) bzw. <b>„Speicher"</b> (Firefox).</li>
+      <li>Links: <b>Cookies</b> → <code>https://claude.ai</code> auswählen.</li>
+      <li>Eintrag <code>sessionKey</code> suchen, den <b>Wert</b> kopieren <span>(beginnt mit <code>sk-ant-sid01-…</code>)</span>.</li>
+      <li>In Nexus unten rechts auf das Verbrauchs-Widget klicken → Feld <b>Session-Key</b> einfügen.</li>
+      <li>Org-ID per <b>⟳</b>-Button automatisch ermitteln → <b>Speichern</b>. Fertig.</li>
+    </ol>
+    <p class="note">Der Session-Key bleibt nur lokal auf diesem PC gespeichert
+       (Browser-<code>localStorage</code>) und wird nur an claude.ai gesendet.
+       Er läuft nach einiger Zeit ab – dann den Schritt einfach wiederholen.</p>
+  </div>
+
+  <div class="done">
+    <button class="primary" onclick="window.close()">Schließen</button>
+  </div>
+
+<script>
+  const api = window.nexusAPI;
+  async function connect(){
+    const s = document.getElementById('connStatus');
+    s.textContent = 'Verbinde…'; s.style.color = '#8a93a8';
+    try{
+      const r = await api.connectClaude();
+      if(r && r.ok){ s.style.color = '#34d399'; s.textContent = '✓ Eingetragen. Claude Desktop jetzt neu starten.'; }
+      else { s.style.color = '#f87171'; s.textContent = 'Fehler: ' + ((r && r.error) || 'unbekannt'); }
+    }catch(e){ s.style.color = '#f87171'; s.textContent = 'Fehler: ' + e.message; }
+  }
+  function open1(){ api.openExternal('https://claude.ai'); }
+</script>
+</body>
+</html>

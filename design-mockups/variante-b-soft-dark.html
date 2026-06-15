@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Nexus – Variante B: Soft Dark</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#1f1e1d; --bg2:#262524; --card:#2a2928; --card2:#31302e;
+  --border:#3a3836; --text:#e8e6e3; --dim:#9b968f; --faint:#6e6a64;
+  --amber:#e8a94a; --amber-soft:rgba(232,169,74,.14);
+  --green:#7fb069; --blue:#7da9c7;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font:14px/1.6 'Inter',system-ui,sans-serif}
+::selection{background:var(--amber-soft)}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:99px}
+::-webkit-scrollbar-thumb:hover{background:var(--faint)}
+
+.app{display:grid;grid-template-rows:48px 1fr 30px;height:100vh}
+
+/* ── Titlebar ── */
+.titlebar{display:flex;align-items:center;gap:14px;padding:0 18px;background:var(--bg)}
+.logo{display:flex;align-items:center;gap:9px;font-weight:600;font-size:13.5px;color:var(--text)}
+.logo .mark{width:22px;height:22px;border-radius:7px;background:var(--amber);color:#1f1e1d;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.crumb{color:var(--faint);font-size:13px}
+.crumb b{color:var(--dim);font-weight:500}
+.search{margin-left:auto;display:flex;align-items:center;gap:9px;padding:6px 16px;border-radius:10px;background:var(--card);color:var(--faint);font-size:13px;cursor:pointer;transition:.2s;border:1px solid transparent}
+.search:hover{border-color:var(--border);color:var(--dim)}
+kbd{background:var(--card2);border-radius:5px;padding:1px 6px;font-size:11px;color:var(--faint);font-family:inherit}
+
+/* ── Grid: schmale Icon-Rail + breite Note-Fläche ── */
+.main{display:grid;grid-template-columns:60px 1fr;min-height:0}
+
+/* ── Icon-Rail Sidebar ── */
+.rail{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0;background:var(--bg)}
+.rail-btn{position:relative;width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:17px;color:var(--faint);cursor:pointer;transition:.18s}
+.rail-btn:hover{background:var(--card);color:var(--text)}
+.rail-btn.active{background:var(--amber-soft);color:var(--amber)}
+.rail-btn .dot{position:absolute;top:7px;right:7px;width:7px;height:7px;border-radius:50%}
+.rail-sep{width:26px;height:1px;background:var(--border);margin:6px 0}
+.rail-btn .tip{position:absolute;left:54px;top:50%;transform:translateY(-50%);background:var(--card2);border:1px solid var(--border);color:var(--text);font-size:12px;padding:5px 11px;border-radius:8px;white-space:nowrap;opacity:0;pointer-events:none;transition:.15s;box-shadow:0 6px 24px rgba(0,0,0,.4);z-index:50}
+.rail-btn .tip small{color:var(--faint);margin-left:7px}
+.rail-btn:hover .tip{opacity:1;left:58px}
+.rail-spacer{flex:1}
+
+/* aufgeklapptes Tree-Panel (Hover-Demo: hier fest eingeblendet als Karte) */
+.flyout{position:absolute;left:66px;top:118px;width:240px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.45);padding:10px 8px;z-index:40}
+.flyout .fo-head{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);padding:4px 10px 8px;display:flex}
+.flyout .fo-head span:last-child{margin-left:auto;color:var(--amber);cursor:pointer;letter-spacing:0;text-transform:none}
+.fo-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:10px;font-size:13px;color:var(--dim);cursor:pointer}
+.fo-row:hover{background:var(--card2);color:var(--text)}
+.fo-row.sel{background:var(--amber-soft);color:var(--text)}
+.fo-row .ico{font-size:13px;width:16px;text-align:center}
+.fo-row .cnt{margin-left:auto;font-size:11px;color:var(--faint)}
+.fo-file{padding-left:36px;font-size:12.5px}
+
+/* ── Center ── */
+.center{display:flex;flex-direction:column;min-width:0;background:var(--bg2);border-radius:18px 0 0 0;border:1px solid var(--border);border-right:none;border-bottom:none;position:relative;overflow:hidden}
+.tabbar{display:flex;align-items:center;gap:6px;padding:10px 18px 0;min-height:44px}
+.tab{display:flex;align-items:center;gap:8px;padding:7px 16px;border-radius:10px;font-size:13px;color:var(--faint);cursor:pointer;transition:.15s}
+.tab:hover{background:var(--card);color:var(--dim)}
+.tab.active{background:var(--card);color:var(--text);font-weight:500;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+.tab .x{opacity:.4;font-size:14px}.tab .x:hover{opacity:1}
+.tab-add{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--faint);cursor:pointer;font-size:16px}
+.tab-add:hover{background:var(--card);color:var(--text)}
+
+.note-area{flex:1;overflow-y:auto;min-height:0}
+.note-content{padding:46px 0 120px;max-width:720px;margin:0 auto}
+.note-meta{display:flex;gap:8px;margin-bottom:18px;align-items:center;flex-wrap:wrap}
+.chip{font-size:12px;padding:4px 12px;border-radius:99px;background:var(--card);color:var(--dim)}
+.chip.tag{color:var(--amber);background:var(--amber-soft);cursor:pointer}
+h1.note-title{font-size:34px;font-weight:700;letter-spacing:-.02em;margin-bottom:8px;line-height:1.2}
+.subtitle{color:var(--faint);font-size:15px;margin-bottom:30px}
+h2.h{font-size:21px;font-weight:600;letter-spacing:-.01em;margin:38px 0 12px}
+h3.h3{font-size:16.5px;font-weight:600;margin:26px 0 8px}
+p{margin:.8em 0;color:#d6d3cf;font-size:15px}
+a.wiki{color:var(--amber);text-decoration:none;border-bottom:1px solid rgba(232,169,74,.35);cursor:pointer}
+a.wiki:hover{background:var(--amber-soft);border-radius:3px}
+strong{color:#fff;font-weight:600}
+code{background:var(--card);border-radius:6px;padding:2px 7px;font:.86em 'Consolas',monospace;color:var(--amber)}
+.callout{display:flex;gap:14px;background:var(--card);border-radius:14px;padding:16px 18px;margin:20px 0}
+.callout .ic{font-size:18px;flex-shrink:0}
+.callout p{margin:0;font-size:14px;color:var(--dim)}
+.callout p b{color:var(--text)}
+ul.task{list-style:none;margin:14px 0}
+ul.task li{display:flex;align-items:flex-start;gap:11px;padding:5px 0;font-size:15px;color:#d6d3cf}
+.cb{width:19px;height:19px;border-radius:6px;border:1.5px solid var(--faint);flex-shrink:0;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff}
+.cb.done{background:var(--green);border-color:var(--green)}
+li.done span{color:var(--faint);text-decoration:line-through}
+.card-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:20px 0}
+.k-card{background:var(--card);border-radius:14px;padding:16px 18px;transition:.15s;cursor:pointer}
+.k-card:hover{background:var(--card2);transform:translateY(-1px)}
+.k-card .kc-t{font-weight:600;font-size:14px;margin-bottom:5px;display:flex;align-items:center;gap:8px}
+.k-card .kc-d{font-size:12.5px;color:var(--faint);line-height:1.5}
+
+/* ── Mini-Graph schwebend oben rechts ── */
+.mini-graph{position:absolute;top:56px;right:22px;width:170px;height:130px;background:rgba(42,41,40,.82);backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:16px;overflow:hidden;opacity:.75;transition:.25s;cursor:pointer;z-index:30;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+.mini-graph:hover{opacity:1;transform:scale(1.03)}
+.mini-graph .mg-label{position:absolute;bottom:7px;left:12px;font-size:10px;letter-spacing:.08em;color:var(--faint);text-transform:uppercase}
+.mini-graph .mg-expand{position:absolute;top:7px;right:9px;font-size:11px;color:var(--faint)}
+.mini-graph svg{width:100%;height:100%}
+.mg-edge{stroke:#454340;stroke-width:1}
+.mg-node{opacity:.9}
+
+/* ── Statusbar ── */
+.statusbar{display:flex;align-items:center;gap:18px;padding:0 18px;font-size:11.5px;color:var(--faint);background:var(--bg)}
+.statusbar .ok{color:var(--green)}
+.statusbar .ml{margin-left:auto}
+.usage{display:flex;align-items:center;gap:7px;cursor:pointer}
+.u-track{width:44px;height:4px;border-radius:99px;background:var(--card2);overflow:hidden}
+.u-fill{height:100%;border-radius:99px;background:var(--amber);width:41%}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="titlebar">
+    <div class="logo"><span class="mark">◆</span>Nexus</div>
+    <div class="crumb">Uni / Thermodynamik / <b>Kreisprozesse</b></div>
+    <div class="search">Suchen oder Befehl… <kbd>Ctrl K</kbd></div>
+  </div>
+
+  <div class="main">
+
+    <!-- Icon-Rail -->
+    <div class="rail">
+      <div class="rail-btn" title=""><span>🗂</span><span class="tip">Vault wechseln <small>knowledge-base</small></span></div>
+      <div class="rail-sep"></div>
+      <div class="rail-btn"><span>💼</span><span class="dot" style="background:#7da9c7"></span><span class="tip">Arbeit <small>2.880 Notizen</small></span></div>
+      <div class="rail-btn active"><span>🎓</span><span class="dot" style="background:#e8a94a"></span><span class="tip">Uni <small>2.098 Notizen</small></span></div>
+      <div class="rail-btn"><span>💡</span><span class="dot" style="background:#7fb069"></span><span class="tip">Wissen <small>312 Notizen</small></span></div>
+      <div class="rail-btn"><span>👤</span><span class="dot" style="background:#c78ba5"></span><span class="tip">Profil <small>24 Notizen</small></span></div>
+      <div class="rail-btn"><span>📥</span><span class="tip">Eingang <small>3 neu</small></span></div>
+      <div class="rail-btn"><span>💬</span><span class="tip">_Konversationen <small>141</small></span></div>
+      <div class="rail-spacer"></div>
+      <div class="rail-btn"><span>＋</span><span class="tip">Neue Notiz</span></div>
+      <div class="rail-btn"><span>⚙</span><span class="tip">Einstellungen</span></div>
+    </div>
+
+    <!-- Flyout (so sieht der aufgeklappte Ordner bei Hover/Pin aus) -->
+    <div class="flyout">
+      <div class="fo-head"><span>Uni</span><span>+ Notiz</span></div>
+      <div class="fo-row"><span class="ico">📁</span>Maschinenelemente<span class="cnt">214</span></div>
+      <div class="fo-row sel"><span class="ico">📂</span>Thermodynamik<span class="cnt">48</span></div>
+      <div class="fo-row fo-file">Kreisprozesse</div>
+      <div class="fo-row fo-file">Hauptsätze</div>
+      <div class="fo-row fo-file">Exergie</div>
+      <div class="fo-row"><span class="ico">📁</span>Regelungstechnik<span class="cnt">86</span></div>
+      <div class="fo-row"><span class="ico">📁</span>Dateien<span class="cnt">2.098</span></div>
+    </div>
+
+    <!-- Center -->
+    <div class="center">
+      <div class="tabbar">
+        <div class="tab active">Kreisprozesse <span class="x">×</span></div>
+        <div class="tab">Hauptsätze <span class="x">×</span></div>
+        <div class="tab">START <span class="x">×</span></div>
+        <div class="tab-add">+</div>
+      </div>
+
+      <!-- Mini-Graph -->
+      <div class="mini-graph">
+        <span class="mg-expand">⤢</span>
+        <svg viewBox="0 0 170 130">
+          <line class="mg-edge" x1="85" y1="62" x2="38" y2="34"/>
+          <line class="mg-edge" x1="85" y1="62" x2="132" y2="30"/>
+          <line class="mg-edge" x1="85" y1="62" x2="34" y2="96"/>
+          <line class="mg-edge" x1="85" y1="62" x2="135" y2="94"/>
+          <circle class="mg-node" cx="85" cy="62" r="6" fill="#e8a94a"/>
+          <circle class="mg-node" cx="38" cy="34" r="4" fill="#7da9c7"/>
+          <circle class="mg-node" cx="132" cy="30" r="4" fill="#e8a94a"/>
+          <circle class="mg-node" cx="34" cy="96" r="3.5" fill="#7fb069"/>
+          <circle class="mg-node" cx="135" cy="94" r="4" fill="#e8a94a"/>
+        </svg>
+        <span class="mg-label">Graph</span>
+      </div>
+
+      <div class="note-area">
+        <div class="note-content">
+          <div class="note-meta">
+            <span class="chip tag"># thermodynamik</span>
+            <span class="chip tag"># klausur</span>
+            <span class="chip">Geändert 11. Juni</span>
+            <span class="chip">1.243 Wörter</span>
+          </div>
+          <h1 class="note-title">Kreisprozesse</h1>
+          <div class="subtitle">Thermodynamische Vergleichsprozesse für Wärmekraft- und Kältemaschinen</div>
+
+          <p>Ein <strong>Kreisprozess</strong> ist eine Folge von Zustandsänderungen, die ein System wieder in den Ausgangszustand zurückführt. Er bildet die Grundlage für <a class="wiki">Wärmekraftmaschinen</a> und <a class="wiki">Kältemaschinen</a> – die theoretische Basis liefern die <a class="wiki">Hauptsätze</a>.</p>
+
+          <h2 class="h">Carnot-Prozess</h2>
+          <p>Der ideale Vergleichsprozess zwischen zwei Wärmereservoirs. Der Wirkungsgrad hängt ausschließlich von den Temperaturen ab: <code>η = 1 − T_kalt / T_heiß</code> (Temperaturen in Kelvin).</p>
+
+          <div class="callout">
+            <span class="ic">💡</span>
+            <p><b>Merksatz:</b> Kein realer Prozess zwischen zwei Wärmereservoirs kann einen höheren Wirkungsgrad erreichen als der Carnot-Prozess.</p>
+          </div>
+
+          <h2 class="h">Offene Aufgaben</h2>
+          <ul class="task">
+            <li class="done"><span class="cb done">✓</span><span>Carnot durchgerechnet (Übung 7)</span></li>
+            <li class="done"><span class="cb done">✓</span><span>Otto-Prozess: p-V-Diagramm skizziert</span></li>
+            <li><span class="cb"></span><span>Diesel-Prozess: Gleichraumgrad nachschlagen</span></li>
+            <li><span class="cb"></span><span>Altklausur SS24 Aufgabe 3 rechnen</span></li>
+          </ul>
+
+          <h2 class="h">Verwandte Notizen</h2>
+          <div class="card-grid">
+            <div class="k-card"><div class="kc-t">🔗 Otto-Prozess</div><div class="kc-d">Isochore Wärmezufuhr, Benzinmotor-Vergleichsprozess.</div></div>
+            <div class="k-card"><div class="kc-t">🔗 Hauptsätze</div><div class="kc-d">1. und 2. Hauptsatz – Energieerhaltung & Entropie.</div></div>
+            <div class="k-card"><div class="kc-t">🔗 Exergie</div><div class="kc-d">Maximal nutzbarer Arbeitsanteil der Energie.</div></div>
+            <div class="k-card"><div class="kc-t">🔗 Klausur SS24</div><div class="kc-d">Altklausur mit Lösungsweg, Aufgabe 3 offen.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <span><span class="ok">●</span> MCP bereit</span>
+    <span>5.476 Notizen indiziert</span>
+    <span>Watcher aktiv</span>
+    <span class="ml">knowledge-base</span>
+    <span class="usage"><span class="u-track"><span class="u-fill"></span></span>41 %</span>
+  </div>
+</div>
+</body>
+</html>

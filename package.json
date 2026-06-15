@@ -1,6 +1,6 @@
 {
   "name": "nexus",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "MCP-Server + Web-UI fuer Pauls Knowledge-Base",
   "author": "Paul-Johannes Hunold",
   "type": "module",
@@ -13,7 +13,11 @@
     "test": "node test/smoke.js",
     "app": "electron electron/main.js",
     "dist": "electron-builder --win",
-    "dist:dir": "electron-builder --dir"
+    "dist:dir": "electron-builder --dir",
+    "gen:icon": "node scripts/gen-icon.mjs",
+    "verify:html": "node scripts/verify-html.mjs public/index.html",
+    "edit:html": "node scripts/safe-edit.mjs public/index.html",
+    "prepare": "node scripts/install-hooks.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
@@ -25,7 +29,9 @@
   },
   "devDependencies": {
     "electron": "^42.0.0",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^25.0.0",
+    "png-to-ico": "^2.1.8",
+    "sharp": "^0.33.0"
   },
   "engines": {
     "node": ">=20"
@@ -48,14 +54,28 @@
         "nsis",
         "portable"
       ],
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "asInvoker",
+      "legalTrademarks": "Nexus"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
+      "allowElevation": false,
       "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "installerLanguages": [
+        "de_DE",
+        "en_US"
+      ],
+      "language": "1031",
       "createDesktopShortcut": true,
-      "shortcutName": "Nexus"
+      "createStartMenuShortcut": true,
+      "shortcutName": "Nexus",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
     },
     "portable": {
       "artifactName": "Nexus-${version}-portable.exe"

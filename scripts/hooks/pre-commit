@@ -1,0 +1,27 @@
+#!/bin/sh
+# Nexus pre-commit Hook — blockt das Committen einer defekten public/index.html.
+# Aktiv via:  git config core.hooksPath scripts/hooks   (einmalig, s. STATUS.md)
+#
+# Prueft den GESTAGTEN Blob (nicht nur die Arbeitskopie): so kann eine
+# truncated/NUL-gepaddete index.html niemals in die kanonische Historie gelangen.
+
+staged=$(git diff --cached --name-only)
+case "$staged" in
+  *public/index.html*)
+    tmp=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/nexus-precommit.$$")
+    git show :public/index.html > "$tmp" 2>/dev/null
+    node scripts/verify-html.mjs "$tmp"
+    rc=$?
+    rm -f "$tmp"
+    if [ "$rc" -ne 0 ]; then
+      echo ""
+      echo "[pre-commit] ABBRUCH: gestagte public/index.html ist DEFEKT (Truncation?)."
+      echo "[pre-commit] Commit gestoppt. Wiederherstellen z.B. mit:"
+      echo "             git checkout -- public/index.html"
+      echo "             oder eine gute Kopie aus .nexus-backups/ zurueckspielen."
+      exit 1
+    fi
+    echo "[pre-commit] public/index.html OK."
+    ;;
+esac
+exit 0

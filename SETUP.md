@@ -1,75 +1,95 @@
-# Nexus auf einem anderen PC einrichten
+# Nexus installieren & einrichten
 
-Ziel: Nexus mit minimalem Aufwand auf einem fremden Windows-PC zum Laufen bringen
-– **ohne** deine Vault-Inhalte, aber mit Aufbau, Verhalten und Claude-Desktop-Anbindung.
+Nexus verhält sich wie eine normale Windows-Anwendung: herunterladen, doppelklicken,
+fertig. Kein CMD-Fenster, kein manuelles Node.js, kein Konfigurieren von Hand.
 Der Ziel-PC braucht **kein Node.js** und keine Entwicklungsumgebung.
 
 ---
 
-## Teil A – Installer bauen (einmalig, auf deinem Entwickler-PC)
+## Schnellstart (Ziel-PC)
 
-Auf dem PC, der das Repo `D:\Nexus` und Node.js hat:
+1. **`Nexus Setup 0.3.1.exe` herunterladen** und doppelklicken.
+2. **SmartScreen-Hinweis:** Windows zeigt evtl. „Der Computer wurde durch Windows
+   geschützt". Das ist normal bei noch nicht signierten Apps.
+   → **„Weitere Informationen"** anklicken → **„Trotzdem ausführen"**.
+3. **Installationsordner wählen** (oder Vorschlag übernehmen) → **Installieren**.
+   Es werden keine Administratorrechte benötigt (Installation in den Benutzerordner).
+4. Nexus startet automatisch und führt durch den **Einrichtungs-Assistenten:**
+   - **Willkommen** → Weiter
+   - **Vault-Speicherort wählen** – Vorschlag `Dokumente\Nexus Vaults` übernehmen
+     oder per **„Durchsuchen…"** einen eigenen Ordner wählen.
+   - **Einstellungen** – optional „beim Windows-Start automatisch starten", „jetzt
+     starten", „Einrichtungs-Anleitung anzeigen" → **Fertigstellen**.
+5. Das Nexus-Fenster öffnet sich – leerer Vault, voll funktionsfähig.
+   In der Taskleiste erscheint das Nexus-Logo mit dem Namen „Nexus".
+
+> **Portable Variante:** Statt des Installers kann `Nexus-0.3.1-portable.exe` einfach
+> doppelgeklickt werden (z. B. vom USB-Stick) – ohne Installation. Der Einrichtungs-
+> Assistent läuft genauso beim ersten Start.
+
+Beim ersten Start legt Nexus automatisch an:
+- eine frische Konfiguration unter `%APPDATA%\Nexus\nexus.config.json` (ohne fremde Inhalte),
+- den gewählten Vault-Ordner mit einem leeren Vault `knowledge-base`.
+
+---
+
+## Inhalte hinzufügen
+
+Vault-Inhalte werden **bewusst nicht** mitgeliefert. Den Vault füllst du so:
+- Markdown-/PDF-/Office-Dateien per **Drag & Drop** ins Nexus-Fenster ziehen
+  (Nicht-MD-Dateien per Rechtsklick → Markitdown nach `.md` konvertieren), **oder**
+- Dateien direkt in den Vault-Ordner legen und in der UI „Reindex" drücken, **oder**
+- über das `+` einen weiteren Vault anlegen / einen bestehenden Ordner als Vault eintragen.
+
+---
+
+## Claude-Desktop-Anbindung & Usage-Widget (in der App)
+
+Beides ist direkt aus Nexus heraus eingerichtet – ohne CMD, ohne Dateien von Hand:
+
+**Menü „Hilfe → Einrichtung & Usage-Key…"** öffnet ein Anleitungsfenster mit:
+
+1. **„Mit Claude Desktop verbinden"** (ein Klick) – trägt Nexus als MCP-Server in
+   `%APPDATA%\Claude\claude_desktop_config.json` ein (alte Datei wird als
+   `…nexus-backup` gesichert). Der Eintrag startet **genau diese .exe** im MCP-Modus
+   (`--mcp`) – darum ist auf dem Ziel-PC kein Node nötig.
+   Danach **Claude Desktop komplett neu starten** (beenden + öffnen). Die Nexus-Tools
+   (`search`, `read_note`, `write_note`, `backlinks`, `query`, `patch`, …) stehen dann bereit.
+2. **Session-Key für das Usage-Widget** – Schritt-für-Schritt, wie man den
+   `sessionKey` aus claude.ai (F12 → Application → Cookies → `https://claude.ai` →
+   `sessionKey`) kopiert und unten rechts ins Verbrauchs-Widget einträgt. Org-ID per
+   ⟳-Button automatisch. Der Key bleibt lokal (Browser-`localStorage`).
+
+Dieselbe Anleitung erscheint auf Wunsch automatisch am Ende des Einrichtungs-Assistenten.
+
+---
+
+## Installer bauen (einmalig, auf dem Entwickler-PC)
+
+Auf dem PC mit dem Repo `D:\Nexus` und Node.js:
 
 ```bash
 cd D:\Nexus
-npm install        # zieht electron + electron-builder (devDependencies, ~300 MB)
-npm run dist       # baut den Windows-Installer
+npm install        # zieht electron, electron-builder, sharp, png-to-ico (devDependencies)
+npm run dist       # baut den Windows-Installer (NSIS + portable)
 ```
 
 Ergebnis in `D:\Nexus\dist\`:
 
 | Datei | Was |
 |---|---|
-| `Nexus Setup 0.3.0.exe` | NSIS-Installer (installiert, legt Startmenue-/Desktop-Verknuepfung an) |
-| `Nexus-0.3.0-portable.exe` | Portable Variante – kein Installieren, direkt startbar (z.B. vom USB-Stick) |
+| `Nexus Setup 0.3.1.exe` | NSIS-Installer (Ordnerwahl, Desktop-/Startmenü-Verknüpfung, Autostart nach Installation) |
+| `Nexus-0.3.1-portable.exe` | Portable Variante – kein Installieren, direkt startbar |
 
-Eine dieser beiden Dateien kopierst du auf den Ziel-PC. Mehr nicht.
+Eine dieser Dateien kopierst du auf den Ziel-PC. Mehr nicht.
 
-> Build-Hinweis: `npm run dist` muss auf **Windows** laufen (NSIS-Target). Vom
-> Entwickler-PC aus reicht das – der Ziel-PC braucht nur die fertige `.exe`.
-
----
-
-## Teil B – Auf dem fremden PC einrichten
-
-### 1. Starten
-- **Installer-Variante:** `Nexus Setup 0.3.0.exe` ausfuehren, Zielordner waehlen, fertig.
-- **Portable-Variante:** `Nexus-0.3.0-portable.exe` einfach doppelklicken.
-
-Beim **ersten Start** legt Nexus automatisch an:
-- eine frische Konfiguration unter `%APPDATA%\Nexus\nexus.config.json` (ohne deine Inhalte),
-- einen leeren Vault-Ordner unter `Dokumente\Nexus Vaults\knowledge-base\`.
-
-Das Nexus-Fenster oeffnet sich mit der Web-UI – leerer Vault, voll funktionsfaehig.
-
-### 2. Inhalte hinzufuegen
-Vault-Inhalte werden **bewusst nicht** mitgeliefert. Du fuellst den Vault auf eine
-dieser Arten:
-- Markdown-/PDF-/Office-Dateien per **Drag & Drop** ins Nexus-Fenster ziehen
-  (Nicht-MD-Dateien koennen per Rechtsklick → Markitdown nach `.md` konvertiert werden), **oder**
-- Dateien direkt in `Dokumente\Nexus Vaults\knowledge-base\` ablegen und in der UI „Reindex" druecken, **oder**
-- in der UI ueber das `+` einen weiteren Vault anlegen / einen bestehenden Ordner als Vault eintragen.
-
-### 3. Mit Claude Desktop verbinden (1 Klick)
-Im Nexus-Menue: **Nexus → „Mit Claude Desktop verbinden"**.
-
-Das schreibt automatisch einen `nexus`-Eintrag in
-`%APPDATA%\Claude\claude_desktop_config.json` (vorhandene Datei wird vorher als
-`...nexus-backup` gesichert) und zeigt den Pfad an. Der Eintrag startet **genau diese
-.exe** im MCP-Modus (`--mcp`) – darum ist auf dem Ziel-PC kein Node noetig.
-
-Danach **Claude Desktop komplett neu starten** (beenden + neu oeffnen). Die Nexus-Tools
-(`search`, `read_note`, `write_note`, `backlinks`, `query`, `patch`, …) stehen dann zur Verfuegung.
-
-### 4. Deine Regeln (optional)
-„Regeln" gibt es in zwei Sorten:
-- **App-Verhalten** (MCP-Tools, Config-Struktur, Indexer, UI) – steckt in der `.exe`, kommt automatisch mit.
-- **Vault-eigene Regeln** (z.B. `CLAUDE.md`, `_System/Arbeitsweise.md` in deinem Wissens-Vault) – das ist
-  **Inhalt**. Wenn du sie auf dem neuen PC willst, kopierst du diese Dateien einmalig in den neuen Vault-Ordner.
+> `npm run dist` muss auf **Windows** laufen (NSIS-Target; in einer Linux-Sandbox nicht baubar).
+> Das **App-Icon** liegt bereits fertig in `build/` – bei Bedarf neu erzeugen mit
+> `npm run gen:icon` (nutzt `sharp` + `png-to-ico`).
 
 ---
 
-## Wo liegt was (gepackte App)
+## Wo liegt was (installierte App)
 
 | Zweck | Ort |
 |---|---|
@@ -77,26 +97,30 @@ Danach **Claude Desktop komplett neu starten** (beenden + neu oeffnen). Die Nexu
 | Konfiguration | `%APPDATA%\Nexus\nexus.config.json` |
 | Such-Index (SQLite) | `%APPDATA%\Nexus\.nexus\*.db` (wegwerfbar, wird neu gebaut) |
 | Upload-Temp | `%APPDATA%\Nexus\.nexus\tmp\` |
-| Vault-Inhalte | `Dokumente\Nexus Vaults\<vault>\` (frei verschiebbar, in Config eintragen) |
+| Log | `%APPDATA%\Nexus\nexus.log` |
+| Vault-Inhalte | gewählter Vault-Ordner (Standard `Dokumente\Nexus Vaults\<vault>\`) |
 | Claude-Desktop-Anbindung | `%APPDATA%\Claude\claude_desktop_config.json` |
 
-Im **Entwickler-Modus** (`npm run app` aus dem Repo) bleibt alles wie bisher: Config,
-Index und Temp liegen in `D:\Nexus`. Die userData-Umleitung greift nur in der gepackten App.
+Im **Entwickler-Modus** (`npm run app` aus dem Repo) bleibt alles im Repo (`D:\Nexus`).
+Die userData-Umleitung greift nur in der gepackten App.
 
 ---
 
 ## Zwei Betriebsarten – eine .exe
 
-- **Doppelklick / Verknuepfung** → GUI-Modus: Web-UI im Fenster.
+- **Doppelklick / Verknüpfung** → GUI-Modus: Web-UI im Fenster (beim 1. Start: Einrichtungs-Assistent).
 - **`Nexus.exe --mcp`** → MCP-Modus: kein Fenster, spricht stdio mit Claude Desktop.
-  Genau diesen Aufruf traegt „Mit Claude Desktop verbinden" ein.
+  Genau diesen Aufruf trägt „Mit Claude Desktop verbinden" ein.
 
 ---
 
 ## Troubleshooting
 
-- **Fenster bleibt leer:** Menue „Ansicht → DevTools", Konsole pruefen.
+- **SmartScreen blockiert:** „Weitere Informationen" → „Trotzdem ausführen" (App ist nicht signiert).
+- **Fenster bleibt leer:** Menü „Ansicht → Entwicklerwerkzeuge", Konsole prüfen.
 - **Claude Desktop sieht Nexus nicht:** Claude Desktop wirklich beenden (Tray) und neu starten;
-  pruefen, ob der `nexus`-Eintrag in `claude_desktop_config.json` auf die echte `.exe` zeigt.
-- **Suche/Index leer:** in der UI „Reindex" druecken (oder MCP-Tool `reindex`).
-- **Mermaid/Math zeigen nur Quelltext:** brauchen Internet (CDN); sonst Fallback auf Rohtext.
+  prüfen, ob der `nexus`-Eintrag in `claude_desktop_config.json` auf die echte `.exe` zeigt.
+- **Usage-Widget zeigt `— / —`:** Session-Key fehlt/abgelaufen → „Hilfe → Einrichtung & Usage-Key…" erneut durchgehen.
+- **Suche/Index leer:** in der UI „Reindex" drücken (oder MCP-Tool `reindex`).
+- **Wizard nochmal sehen (Test):** Nexus mit gesetzter Umgebungsvariable `NEXUS_FORCE_WIZARD=1` starten
+  (überschreibt eine vorhandene Config nicht).

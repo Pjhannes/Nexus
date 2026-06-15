@@ -7,12 +7,22 @@
       "name": "knowledge-base",
       "path": "D:\\Knowledge-base",
       "dbPath": "D:\\Nexus\\.nexus\\knowledge-base.db"
+    },
+    {
+      "name": "test",
+      "path": "D:\\Knowledge-base\\test",
+      "dbPath": "D:\\Nexus\\.nexus\\test.db"
     }
   ],
   "ui": {
     "port": 3000,
     "autoOpen": true
   },
-  "ignore": [".obsidian", ".trash", ".nexus", "node_modules"],
+  "ignore": [
+    ".obsidian",
+    ".trash",
+    ".nexus",
+    "node_modules"
+  ],
   "_migration": "Bestehender Vault unter C:\\Users\\pjhan\\Documents\\knowledge-base → manuell nach D:\\Knowledge-base\\knowledge-base\\ kopieren. Nexus legt D:\\Knowledge-base automatisch an."
 }

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Nexus – Variante D: Editorial (freier Vorschlag)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#161311; --bg2:#1c1916; --card:#211d1a; --card2:#282320;
+  --line:#332d28; --line2:#443c35;
+  --text:#e9e2d8; --dim:#a39686; --faint:#6f6457;
+  --copper:#c96f4a; --copper-soft:rgba(201,111,74,.13); --copper-glow:rgba(201,111,74,.3);
+  --sage:#9aa87c; --ink:#7d97a5;
+  --serif:'Fraunces',Georgia,serif; --sans:'Inter',system-ui,sans-serif; --mono:'JetBrains Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font:14px/1.65 var(--sans)}
+::selection{background:var(--copper-soft)}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--line2);border-radius:99px}
+::-webkit-scrollbar-thumb:hover{background:var(--copper)}
+
+.app{display:grid;grid-template-rows:52px 1fr 30px;height:100vh}
+
+/* ── Titlebar: Zeitungskopf ── */
+.titlebar{display:flex;align-items:baseline;gap:20px;padding:0 26px;border-bottom:1px solid var(--line2);align-items:center}
+.logo{font:600 19px/1 var(--serif);letter-spacing:.02em;color:var(--text)}
+.logo i{font-style:normal;color:var(--copper)}
+.edition{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);border-left:1px solid var(--line2);padding-left:20px}
+.search{margin-left:auto;display:flex;align-items:center;gap:9px;padding:6px 16px;border:1px solid var(--line2);border-radius:3px;color:var(--faint);font-size:12.5px;cursor:pointer;transition:.2s;background:transparent}
+.search:hover{border-color:var(--copper);color:var(--dim)}
+kbd{border:1px solid var(--line2);border-radius:3px;padding:0 6px;font:10.5px var(--mono);color:var(--faint)}
+
+/* ── Grid ── */
+.main{display:grid;grid-template-columns:264px 1fr 330px;min-height:0}
+.col{border-right:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.col:last-child{border-right:none}
+
+/* ── Sidebar: Inhaltsverzeichnis mit Kapitelnummern ── */
+.side{background:var(--bg2)}
+.vault-row{display:flex;align-items:center;gap:8px;padding:14px 22px 10px}
+.vault-name{font:600 13px var(--serif);color:var(--text);flex:1;cursor:pointer}
+.vault-name small{display:block;font:10px var(--sans);letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin-top:1px}
+.vault-add{color:var(--faint);cursor:pointer;font-size:16px}
+.vault-add:hover{color:var(--copper)}
+.toc-head{padding:12px 22px 8px;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);display:flex;border-top:1px solid var(--line)}
+.toc-head .plus{margin-left:auto;color:var(--copper);cursor:pointer;letter-spacing:0;text-transform:none;font-size:11px}
+.toc{flex:1;overflow-y:auto;padding:2px 12px 16px}
+.chap{display:flex;align-items:baseline;gap:13px;padding:9px 10px;cursor:pointer;border-radius:4px;transition:.15s}
+.chap:hover{background:var(--card)}
+.chap .no{font:600 11px var(--serif);color:var(--faint);width:20px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
+.chap .nm{font:500 14px var(--serif);color:var(--dim);flex:1}
+.chap .ln{flex:1;border-bottom:1px dotted var(--line2);transform:translateY(-3px);margin:0 2px;min-width:12px}
+.chap .cnt{font:11px var(--mono);color:var(--faint)}
+.chap.active{background:var(--copper-soft)}
+.chap.active .nm{color:var(--text)}
+.chap.active .no{color:var(--copper)}
+.chap-bar{width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;margin-right:-4px}
+.sub{padding:3px 10px 3px 56px;font-size:12.5px;color:var(--faint);cursor:pointer;border-radius:4px;font-family:var(--sans)}
+.sub:hover{background:var(--card);color:var(--dim)}
+.sub.sel{color:var(--copper)}
+.side-foot{border-top:1px solid var(--line);padding:11px 22px;font-size:12.5px;color:var(--faint);cursor:pointer;display:flex;gap:9px;align-items:center}
+.side-foot:hover{color:var(--dim);background:var(--card)}
+
+/* ── Tabs: Register-Reiter ── */
+.tabbar{display:flex;align-items:flex-end;gap:0;padding:8px 26px 0;min-height:40px;border-bottom:1px solid var(--line2);background:var(--bg)}
+.tab{display:flex;align-items:center;gap:9px;padding:7px 18px;font:500 12.5px var(--sans);color:var(--faint);cursor:pointer;border:1px solid transparent;border-bottom:none;border-radius:4px 4px 0 0;transform:translateY(1px);transition:.15s}
+.tab:hover{color:var(--dim)}
+.tab.active{color:var(--text);background:var(--bg2);border-color:var(--line2);position:relative}
+.tab.active::after{content:'';position:absolute;top:-1px;left:-1px;right:-1px;height:2px;background:var(--copper)}
+.tab .x{opacity:.4;font-size:13px}.tab .x:hover{opacity:1}
+.tab-add{padding:7px 12px;color:var(--faint);cursor:pointer;font-size:15px}
+.tab-add:hover{color:var(--copper)}
+
+/* ── Note: Magazin-Typografie ── */
+.center{background:var(--bg2)}
+.note-area{flex:1;overflow-y:auto;min-height:0}
+.note-content{padding:52px 0 130px;max-width:680px;margin:0 auto}
+.kicker{font-size:10.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--copper);margin-bottom:14px;display:flex;align-items:center;gap:12px}
+.kicker::after{content:'';flex:1;height:1px;background:var(--line2)}
+h1.note-title{font:700 40px/1.15 var(--serif);letter-spacing:-.01em;margin-bottom:14px}
+.standfirst{font:400 17px/1.55 var(--serif);color:var(--dim);font-style:italic;margin-bottom:8px}
+.byline{font-size:11.5px;color:var(--faint);margin-bottom:34px;display:flex;gap:14px}
+.byline b{color:var(--dim);font-weight:500}
+.drop p:first-of-type::first-letter{font:700 52px/0.83 var(--serif);color:var(--copper);float:left;padding:6px 10px 0 0}
+h2.h{font:600 23px/1.3 var(--serif);margin:40px 0 12px;display:flex;align-items:baseline;gap:14px}
+h2.h .hno{font-size:13px;color:var(--copper)}
+p{margin:.85em 0;font-size:15px;color:#d8d0c4}
+a.wiki{color:var(--ink);text-decoration:none;border-bottom:1px solid rgba(125,151,165,.4);cursor:pointer}
+a.wiki:hover{color:#a3bfce;border-bottom-style:solid}
+strong{color:#fff;font-weight:600}
+code{font:.85em var(--mono);background:var(--card);border-radius:3px;padding:2px 7px;color:#dba277}
+.pull{border-top:1px solid var(--line2);border-bottom:1px solid var(--line2);margin:28px 0;padding:18px 6px;font:600 19px/1.5 var(--serif);color:var(--text);text-align:center;font-style:italic}
+.pull small{display:block;font:10.5px var(--sans);letter-spacing:.2em;text-transform:uppercase;color:var(--copper);font-style:normal;margin-top:8px}
+ul.task{list-style:none;margin:14px 0;border-left:2px solid var(--line2);padding-left:18px}
+ul.task li{display:flex;align-items:flex-start;gap:11px;padding:4px 0;font-size:14.5px;color:#d8d0c4}
+.cb{width:17px;height:17px;border-radius:3px;border:1.5px solid var(--faint);flex-shrink:0;margin-top:3px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--bg)}
+.cb.done{background:var(--sage);border-color:var(--sage)}
+li.done span{color:var(--faint);text-decoration:line-through}
+.footnote{margin-top:44px;border-top:1px solid var(--line2);padding-top:14px;font-size:12px;color:var(--faint)}
+.footnote .fn-head{letter-spacing:.2em;text-transform:uppercase;font-size:9.5px;margin-bottom:8px}
+.footnote .bl{color:var(--ink);cursor:pointer}
+
+/* ── Right: Marginalien-Spalte ── */
+.right{background:var(--bg2)}
+.rtoggle{display:flex;border-bottom:1px solid var(--line)}
+.rtoggle button{flex:1;padding:9px 0;font:10.5px var(--sans);letter-spacing:.18em;text-transform:uppercase;background:transparent;border:none;color:var(--faint);cursor:pointer;border-bottom:2px solid transparent;transition:.15s}
+.rtoggle button:hover{color:var(--dim)}
+.rtoggle button.active{color:var(--copper);border-bottom-color:var(--copper)}
+.graph-wrap{flex:1;position:relative;min-height:0}
+.graph-label{position:absolute;top:12px;left:18px;font-size:9.5px;letter-spacing:.22em;color:var(--faint);text-transform:uppercase}
+.graph-mode{position:absolute;top:10px;right:16px;font:10.5px var(--mono);color:var(--copper);border:1px solid var(--line2);border-radius:3px;padding:2px 9px;background:var(--card)}
+.graph-wrap svg{width:100%;height:100%;display:block}
+.gedge{stroke:var(--line2);stroke-width:1}
+.glabel{font:600 9.5px var(--serif);fill:var(--dim)}
+.activity{border-top:1px solid var(--line);flex-shrink:0}
+.activity header{padding:8px 18px;font-size:9.5px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.live{width:6px;height:6px;border-radius:50%;background:var(--sage);animation:pu 2s infinite}
+@keyframes pu{50%{opacity:.3}}
+.log{max-height:128px;overflow-y:auto}
+.log .row{display:flex;align-items:baseline;gap:10px;padding:5px 18px;font-size:11.5px;border-bottom:1px solid rgba(255,255,255,.025)}
+.log .t{font:10px var(--mono);color:var(--faint);flex-shrink:0}
+.log .m{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.log .m b{color:var(--text);font-weight:500}
+
+/* ── Statusbar: Kolophon ── */
+.statusbar{display:flex;align-items:center;gap:0;border-top:1px solid var(--line2);font:11px var(--sans);color:var(--faint);background:var(--bg)}
+.scell{padding:0 16px;height:100%;display:flex;align-items:center;gap:6px;border-right:1px solid var(--line);white-space:nowrap}
+.scell .ok{color:var(--sage)}
+.scell.ml{margin-left:auto;border-right:none;border-left:1px solid var(--line)}
+.usage{display:flex;align-items:center;gap:7px;cursor:pointer}
+.u-track{width:42px;height:3px;border-radius:99px;background:var(--card2);overflow:hidden}
+.u-fill{height:100%;width:41%;background:var(--copper)}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="titlebar">
+    <div class="logo">Nexus<i>.</i></div>
+    <div class="edition">Knowledge-Base · Ausgabe 12. Juni 2026</div>
+    <div class="search">Suchen oder Befehl… <kbd>Ctrl K</kbd></div>
+  </div>
+
+  <div class="main">
+
+    <!-- Sidebar -->
+    <div class="col side">
+      <div class="vault-row">
+        <div class="vault-name">knowledge-base<small>5.476 Notizen · 8 Kapitel</small></div>
+        <div class="vault-add">+</div>
+      </div>
+      <div class="toc-head">Inhalt <span class="plus">+ Notiz</span></div>
+      <div class="toc">
+        <div class="chap"><span class="chap-bar" style="background:#7d97a5"></span><span class="no">01</span><span class="nm">Arbeit</span><span class="ln"></span><span class="cnt">2880</span></div>
+        <div class="chap active"><span class="chap-bar" style="background:#c96f4a"></span><span class="no">02</span><span class="nm">Uni</span><span class="ln"></span><span class="cnt">2098</span></div>
+        <div class="sub">Maschinenelemente</div>
+        <div class="sub sel">Thermodynamik — Kreisprozesse</div>
+        <div class="sub">Regelungstechnik</div>
+        <div class="chap"><span class="chap-bar" style="background:#9aa87c"></span><span class="no">03</span><span class="nm">Wissen</span><span class="ln"></span><span class="cnt">312</span></div>
+        <div class="chap"><span class="chap-bar" style="background:#b08aa0"></span><span class="no">04</span><span class="nm">Profil</span><span class="ln"></span><span class="cnt">24</span></div>
+        <div class="chap"><span class="chap-bar" style="background:#c4a35a"></span><span class="no">05</span><span class="nm">Bewerbungen</span><span class="ln"></span><span class="cnt">37</span></div>
+        <div class="chap"><span class="chap-bar" style="background:#8a8378"></span><span class="no">06</span><span class="nm">Eingang</span><span class="ln"></span><span class="cnt">3</span></div>
+        <div class="chap"><span class="chap-bar" style="background:#6f6457"></span><span class="no">07</span><span class="nm">_Konversationen</span><span class="ln"></span><span class="cnt">141</span></div>
+        <div class="chap"><span class="chap-bar" style="background:#6f6457"></span><span class="no">08</span><span class="nm">_System</span><span class="ln"></span><span class="cnt">18</span></div>
+      </div>
+      <div class="side-foot">⚙ Einstellungen</div>
+    </div>
+
+    <!-- Center -->
+    <div class="col center">
+      <div class="tabbar">
+        <div class="tab active">Kreisprozesse <span class="x">×</span></div>
+        <div class="tab">Hauptsätze <span class="x">×</span></div>
+        <div class="tab">START <span class="x">×</span></div>
+        <div class="tab-add">+</div>
+      </div>
+      <div class="note-area">
+        <div class="note-content drop">
+          <div class="kicker">Kapitel 02 · Thermodynamik</div>
+          <h1 class="note-title">Kreisprozesse</h1>
+          <div class="standfirst">Thermodynamische Vergleichsprozesse für Wärmekraft- und Kältemaschinen — vom Carnot-Ideal zu Otto und Diesel.</div>
+          <div class="byline"><span>Geändert <b>11. Juni 2026</b></span><span><b>1.243</b> Wörter</span><span># thermodynamik · # klausur</span></div>
+
+          <p>Ein <strong>Kreisprozess</strong> ist eine Folge von Zustandsänderungen, die ein System wieder in den Ausgangszustand zurückführt. Er bildet die Grundlage für <a class="wiki">Wärmekraftmaschinen</a> und <a class="wiki">Kältemaschinen</a> – die theoretische Basis liefern die <a class="wiki">Hauptsätze</a>.</p>
+
+          <h2 class="h"><span class="hno">§ 1</span>Carnot-Prozess</h2>
+          <p>Der ideale Vergleichsprozess zwischen zwei Wärmereservoirs. Der Wirkungsgrad hängt ausschließlich von den Temperaturen ab: <code>η = 1 − T_kalt / T_heiß</code> (Temperaturen in Kelvin).</p>
+
+          <div class="pull">„Kein realer Prozess zwischen zwei Wärmereservoirs kann besser sein als Carnot."<small>Merksatz · 2. Hauptsatz</small></div>
+
+          <h2 class="h"><span class="hno">§ 2</span>Offene Aufgaben</h2>
+          <ul class="task">
+            <li class="done"><span class="cb done">✓</span><span>Carnot durchgerechnet (Übung 7)</span></li>
+            <li class="done"><span class="cb done">✓</span><span>Otto-Prozess: p-V-Diagramm skizziert</span></li>
+            <li><span class="cb"></span><span>Diesel-Prozess: Gleichraumgrad nachschlagen</span></li>
+            <li><span class="cb"></span><span>Altklausur SS24 Aufgabe 3 rechnen</span></li>
+          </ul>
+
+          <h2 class="h"><span class="hno">§ 3</span>Otto vs. Diesel</h2>
+          <p>Otto: Wärmezufuhr <code>isochor</code> (V = const). Diesel: Wärmezufuhr <code>isobar</code> (p = const). Bei gleichem Verdichtungsverhältnis hat Otto den höheren Wirkungsgrad – Diesel erlaubt aber höhere Verdichtung und damit in der Praxis bessere Gesamtwirkungsgrade.</p>
+
+          <div class="footnote">
+            <div class="fn-head">Verweise aus anderen Notizen</div>
+            <span class="bl">← Wärmekraftmaschinen</span> &nbsp;·&nbsp; <span class="bl">← Klausurvorbereitung SS26</span> &nbsp;·&nbsp; <span class="bl">← Exergie</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right -->
+    <div class="col right">
+      <div class="rtoggle">
+        <button class="active">Graph</button>
+        <button>Gliederung</button>
+        <button>Split</button>
+      </div>
+      <div class="graph-wrap">
+        <div class="graph-label">Verweisnetz</div>
+        <div class="graph-mode">ego</div>
+        <svg viewBox="0 0 330 420">
+          <line class="gedge" x1="165" y1="200" x2="78"  y2="112"/>
+          <line class="gedge" x1="165" y1="200" x2="250" y2="98"/>
+          <line class="gedge" x1="165" y1="200" x2="64"  y2="280"/>
+          <line class="gedge" x1="165" y1="200" x2="256" y2="265"/>
+          <line class="gedge" x1="165" y1="200" x2="185" y2="330"/>
+          <line class="gedge" x1="78"  y1="112" x2="250" y2="98"/>
+          <line class="gedge" x1="256" y1="265" x2="185" y2="330"/>
+          <circle cx="165" cy="200" r="9"   fill="#c96f4a"/>
+          <circle cx="78"  cy="112" r="6"   fill="#7d97a5"/>
+          <circle cx="250" cy="98"  r="6"   fill="#c96f4a"/>
+          <circle cx="64"  cy="280" r="5"   fill="#c4a35a"/>
+          <circle cx="256" cy="265" r="6"   fill="#c96f4a"/>
+          <circle cx="185" cy="330" r="5"   fill="#9aa87c"/>
+          <text class="glabel" x="165" y="223" text-anchor="middle" fill="#c96f4a">Kreisprozesse</text>
+          <text class="glabel" x="78"  y="97"  text-anchor="middle">Wärmekraftmaschinen</text>
+          <text class="glabel" x="250" y="83"  text-anchor="middle">Hauptsätze</text>
+          <text class="glabel" x="64"  y="300" text-anchor="middle">Exergie</text>
+          <text class="glabel" x="256" y="287" text-anchor="middle">Otto-Prozess</text>
+          <text class="glabel" x="185" y="350" text-anchor="middle">Klausur SS24</text>
+        </svg>
+      </div>
+      <div class="activity">
+        <header><span class="live"></span>Claude-Aktivität</header>
+        <div class="log">
+          <div class="row"><span class="t">14:02</span><span class="m"><b>read_note</b> Kreisprozesse.md</span></div>
+          <div class="row"><span class="t">14:01</span><span class="m"><b>search</b> „carnot wirkungsgrad" → 7 Treffer</span></div>
+          <div class="row"><span class="t">13:58</span><span class="m"><b>write_note</b> _Konversationen/2026-06-12.md</span></div>
+          <div class="row"><span class="t">13:55</span><span class="m"><b>reindex</b> 5.476 Dateien, 1,9 s</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <div class="scell"><span class="ok">●</span> MCP bereit</div>
+    <div class="scell">5.476 Notizen</div>
+    <div class="scell">Watcher aktiv</div>
+    <div class="scell ml">knowledge-base &nbsp;·&nbsp; <span class="usage"><span class="u-track"><span class="u-fill"></span></span>41 %</span></div>
+  </div>
+</div>
+</body>
+</html>

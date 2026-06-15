@@ -1,0 +1,28 @@
+aufgaben Nexus: ordne alle diese Zukünftign noch offenstehnden Aufgaben in Status.md sinnvoll ein, bewerte welches Modell für jede aufgabe am besten /sinnvolsten wäre und schreibe dies in Status.md. schreibe mir dann den ersten prompt für die erste Aufgabe und sage mir weclhes Modell ich nutzen soll und gib dann immer nach Beendigung einer aufgabe den nächsten Prompt mit Modell Empfehlung um jede aufgabe in einem neuen Fenster zu starten.
+
+Buttons zum abhacken in Notizen noch nicht möglich, nur das kästchen ist vorhanden.
+
+Tabs verschieben, per drag and drop  an andere Position.
+Tabs Splitscreen button ob an oder aus, danach in 2. fenster einen Tab per drag and drop. Wenn im Splitcreen rechts (egograph und Gliederung) immer von der Datei in dem tab in dem gerade schreibt, scrollt und so weiter.
+
+Themen links die Frabe nicht nur als punkt, sondern ganzes Feld mit Namen drinnen, 2 design vorschläge erst geben.
+
+
+Bbei anderen datie previews der balken zum hoch und runter scrollen nch optisch anpassen, ist schwarz.
+
+Einstellmöglichkeiten schaffen. Wie farb Theme, Farben der Hauptthemen, Vault speicherort… andere sinnvole Einstellmöglichkeiten, auch gerne komplettes >Eisntellungen Menü welches einen Button unten Links über MCP bereit kommt.
+
+3 weiter designvorschläge für index.html.
+
+So praktisch und einfach wie möglich installer bauen um so gut es geht genau das gleiche Programm Nexus auf einen andeen P zu instalieren. dann auch besser Nexus so auf meinem pc zu installieren und kein cmd fenster mehr geöffnet werden muss oder ähnlichs, sondern vollwertige anwenudung.
+
+
+Claude in "suche" oben rechts einbinden (so wie im Preview)
+
+Claude usage Limit unten rechts, rechts in die zeile von claude Aktivität, nach GitHub (https://github.com/SlavomirDurej/claude-usage-widget), mit einbauen dass man dort die claude Login daten ändern kann, genauso bei claude in suche und man so ganz leicht bei einem anderen pc alle Funktionen die hier auch laufen haben kann.
+
+auswahl des vaults oben links sieht noch zu Windows mäßig aus. 
+
+Alle regeln und arbeistweisen von Obsidian sinnvoll, mit gleicher Wirkung, in Nexus übernehmen.
+
+abschließender Vergleich wo Obsidian noch bessere Funktionen hat und auflisten. 

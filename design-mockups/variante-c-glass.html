@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Nexus – Variante C: Glassmorphism</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#080c14;
+  --glass:rgba(255,255,255,.04); --glass2:rgba(255,255,255,.07);
+  --gborder:rgba(255,255,255,.08); --gborder2:rgba(255,255,255,.14);
+  --text:#e2e7f2; --dim:#8b93a8; --faint:#5b6276;
+  --vio:#7c6ff7; --vio-soft:rgba(124,111,247,.16); --vio-glow:rgba(124,111,247,.35);
+  --cyan:#5fd4f5; --green:#4ade80; --pink:#f472b6; --amber:#fbbf6e;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{
+  background:
+    radial-gradient(900px 600px at 78% 12%, rgba(64,86,244,.22) 0%, transparent 55%),
+    radial-gradient(700px 500px at 8% 85%, rgba(124,111,247,.14) 0%, transparent 60%),
+    var(--bg);
+  color:var(--text);
+  font:14px/1.6 'Inter',system-ui,sans-serif;
+}
+::selection{background:var(--vio-soft)}
+::-webkit-scrollbar{width:7px;height:7px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:99px}
+::-webkit-scrollbar-thumb:hover{background:rgba(124,111,247,.5)}
+
+.app{display:flex;flex-direction:column;height:100vh;padding:12px 12px 8px;gap:10px}
+
+/* ── Titlebar als Glas-Leiste ── */
+.titlebar{display:flex;align-items:center;gap:16px;padding:9px 18px;border-radius:16px;
+  background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--gborder);
+  box-shadow:0 8px 30px rgba(0,0,0,.35)}
+.logo{font-weight:700;letter-spacing:.16em;font-size:12.5px;color:var(--vio);text-shadow:0 0 16px var(--vio-glow)}
+.crumb{color:var(--faint);font-size:13px}
+.crumb b{color:var(--dim);font-weight:500}
+.search{margin-left:auto;display:flex;align-items:center;gap:9px;padding:6px 16px;border-radius:99px;
+  background:var(--glass2);border:1px solid var(--gborder);color:var(--dim);font-size:12.5px;cursor:pointer;transition:.2s}
+.search:hover{border-color:var(--vio);box-shadow:0 0 22px var(--vio-glow);color:var(--text)}
+kbd{background:rgba(255,255,255,.1);border-radius:6px;padding:1px 7px;font-size:11px;font-family:inherit}
+
+/* ── 3 schwebende Spalten ── */
+.main{flex:1;display:grid;grid-template-columns:240px 1fr 350px;gap:10px;min-height:0}
+.panel{border-radius:20px;background:var(--glass);backdrop-filter:blur(20px);
+  border:1px solid var(--gborder);box-shadow:0 14px 44px rgba(0,0,0,.4);
+  display:flex;flex-direction:column;overflow:hidden;min-width:0}
+
+/* ── Sidebar (schwebt) ── */
+.side .vault-row{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--gborder)}
+.vault-btn{flex:1;display:flex;align-items:center;gap:8px;padding:6px 11px;border-radius:11px;
+  background:var(--glass2);border:1px solid var(--gborder);font-size:12.5px;cursor:pointer;transition:.2s}
+.vault-btn:hover{border-color:var(--vio)}
+.vault-btn .chev{margin-left:auto;color:var(--faint);font-size:10px}
+.vault-add{width:26px;height:26px;border-radius:9px;background:var(--glass2);border:1px solid var(--gborder);
+  color:var(--dim);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px}
+.vault-add:hover{color:var(--vio);border-color:var(--vio)}
+.side-scroll{flex:1;overflow-y:auto;padding:10px 8px}
+.side-section{font-size:10px;letter-spacing:.14em;color:var(--faint);text-transform:uppercase;margin:6px 8px 8px;display:flex}
+.side-section .plus{margin-left:auto;color:var(--vio);cursor:pointer;letter-spacing:0;text-transform:none;font-size:11px}
+.folder{display:flex;align-items:center;gap:10px;padding:8px 11px;border-radius:13px;cursor:pointer;
+  font-size:13px;margin-bottom:3px;border:1px solid transparent;transition:.18s;color:var(--dim)}
+.folder:hover{background:var(--glass2);color:var(--text)}
+.folder.active{background:var(--vio-soft);border-color:rgba(124,111,247,.35);color:#fff;
+  box-shadow:0 0 18px rgba(124,111,247,.15), inset 0 0 20px rgba(124,111,247,.06)}
+.gem{width:10px;height:10px;border-radius:4px;flex-shrink:0;box-shadow:0 0 10px currentColor}
+.folder .cnt{margin-left:auto;font-size:11px;color:var(--faint)}
+.subfile{padding:4px 11px 4px 34px;font-size:12.5px;color:var(--faint);border-radius:10px;cursor:pointer}
+.subfile:hover{background:var(--glass2);color:var(--text)}
+.subfile.sel{color:var(--vio)}
+.side-foot{padding:11px 16px;border-top:1px solid var(--gborder);font-size:12.5px;color:var(--dim);
+  cursor:pointer;display:flex;align-items:center;gap:9px;transition:.15s}
+.side-foot:hover{color:var(--text);background:var(--glass2)}
+
+/* ── Center ── */
+.tabbar{display:flex;align-items:center;gap:6px;padding:10px 14px;border-bottom:1px solid var(--gborder);
+  background:rgba(255,255,255,.02)}
+.tab{position:relative;display:flex;align-items:center;gap:8px;padding:6px 16px;border-radius:99px;
+  font-size:12.5px;color:var(--faint);cursor:pointer;border:1px solid transparent;transition:.2s}
+.tab:hover{color:var(--dim);background:var(--glass)}
+.tab.active{color:#fff;background:var(--vio-soft);border-color:rgba(124,111,247,.45);
+  box-shadow:0 0 16px rgba(124,111,247,.25)}
+.tab.active::before{content:'';position:absolute;left:10px;top:50%;transform:translateY(-50%);
+  width:5px;height:5px;border-radius:50%;background:var(--vio);box-shadow:0 0 8px var(--vio)}
+.tab.active{padding-left:24px}
+.tab .x{opacity:.45;font-size:13px}.tab .x:hover{opacity:1}
+.tab-add{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  color:var(--faint);cursor:pointer;font-size:15px;border:1px dashed var(--gborder)}
+.tab-add:hover{color:var(--vio);border-color:var(--vio)}
+
+.note-area{flex:1;overflow-y:auto;min-height:0}
+.note-content{padding:36px 48px 110px;max-width:860px}
+.note-meta{display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap}
+.chip{font-size:11.5px;padding:4px 13px;border-radius:99px;border:1px solid var(--gborder);
+  color:var(--dim);background:var(--glass)}
+.chip.tag{color:#b6adff;border-color:rgba(124,111,247,.4);cursor:pointer;background:var(--vio-soft)}
+.chip.tag:hover{box-shadow:0 0 12px var(--vio-glow)}
+h1.note-title{font-size:30px;font-weight:700;letter-spacing:-.02em;line-height:1.25;margin-bottom:22px;
+  background:linear-gradient(92deg,#fff 30%,#a9a0ff 80%);-webkit-background-clip:text;background-clip:text;color:transparent}
+h2.h{font-size:19px;font-weight:600;margin:34px 0 10px;display:flex;align-items:center;gap:10px}
+h2.h::before{content:'';width:4px;height:18px;border-radius:99px;background:var(--vio);box-shadow:0 0 10px var(--vio-glow)}
+p{margin:.75em 0;color:#c9d0e0;font-size:14.5px}
+a.wiki{color:var(--cyan);text-decoration:none;border-bottom:1px solid rgba(95,212,245,.35);cursor:pointer;border-radius:2px}
+a.wiki:hover{background:rgba(95,212,245,.1)}
+strong{color:#fff;font-weight:600}
+code{background:rgba(255,255,255,.07);border:1px solid var(--gborder);border-radius:7px;padding:2px 8px;
+  font:.85em Consolas,monospace;color:var(--amber)}
+.glass-card{border-radius:16px;background:var(--glass2);backdrop-filter:blur(14px);
+  border:1px solid var(--gborder2);padding:16px 20px;margin:18px 0;box-shadow:0 8px 26px rgba(0,0,0,.3)}
+.glass-card .gc-head{display:flex;align-items:center;gap:10px;font-weight:600;font-size:13.5px;margin-bottom:6px;color:#b6adff}
+.glass-card p{margin:0;font-size:13.5px;color:var(--dim)}
+ul.task{list-style:none;margin:12px 0}
+ul.task li{display:flex;align-items:flex-start;gap:11px;padding:5px 0;font-size:14.5px;color:#c9d0e0}
+.cb{width:18px;height:18px;border-radius:6px;border:1.5px solid var(--faint);flex-shrink:0;margin-top:3px;
+  display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;transition:.15s}
+.cb.done{background:linear-gradient(135deg,var(--vio),#9f8df9);border-color:transparent;box-shadow:0 0 10px var(--vio-glow)}
+li.done span{color:var(--faint);text-decoration:line-through}
+
+/* ── Right panel ── */
+.rtoggle{display:flex;gap:5px;padding:10px 12px;border-bottom:1px solid var(--gborder)}
+.rtoggle button{flex:1;padding:6px 0;border-radius:99px;font:11.5px 'Inter',sans-serif;background:transparent;
+  border:1px solid transparent;color:var(--faint);cursor:pointer;transition:.2s}
+.rtoggle button:hover{color:var(--text)}
+.rtoggle button.active{background:var(--vio-soft);border-color:rgba(124,111,247,.4);color:#fff;
+  box-shadow:0 0 14px rgba(124,111,247,.2)}
+.graph-wrap{flex:1;position:relative;min-height:0}
+.graph-label{position:absolute;top:12px;left:16px;font-size:10px;letter-spacing:.16em;color:var(--faint);text-transform:uppercase}
+.graph-mode{position:absolute;top:10px;right:14px;font-size:10.5px;color:#b6adff;background:var(--vio-soft);
+  border:1px solid rgba(124,111,247,.4);border-radius:99px;padding:2px 11px}
+.graph-wrap svg{width:100%;height:100%;display:block}
+.gedge{stroke:rgba(124,111,247,.25);stroke-width:1.2}
+.gnode{filter:drop-shadow(0 0 6px rgba(124,111,247,.55))}
+.glabel{font:10px 'Inter',sans-serif;fill:var(--dim)}
+.activity{border-top:1px solid var(--gborder);flex-shrink:0;background:rgba(255,255,255,.02)}
+.activity header{padding:8px 16px;font-size:10px;letter-spacing:.14em;color:var(--faint);
+  text-transform:uppercase;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--gborder)}
+.live{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pu 2s infinite}
+@keyframes pu{50%{opacity:.3}}
+.log{max-height:128px;overflow-y:auto}
+.log .row{display:flex;align-items:center;gap:9px;padding:6px 16px;font-size:11.5px;border-bottom:1px solid rgba(255,255,255,.03)}
+.log .pulse{width:5px;height:5px;border-radius:50%;background:var(--vio);box-shadow:0 0 6px var(--vio);flex-shrink:0}
+.log .m{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.log .m b{color:var(--text);font-weight:500}
+.log .t{color:var(--faint);font-size:10.5px;flex-shrink:0}
+
+/* ── Statusbar als Glas-Pille ── */
+.statusbar{display:flex;align-items:center;gap:18px;padding:6px 18px;border-radius:99px;
+  background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--gborder);
+  font-size:11.5px;color:var(--faint);box-shadow:0 6px 24px rgba(0,0,0,.3)}
+.statusbar .ok{color:var(--green)}
+.dot-s{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);display:inline-block;margin-right:5px}
+.statusbar .ml{margin-left:auto}
+.usage{display:flex;align-items:center;gap:7px;cursor:pointer;color:var(--dim)}
+.u-track{width:46px;height:4px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
+.u-fill{height:100%;border-radius:99px;width:41%;background:linear-gradient(90deg,var(--vio),#9f8df9);box-shadow:0 0 8px var(--vio-glow)}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="titlebar">
+    <div class="logo">◆ NEXUS</div>
+    <div class="crumb">Uni / Thermodynamik / <b>Kreisprozesse</b></div>
+    <div class="search">⌕ &nbsp;Suchen oder Befehl… <kbd>Ctrl K</kbd></div>
+  </div>
+
+  <div class="main">
+
+    <!-- Sidebar -->
+    <div class="panel side">
+      <div class="vault-row">
+        <div class="vault-btn">📚 knowledge-base <span class="chev">▾</span></div>
+        <div class="vault-add">+</div>
+      </div>
+      <div class="side-scroll">
+        <div class="side-section">Vault <span class="plus">+ Notiz</span></div>
+        <div class="folder"><span class="gem" style="color:#5fd4f5;background:#5fd4f5"></span>Arbeit<span class="cnt">2.880</span></div>
+        <div class="folder active"><span class="gem" style="color:#7c6ff7;background:#7c6ff7"></span>Uni<span class="cnt">2.098</span></div>
+        <div class="subfile">Maschinenelemente</div>
+        <div class="subfile sel">◆ Thermodynamik</div>
+        <div class="subfile" style="padding-left:48px">Kreisprozesse</div>
+        <div class="subfile" style="padding-left:48px">Hauptsätze</div>
+        <div class="subfile">Regelungstechnik</div>
+        <div class="folder"><span class="gem" style="color:#fbbf6e;background:#fbbf6e"></span>Wissen<span class="cnt">312</span></div>
+        <div class="folder"><span class="gem" style="color:#f472b6;background:#f472b6"></span>Profil<span class="cnt">24</span></div>
+        <div class="folder"><span class="gem" style="color:#4ade80;background:#4ade80"></span>Eingang<span class="cnt">3</span></div>
+        <div class="folder"><span class="gem" style="color:#8b93a8;background:#8b93a8"></span>_Konversationen<span class="cnt">141</span></div>
+      </div>
+      <div class="side-foot">⚙ Einstellungen</div>
+    </div>
+
+    <!-- Center -->
+    <div class="panel">
+      <div class="tabbar">
+        <div class="tab active">Kreisprozesse <span class="x">×</span></div>
+        <div class="tab">Hauptsätze <span class="x">×</span></div>
+        <div class="tab">START <span class="x">×</span></div>
+        <div class="tab-add">+</div>
+      </div>
+      <div class="note-area">
+        <div class="note-content">
+          <div class="note-meta">
+            <span class="chip tag"># thermodynamik</span>
+            <span class="chip tag"># klausur</span>
+            <span class="chip">Geändert 11. Juni</span>
+            <span class="chip">1.243 Wörter</span>
+          </div>
+          <h1 class="note-title">Kreisprozesse</h1>
+
+          <p>Ein <strong>Kreisprozess</strong> ist eine Folge von Zustandsänderungen, die ein System wieder in den Ausgangszustand zurückführt. Er bildet die Grundlage für <a class="wiki">Wärmekraftmaschinen</a> und <a class="wiki">Kältemaschinen</a> – die theoretische Basis liefern die <a class="wiki">Hauptsätze</a>.</p>
+
+          <h2 class="h">Carnot-Prozess</h2>
+          <p>Der ideale Vergleichsprozess zwischen zwei Wärmereservoirs. Der Wirkungsgrad hängt ausschließlich von den Temperaturen ab: <code>η = 1 − T_kalt / T_heiß</code> (Temperaturen in Kelvin).</p>
+
+          <div class="glass-card">
+            <div class="gc-head">💡 Merksatz</div>
+            <p>Kein realer Prozess zwischen zwei Wärmereservoirs kann einen höheren Wirkungsgrad erreichen als der Carnot-Prozess.</p>
+          </div>
+
+          <h2 class="h">Offene Aufgaben</h2>
+          <ul class="task">
+            <li class="done"><span class="cb done">✓</span><span>Carnot durchgerechnet (Übung 7)</span></li>
+            <li class="done"><span class="cb done">✓</span><span>Otto-Prozess: p-V-Diagramm skizziert</span></li>
+            <li><span class="cb"></span><span>Diesel-Prozess: Gleichraumgrad nachschlagen</span></li>
+            <li><span class="cb"></span><span>Altklausur SS24 Aufgabe 3 rechnen</span></li>
+          </ul>
+
+          <h2 class="h">Otto vs. Diesel</h2>
+          <p>Otto: Wärmezufuhr <code>isochor</code> (V = const). Diesel: Wärmezufuhr <code>isobar</code> (p = const). Bei gleichem Verdichtungsverhältnis hat Otto den höheren Wirkungsgrad – Diesel erlaubt aber höhere Verdichtung.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right panel -->
+    <div class="panel">
+      <div class="rtoggle">
+        <button class="active">Graph</button>
+        <button>Gliederung</button>
+        <button>Split</button>
+      </div>
+      <div class="graph-wrap">
+        <div class="graph-label">Graph</div>
+        <div class="graph-mode">Ego · Kreisprozesse</div>
+        <svg viewBox="0 0 350 430">
+          <line class="gedge" x1="175" y1="205" x2="85"  y2="115"/>
+          <line class="gedge" x1="175" y1="205" x2="262" y2="100"/>
+          <line class="gedge" x1="175" y1="205" x2="70"  y2="285"/>
+          <line class="gedge" x1="175" y1="205" x2="268" y2="270"/>
+          <line class="gedge" x1="175" y1="205" x2="195" y2="335"/>
+          <line class="gedge" x1="85"  y1="115" x2="262" y2="100"/>
+          <line class="gedge" x1="268" y1="270" x2="195" y2="335"/>
+          <circle class="gnode" cx="175" cy="205" r="10" fill="#7c6ff7"/>
+          <circle class="gnode" cx="85"  cy="115" r="6.5" fill="#5fd4f5"/>
+          <circle class="gnode" cx="262" cy="100" r="6.5" fill="#7c6ff7"/>
+          <circle class="gnode" cx="70"  cy="285" r="5.5" fill="#fbbf6e"/>
+          <circle class="gnode" cx="268" cy="270" r="6.5" fill="#7c6ff7"/>
+          <circle class="gnode" cx="195" cy="335" r="5.5" fill="#f472b6"/>
+          <text class="glabel" x="175" y="229" text-anchor="middle" fill="#b6adff">Kreisprozesse</text>
+          <text class="glabel" x="85"  y="100" text-anchor="middle">Wärmekraftmaschinen</text>
+          <text class="glabel" x="262" y="85"  text-anchor="middle">Hauptsätze</text>
+          <text class="glabel" x="70"  y="306" text-anchor="middle">Exergie</text>
+          <text class="glabel" x="268" y="292" text-anchor="middle">Otto-Prozess</text>
+          <text class="glabel" x="195" y="356" text-anchor="middle">Klausur SS24</text>
+        </svg>
+      </div>
+      <div class="activity">
+        <header><span class="live"></span>Claude-Aktivität · live</header>
+        <div class="log">
+          <div class="row"><span class="pulse"></span><span class="m"><b>read_note</b> Kreisprozesse.md</span><span class="t">14:02</span></div>
+          <div class="row"><span class="pulse"></span><span class="m"><b>search</b> „carnot wirkungsgrad" → 7 Treffer</span><span class="t">14:01</span></div>
+          <div class="row"><span class="pulse"></span><span class="m"><b>write_note</b> _Konversationen/2026-06-12.md</span><span class="t">13:58</span></div>
+          <div class="row"><span class="pulse"></span><span class="m"><b>reindex</b> 5.476 Dateien, 1,9 s</span><span class="t">13:55</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <span><span class="dot-s"></span><span class="ok">MCP bereit</span></span>
+    <span>5.476 Notizen</span>
+    <span>Watcher aktiv</span>
+    <span class="ml">knowledge-base</span>
+    <span class="usage"><span class="u-track"><span class="u-fill"></span></span>41 % · 67 %</span>
+  </div>
+</div>
+</body>
+</html>
