@@ -39,7 +39,7 @@ body{
 .titlebar{display:flex;align-items:center;gap:14px;padding:0 14px;border-bottom:1px solid var(--border);backdrop-filter:blur(14px);background:var(--bar);-webkit-app-region:drag}
 .titlebar>*{-webkit-app-region:no-drag}
 .logo{font-weight:700;letter-spacing:.2em;font-size:12px;color:var(--accent);cursor:default;user-select:none}
-.crumb{color:var(--dim);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:400px}
+.crumb{color:var(--dim);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto;min-width:0}
 .crumb b{color:var(--text);font-weight:500}
 .search-btn{margin-left:auto;display:flex;align-items:center;gap:8px;padding:5px 14px;border-radius:99px;background:var(--panel2);border:1px solid var(--border);color:var(--dim);font-size:12.5px;cursor:pointer;transition:.2s;white-space:nowrap;flex-shrink:0}
 .search-btn:hover{border-color:var(--accent);color:var(--text);box-shadow:0 0 18px var(--accent-20)}
@@ -59,6 +59,7 @@ body.col-resizing{cursor:col-resize;user-select:none}
 .tab{display:flex;align-items:center;gap:6px;max-width:200px;padding:5px 7px 5px 10px;border-radius:8px 8px 0 0;color:var(--dim);font-size:12px;cursor:pointer;white-space:nowrap;border:1px solid transparent;border-bottom:none;background:color-mix(in srgb,var(--bg) 52%,transparent);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3)}
 .tab:hover{background:color-mix(in srgb,var(--bg) 64%,transparent);color:var(--text)}
 .tab.active{background:color-mix(in srgb,var(--bg) 80%,transparent);color:var(--text);border-color:var(--border)}
+.tab.tab-dragging{opacity:.5;cursor:grabbing}
 .tab-i{font-size:11px;flex:0 0 auto}
 .tab-t{overflow:hidden;text-overflow:ellipsis}
 .tab-x{flex:0 0 auto;opacity:.45;border-radius:4px;width:16px;height:16px;line-height:14px;text-align:center;font-size:14px}
@@ -837,7 +838,7 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
 <script>
 // ───────── State ─────────
 let activeVault=null, vaultTree=[], selectedPath=null, currentFolder='';
-let ctxTarget=null, dragCounter=0, palSel=0, palItems=[], _movingPath=null, _draggingTabId=null;
+let ctxTarget=null, dragCounter=0, palSel=0, palItems=[], _movingPath=null, _draggingTabId=null, _draggingTabEl=null;
 let noteIndex={};            // lowercased name/path -> real path
 let allMdFiles=[];           // flat list of md file nodes
 let _curHeadings=[], _curNotePath=null, _scrollSpyFn=null;
@@ -885,7 +886,7 @@ function renderTabBar(){
     +'<button class="tnav'+(canB?'':' off')+'" title="Zurück" onclick="tabBack()">‹</button>'
     +'<button class="tnav'+(canF?'':' off')+'" title="Vor" onclick="tabForward()">›</button></div>';
   bar.innerHTML=nav+tabs.map((t,i)=>
-    '<div class="tab'+(i===activeTab?' active':'')+'" draggable="true" data-tidx="'+i+'" onclick="switchTab('+i+')" title="'+esc(t.path||'')+'">'
+    '<div class="tab'+(i===activeTab?' active':'')+'" draggable="true" data-tidx="'+i+'" data-tid="'+t.id+'" onclick="switchTab('+i+')" title="'+esc(t.path||'')+'">'
     +'<span class="tab-i">'+tabIcon(t)+'</span><span class="tab-t">'+esc(tabTitle(t))+'</span>'
     +'<span class="tab-x" onclick="event.stopPropagation();closeTab('+i+')">×</span></div>'
   ).join('')+'<div class="tab-add" title="Neuer Tab" onclick="newTab()">+</div>';
@@ -958,41 +959,58 @@ async function closeTab(i){
 function tabsRenamePath(oldP,newP){let ch=false;for(const t of tabs){if(t.path===oldP){t.path=newP;ch=true;}else if(t.path&&t.path.startsWith(oldP+'/')){t.path=newP+t.path.slice(oldP.length);ch=true;}}if(ch)renderTabBar();}
 function tabsClosePath(p){let ch=false;for(let i=0;i<tabs.length;i++){const t=tabs[i];if(t.path===p||(t.path&&t.path.startsWith(p+'/'))){t.path=null;t.mode='empty';ch=true;if(i===activeTab){_silentRender=true;showEmptyTab();_silentRender=false;}}}if(ch)renderTabBar();}
 function resetTabs(){tabs=[{id:_tabSeq++,path:null,mode:'empty',hist:[],hi:-1}];activeTab=0;renderTabBar();}
+// Tab vor dem das gezogene Tab eingefügt werden soll (x-Mittelpunkt), sonst der +-Button (= ans Ende)
+function tabAfterEl(bar,x,dragEl){
+  const els=[...bar.querySelectorAll('.tab')].filter(el=>el!==dragEl);
+  for(const el of els){const r=el.getBoundingClientRect();if(x<r.left+r.width/2)return el;}
+  return bar.querySelector('.tab-add');
+}
+// FLIP-Animation der übrigen Tabs (horizontal), analog zu den Themen-Icons (railFlip)
+function tabFlip(bar,dragEl,mutate){
+  const items=[...bar.querySelectorAll('.tab')].filter(el=>el!==dragEl);
+  const first=new Map(items.map(el=>[el,el.getBoundingClientRect().left]));
+  mutate();
+  for(const el of items){
+    const dx=first.get(el)-el.getBoundingClientRect().left;
+    if(!dx)continue;
+    el.style.transition='none';el.style.transform=`translateX(${dx}px)`;
+    requestAnimationFrame(()=>{el.style.transition='transform .16s cubic-bezier(.2,.7,.3,1)';el.style.transform='';});
+  }
+}
+// Tab-Reihenfolge aus der aktuellen DOM-Reihenfolge in das tabs-Array übernehmen
+function commitTabOrder(){
+  const bar=document.getElementById('tabbar');if(!bar)return;
+  const ids=[...bar.querySelectorAll('.tab')].map(el=>parseInt(el.dataset.tid,10));
+  const curId=tabs[activeTab]&&tabs[activeTab].id;
+  const byId=new Map(tabs.map(t=>[t.id,t]));
+  const next=ids.map(id=>byId.get(id)).filter(Boolean);
+  if(next.length!==tabs.length)return; // Sicherheitsnetz: nichts verlieren
+  tabs=next;
+  activeTab=tabs.findIndex(t=>t.id===curId);if(activeTab<0)activeTab=0;
+  renderTabBar();
+}
 function initTabDnd(){
   const bar=document.getElementById('tabbar');if(!bar)return;
   bar.addEventListener('dragstart',e=>{
     if(_movingPath)return;
     const tab=e.target.closest('.tab');if(!tab)return;
-    _draggingTabId=parseInt(tab.dataset.tidx,10);
+    _draggingTabEl=tab;
+    _draggingTabId=parseInt(tab.dataset.tidx,10); // für Split-Drop (center-body)
     e.dataTransfer.effectAllowed='copyMove';
     e.dataTransfer.setData('text/plain',String(_draggingTabId));
+    requestAnimationFrame(()=>tab.classList.add('tab-dragging'));
   });
   bar.addEventListener('dragover',e=>{
-    if(_draggingTabId===null)return;
-    const tab=e.target.closest('.tab');if(!tab)return;
-    const idx=parseInt(tab.dataset.tidx,10);
-    if(idx===_draggingTabId)return;
+    if(!_draggingTabEl)return;
     e.preventDefault();e.dataTransfer.dropEffect='move';
-    document.querySelectorAll('.tab.drop-target').forEach(t=>t.classList.remove('drop-target'));
-    tab.classList.add('drop-target');
+    const ref=tabAfterEl(bar,e.clientX,_draggingTabEl);
+    if(ref&&_draggingTabEl.nextSibling!==ref&&_draggingTabEl!==ref)
+      tabFlip(bar,_draggingTabEl,()=>bar.insertBefore(_draggingTabEl,ref));
   });
-  bar.addEventListener('drop',e=>{
-    if(_draggingTabId===null)return;
-    const tab=e.target.closest('.tab');if(!tab)return;
-    const src=_draggingTabId,dst=parseInt(tab.dataset.tidx,10);
-    if(src===dst){_draggingTabId=null;return;}
-    e.preventDefault();
-    const curId=tabs[activeTab]&&tabs[activeTab].id;
-    const moved=tabs.splice(src,1)[0];
-    const insertAt=dst>src?dst-1:dst;
-    tabs.splice(insertAt,0,moved);
-    activeTab=tabs.findIndex(t=>t.id===curId);if(activeTab<0)activeTab=0;
-    _draggingTabId=null;
-    renderTabBar();
-  });
+  bar.addEventListener('drop',e=>{if(_draggingTabEl)e.preventDefault();});
   bar.addEventListener('dragend',()=>{
+    if(_draggingTabEl){_draggingTabEl.classList.remove('tab-dragging');_draggingTabEl=null;commitTabOrder();}
     _draggingTabId=null;
-    document.querySelectorAll('.tab.drop-target').forEach(t=>t.classList.remove('drop-target'));
     document.getElementById('center-body')?.classList.remove('drop-target');
   });
 }

@@ -50,6 +50,42 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 
 ---
 
+## Stand: 2026-06-15 (Session 34e – Breadcrumb-Pfad nicht mehr abgeschnitten + Tab-D&D-Bug behoben + Verschiebe-Animation)
+
+Paul-Report (2 Punkte): (1) Der **Pfad (Breadcrumb oben)** soll **weiter laufen** statt abgeschnitten zu werden;
+(2) **Bug bei Tab-Drag&Drop:** zieht man den **linken** Tab auf den **rechten**, passiert nichts – nur
+**rechts→links** klappt. Außerdem soll die Verschiebung **mit Animation** laufen, wie bei den Themen-Icons.
+Reine UI-Änderung in `public/index.html`.
+
+### Ursache des Tab-Bugs
+- Alter Drop-Handler nutzte `insertAt = dst>src ? dst-1 : dst`. Beim Ziehen **links→rechts** (z. B. src=0, dst=1)
+  ergab das nach dem `splice(src,1)` wieder Index 0 → **keine Änderung**. Rechts→links lief zufällig richtig.
+
+### Erledigt
+- [x] **Breadcrumb (`.crumb`)**: harte `max-width:400px`-Kappung (+ Ellipsis) entfernt → `flex:1 1 auto;min-width:0`.
+  Der Pfad nutzt jetzt die **volle freie Titelleisten-Breite** bis zum Such-Button; Ellipsis nur noch als
+  letzte Reserve, wenn wirklich kein Platz mehr ist.
+- [x] **Tab-D&D komplett neu** (analog zu den Themen-Icons / `railFlip`): Live-Umsortierung im DOM während des
+  `dragover` (Einfügeposition über x-Mittelpunkt der Tabs, `tabAfterEl`), übrige Tabs gleiten per **FLIP-Animation**
+  (`tabFlip`, `translateX` + `transform .16s cubic-bezier`). Auf `dragend` wird die DOM-Reihenfolge per
+  **`commitTabOrder`** (stabil über neues `data-tid`=Tab-ID) ins `tabs`-Array übernommen, aktiver Tab bleibt aktiv.
+  Beide Richtungen funktionieren jetzt. Gezogenes Tab bekommt `.tab-dragging` (opacity .5, grabbing).
+- [x] **Split-Drop unberührt**: `_draggingTabId` (Index) wird beim `dragstart` weiterhin gesetzt, damit das Ziehen
+  eines Tabs in `center-body` (Splitscreen) wie bisher funktioniert; `_draggingTabEl` ist die neue DOM-Referenz fürs Sortieren.
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (2945 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [x] Theme-/Layout-sicher: nur CSS (`.tab.tab-dragging`, `.crumb`-Flex) + JS-Reorder; keine Hartcodes, gilt für
+  Standard- und Studio-Layout (beide nutzen `#tabbar`).
+- [ ] **Live-Augenschein offen (Paul):** (1) langer Pfad läuft weiter, statt bei 400px abzuschneiden;
+  (2) Tab links→rechts UND rechts→links ziehen klappt, mit gleitender Verschiebe-Animation der übrigen Tabs;
+  (3) Tab in das 2. Fenster ziehen (Split) geht weiterhin.
+
+### TODO Paul
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 34e: Breadcrumb nutzt volle Breite (kein 400px-Cut) + Tab-D&D-Bug (links→rechts) behoben, FLIP-Verschiebe-Animation wie Themen-Icons"`
+
+---
+
 ## Stand: 2026-06-15 (Session 34d – Aktivitäts-Panel: Akzent-Schrift + Punkte raus)
 
 Paul-Wunsch (Screenshot, 2 Schritte): Das **Claude-Aktivitäts-Panel unten rechts** soll seine
