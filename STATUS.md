@@ -50,6 +50,65 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 
 ---
 
+## Stand: 2026-06-15 (Session 34g – „Neuer Vault"-Button im Vault-Auswahl-Dropdown, v. a. fürs Studio-Layout)
+
+Paul-Wunsch: In der **Vault-Auswahl** fehlt ein **Button zum Anlegen eines neuen Vaults** – optisch passend
+einpflegen, **nur sichtbar, wenn man auf das Vault-Icon klickt** (also im Dropdown, nicht dauerhaft).
+Hintergrund: Im **Studio-Layout (softdark)** ist die `.vault-add` (`+`-Verwalten-Schaltfläche neben dem Selector)
+per `display:none` ausgeblendet → das Dropdown war dort die **einzige** Vault-Einstiegsstelle, hatte aber nur die
+Vault-Liste, kein „Anlegen". Reine UI-Änderung in `public/index.html`.
+
+### Erledigt
+- [x] **Neue Dropdown-Zeile `.vs-add`** ans Ende von `#vault-sel-drop` gehängt (in `refreshVaultSelector`): `+`-Kachel
+  (`.vs-add-plus`) + Label „Neuer Vault…", per `border-top` von der Vault-Liste abgesetzt. Klick schließt das
+  Dropdown und öffnet das bestehende **„Vaults verwalten"-Modal** (`openVaultModal()`) mit dem Anlege-Feld – kein
+  neuer Flow, sondern Wiederverwendung der vorhandenen `createVault()`-Logik.
+- [x] **Optik theme-/layout-sicher**: nur CSS-Vars (`--dim`, `--text`, `--accent`, `--accent-12`, `--panel2`,
+  `--border`), kein Hartcode → folgt Standard (blau) **und** Studio-Varianten (Bernstein/Hell). Hover = `--accent-12`
+  + Akzent-Text, `+`-Kachel bekommt Akzent-Rand. Passt durch `width:200px` ins Studio-Dropdown.
+- [x] **Schließ-Logik unberührt**: Button liegt in `#vault-sel-wrap`, der `_closeVaultDrop`-Capture-Handler lässt
+  In-Wrap-Klicks durch; der eigene Click-Handler entfernt `.open` explizit und ruft dann das Modal auf.
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (2955 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [x] `--accent-12` existiert als CSS-Var (Zeile 16), kein Hartcode.
+- [ ] **Live-Augenschein offen (Paul):** Vault-Icon anklicken → Dropdown zeigt unter der Vault-Liste „+ Neuer Vault…";
+  Klick öffnet das Verwalten-Modal mit Anlege-Feld. In Standard- **und** Studio-Layout prüfen.
+
+### TODO Paul
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 34g: Neuer-Vault-Button im Vault-Auswahl-Dropdown (vs-add), öffnet Verwalten-Modal – v. a. fürs Studio-Layout"`
+
+---
+
+## Stand: 2026-06-15 (Session 34f – Gliederungs-Klick: Überschrift landet nicht mehr hinter den Tabs)
+
+Paul-Report: Beim Klick auf einen Punkt in der **Gliederung (Outline rechts)** wird die Ziel-**Überschrift
+hinter die Tab-Leiste** gescrollt und ist verdeckt – sie soll **tiefer** stehen, sodass sie gut sichtbar ist.
+
+### Ursache
+- Die `.tabbar` liegt `position:absolute; top:0` **über** der `.note-area`; der nötige Freiraum wird über
+  `padding-top:var(--tab-h)` (42px Standard, 60px im Studio-/Softdark-Layout) reserviert.
+- Der gemeinsame Scroll-Anker `_olOffset(area)` zählte aber nur eine etwaige sticky `.file-toolbar` + 10px.
+  Markdown-Notizen haben **keine** `.file-toolbar` → Offset war nur **10px** → die angeklickte Überschrift
+  landete ~10px unter der Oberkante, also **hinter der ~42px hohen Tab-Leiste**.
+
+### Erledigt
+- [x] **`_olOffset` um die Tab-Höhe ergänzt**: liest `padding-top` der `note-area` (= `--tab-h`) per
+  `getComputedStyle` und addiert sie zum Offset (`tabH + file-toolbar-Höhe + 10px`). Layout-sicher – passt
+  sich automatisch an 42px (Standard) bzw. 60px (Studio/Softdark) an, kein Hartcode.
+- [x] **Scroll-Spy bleibt konsistent**: nutzt denselben `_olOffset`-Anker, die aktive Outline-Markierung
+  trifft jetzt dieselbe Überschrift, die beim Klick oben erscheint.
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (2945 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [ ] **Live-Augenschein offen (Paul):** Klick auf einen Gliederungspunkt → Überschrift erscheint **unter**
+  der Tab-Leiste, gut sichtbar (Standard- und Studio-Layout).
+
+### TODO Paul
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 34f: Gliederungs-Klick scrollt Überschrift unter die Tab-Leiste (Tab-Höhe in _olOffset)"`
+
+---
+
 ## Stand: 2026-06-15 (Session 34e – Breadcrumb-Pfad nicht mehr abgeschnitten + Tab-D&D-Bug behoben + Verschiebe-Animation)
 
 Paul-Report (2 Punkte): (1) Der **Pfad (Breadcrumb oben)** soll **weiter laufen** statt abgeschnitten zu werden;
