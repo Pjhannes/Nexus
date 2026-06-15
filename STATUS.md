@@ -67,7 +67,7 @@ Paul (2 Reports), alles in `public/index.html`:
 - [x] **„Standard"** = aktuelles warmes Dark (Palette unverändert auf `:root[data-layout="softdark"]`).
 - [x] **„Dunkler"** = alle Flächen gleichmäßig dunkler (`[data-studio="dark"]`: bg #161514, panel #211f1e,
   panel2 #282624, border #312f2d; Text/Akzent wie Standard).
-- [x] **„Creme (hell)"** = helles Theme (`[data-studio="cream"]`: bg #e6dccb = Rand, **panel #faf6ee = Notizfeld,
+- [x] **„Hell"** = helles Theme (`[data-studio="cream"]`: bg #e6dccb = Rand, **panel #faf6ee = Notizfeld,
   heller als der Rand**, dunkler Text #3c352a, tieferer Default-Akzent #c8893a, dunkler scrim). Hartkodierte
   weiße Texte (Notiz-Titel-Gradient, `.md-body strong`, `.folder-label`, Outline-Hover) im Creme-Scope auf
   `var(--text)` umgestellt. **Graph-Label-Farbe** folgt jetzt `--text` (Modul-Var `_graphLabelColor` +
@@ -75,6 +75,9 @@ Paul (2 Reports), alles in `public/index.html`:
 - [x] **Mechanik:** `data-studio` auf html/body/.app via `applyStudioVariant()`; in `applyLayout()` bei Studio
   gesetzt (`currentStudioVariant()`), bei Standard entfernt (`clearStudioVariant()`); Persistenz
   `localStorage['nexus.studioVariant']`. Selector in `renderSettings()` (3 Swatch-Buttons).
+- [x] **Nachjustierung (Paul):** Variante in „Hell" umbenannt (vorher „Creme (hell)"); Panel-Schatten **nur in
+  „Hell"** abgeschwächt (`0 6px 18px rgba(60,53,42,.18)` statt des harten dunklen Schattens), Dunkel-Varianten
+  unverändert.
 
 ### Verifikation
 - [x] `npm run verify:html` → **OK** (2845 Zeilen, Inline-Script `node --check` grün).

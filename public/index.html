@@ -556,6 +556,8 @@ body[data-studio="cream"] h1.note-title{background:linear-gradient(90deg,var(--t
 body[data-studio="cream"] .md-body strong{color:var(--text)}
 body[data-studio="cream"] .folder-label{color:var(--text)}
 body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05)}
+/* Hell: schwächerer Panel-Schatten (auf hellem Grund wirkt der dunkle Schatten sonst zu hart) */
+.app[data-layout="softdark"][data-studio="cream"] .right-panel{box-shadow:0 6px 18px rgba(60,53,42,.18)}
 .app[data-layout="softdark"]{font-family:var(--app-font);background:var(--bg)}
 .app[data-layout="softdark"] .titlebar{background:var(--bg);border-bottom:none}
 .app[data-layout="softdark"] .col.side{border-right:none}
@@ -2603,7 +2605,7 @@ async function renderSettings(){
     h+='<div class="set-section"><div class="set-label">Studio-Variante</div><div class="set-themes">';
     h+='<button class="set-theme'+(sv==='default'?' active':'')+'" onclick="setStudioVariant(&quot;default&quot;)"><span class="st-sw" style="background:#2a2928"></span>Standard</button>';
     h+='<button class="set-theme'+(sv==='dark'?' active':'')+'" onclick="setStudioVariant(&quot;dark&quot;)"><span class="st-sw" style="background:#161514"></span>Dunkler</button>';
-    h+='<button class="set-theme'+(sv==='cream'?' active':'')+'" onclick="setStudioVariant(&quot;cream&quot;)"><span class="st-sw" style="background:#faf6ee;border:1px solid #d6cbb5"></span>Creme (hell)</button>';
+    h+='<button class="set-theme'+(sv==='cream'?' active':'')+'" onclick="setStudioVariant(&quot;cream&quot;)"><span class="st-sw" style="background:#faf6ee;border:1px solid #d6cbb5"></span>Hell</button>';
     h+='</div></div>';
     const sa=currentSdAccent();
     h+='<div class="set-section"><div class="set-label">Akzentfarbe (Studio)</div><div class="set-folder"><input type="color" class="set-color" id="set-sd-accent" value="'+(sa||'#e8a94a')+'" oninput="setSdAccent(this.value)"><span class="set-folder-name">F&auml;rbt den gesamten Akzent um</span>'+(sa?'<span class="set-folder-reset" onclick="setSdAccent(\'\');renderSettings()" title="Standard (Bernstein)">&#8635;</span>':'')+'</div></div>';
