@@ -50,6 +50,128 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 
 ---
 
+## Stand: 2026-06-16 (Session 41 – PDF.js: voll in Nexus integrierter PDF-Viewer (eigene Toolbar, dunkel, Lazy-Render))
+
+Paul-Wunsch (nach Session 40, PDF lädt jetzt): Der **Chromium-PDF-Viewer** sieht nicht stimmig aus. Da dessen Toolbar in
+einem **cross-origin/abgeschotteten** Kontext läuft, lässt sie sich **nicht per CSS** umfärben. Entscheidung (Paul):
+**PDF.js – voll integriert** statt nativem Viewer.
+
+### Erledigt
+- [x] **PDF.js lokal vendored** (`public/vendor/pdfjs/pdf.min.js` 320 KB + `pdf.worker.min.js` 1,06 MB, v3.11.174,
+  UMD-Build → globales `window.pdfjsLib`). **Offline-tauglich** in Electron, kein CDN (anders als KaTeX/Mermaid).
+- [x] **Lazy-Loader `loadPdfJs()`** (`public/index.html`, neben `loadMermaid`/`loadKatex`): lädt die Lib erst beim ersten
+  PDF-Öffnen und setzt `GlobalWorkerOptions.workerSrc` auf den lokalen Worker.
+- [x] **`mountPdfViewer(host,fname,path,opts)`** – eigener Viewer:
+  - **Nexus-Toolbar** (`.file-toolbar`-Optik): Seiten-Navigation (‹ / Eingabefeld / N / ›), Zoom (− / %-Reset / +),
+    „⇆ Breite" (Fit-Width), „📂 Extern öffnen". Alles in Akzentfarben/`ft-btn`.
+  - **Dunkler Hintergrund** (`var(--bg)`), Seiten als weiße Karten mit Schatten, **Nexus-Scrollbars** (8 px, `--dim`).
+  - **Lazy-Rendering pro Seite** via `IntersectionObserver` (rootMargin 500 px) → auch große PDFs flüssig; Rendern auf
+    `<canvas>` mit `dpr` (gekappt auf 2) für scharfe Schrift.
+  - **Zoom**: Buttons + **Strg+Mausrad** (eigener `wheel`-Handler mit `stopPropagation`, damit `onNoteWheel` von
+    `#note-area` den PDF-Scroll **nicht** abfängt). Fit-Width reagiert auf `ResizeObserver`.
+  - **Seitenanzeige** folgt dem Scrollen; Eingabefeld + ‹/› springen zur Seite.
+  - **Cleanup** (`host._pdfCleanup`): Observer trennen + `doc.destroy()` beim Tab-Wechsel/Neu-Mount (kein Leak).
+  - **Fehler** (Lib/Doc lädt nicht) → `renderExternalFallback` (Karte + „Extern öffnen").
+- [x] **`renderPdfView`** ist jetzt ein Wrapper auf `mountPdfViewer`; **Split-View** (`openCenterSplit`) nutzt
+  `mountPdfViewer(…,{compact:true})` (kompakte Toolbar, nur Icons).
+- [x] **Layout robust**: `.pdfv` ist `position:absolute` und füllt den Host (umgeht die unzuverlässige
+  `height:100%`-Auflösung in Flex-Items). Haupt-View Offset `top:var(--tab-h)` (unter den Tabs), Split `top:0`. Hosts
+  `#note-area` / `#note-pane2 .np2-body` bekamen `position:relative`.
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (3283 Zeilen, Inline-Script grün, Ende `</html>`).
+- [x] **Vendored Lib geprüft**: UMD-Wrapper setzt `globalThis.pdfjsLib`; API-Namen `getDocument`/`GlobalWorkerOptions`/
+  `getViewport`/`numPages` vorhanden; **Version Lib == Worker == 3.11.174** (sonst „API/Worker version mismatch").
+- [x] **Geometrie-Bug vorab gefixt**: `.pdf-page`-`offsetParent` ist das absolute `.pdfv` (nicht `.pdfv-scroll`) → war
+  um die Toolbar-Höhe verschoben; `gotoPage`/Seitenanzeige/Prefetch jetzt über `getBoundingClientRect`.
+- [ ] **Live-Augenschein offen (Paul):** App **neu starten**; PDF öffnen → dunkler Viewer mit Nexus-Toolbar, scharfe
+  Seiten, Scrollen flüssig, Seitenanzeige läuft mit, ‹/›/Eingabe springt, −/+/⇆ Breite zoomt, Strg+Mausrad zoomt,
+  „Extern öffnen" geht; auch im Split (2. Ansicht). Standard- **und** Studio-Layout.
+
+### Hinweise
+- **Keine cMaps/Standard-Fonts vendored** → exotische (v. a. CJK) oder auf die Standard-14-Fonts angewiesene PDFs können
+  einzelne Glyphen mit Fallback rendern. Für übliche (eingebettete) PDFs irrelevant; bei Bedarf cMaps nachlegen.
+- `public/vendor/pdfjs/**` ist eine **eingecheckte Lib** (kein `node_modules`) → gehört in den Commit.
+
+### TODO Paul
+- [ ] **App neu starten** (Frontend lädt per Reload, aber sicherheitshalber komplett neu starten).
+- [ ] Git-Commit: `git add public/vendor/pdfjs public/index.html STATUS.md && git commit -m "Session 41: Voll integrierter PDF.js-Viewer (eigene Nexus-Toolbar, dunkel, Lazy-Render, Zoom/Fit, Split) – lokal vendored, offline"`
+
+---
+
+## Stand: 2026-06-16 (Session 40 – Viewer-Reparatur: PDF rendert, Office mit In-App-Vorschau + „extern öffnen", Audio/Video, Binär-Fallback)
+
+Paul-Report: Viele Viewer funktionieren nicht außer HTML. **PDF** wirft einen Fehler, **Office-Dateien** (docx, xlsx, …)
+zeigen **Quellcode** (Binär-Kauderwelsch). Wunsch: so viel wie möglich **direkt in Nexus** anzeigbar machen; wenn eine
+Office-Datei gar nicht darstellbar ist → **Popup** („In Word/Excel öffnen?") und die Datei im **entsprechenden Programm**
+öffnen.
+
+### Ursachen
+- **PDF (2 Gründe):** (1) `/api/file` setzte den Content-Type **immer** auf `text/plain` → das `<iframe>` bekam die PDF als
+  Text deklariert, Chromiums PDF-Viewer sprang nicht an. (2) Im Electron-Hauptfenster fehlte `webPreferences.plugins:true`
+  → der eingebaute PDF-Viewer ist fürs `<iframe>`-Embedding standardmäßig **deaktiviert**.
+- **Office = Quellcode:** docx/xlsx/pptx fielen im Dispatcher (`openFile`) in den `else`-Zweig → `renderPlain` las die
+  **Binärdatei als Text** und dumpte sie roh ins `<pre>`.
+
+### Erledigt
+- [x] **Content-Type-Fix + Range-Support** (`src/ui-server.js`, `/api/file`): neue `MIME`-Tabelle + `mimeForExt()`; jede
+  Endung bekommt ihren echten Typ (PDF→`application/pdf`, Bilder, Audio/Video, Office, …), Text bleibt `text/*`,
+  Unbekanntes `application/octet-stream`. **`createReadStream().pipe()` → `res.sendFile()` umgestellt** (siehe Nachtrag):
+  liefert `Content-Length`, `Accept-Ranges` und beantwortet Range-Requests mit **206**. `Content-Disposition: inline`
+  (anzeigen statt herunterladen) + Pfad-Sicherheit über `safeFull` und 404 bei fehlender Datei.
+
+  **Nachtrag (Live-Test durch Paul):** Nach `plugins:true` lud zwar Chromiums PDF-Viewer, zeigte aber „**Fehler beim
+  Laden des PDF-Dokuments / Neu laden**". Ursache 2: der handgerollte `createReadStream().pipe()` lieferte **kein
+  `Content-Length`, kein `Accept-Ranges`, keine 206-Antwort** (chunked) – PDFium (und natives `<audio>`/`<video>`-Seeking)
+  **brauchen** das. Fix = `res.sendFile()` (oben). Diagnose bestätigt per `curl` gegen die laufende Alt-Instanz
+  (text/plain, chunked, ignoriert Range) und gegen einen isolierten Test-Server mit dem echten Vault-Pfad + der echten
+  3,6-MB-PDF.
+- [x] **Electron-PDF-Viewer aktiviert** (`electron/main.js`, `createWindow`): `webPreferences.plugins:true`.
+- [x] **Office-In-App-Vorschau** (`src/ui-server.js`, neuer `POST /api/preview/office`): konvertiert die Datei per
+  **markitdown** in eine **temporäre** `.md` (Systemtemp, **nicht** in den Vault) und gibt das Markdown zurück → Inhalt
+  direkt in Nexus lesbar. **Kein `shell:true`** → Node quotet die Argumente selbst, daher korrekt auch bei Vault-Pfaden
+  **mit Leerzeichen** („Nexus Vaults"). 25-s-Timeout, sauberes Temp-Cleanup, Fehler → Frontend-Fallback.
+- [x] **„Extern öffnen"** (`src/ui-server.js`, neuer `POST /api/open-external`): öffnet die Datei im Standardprogramm.
+  Bevorzugt **Electrons `shell.openPath`** (robust, lazy & guarded `import('electron')`), fällt im reinen Node-Betrieb
+  (`npm run ui`) auf OS-Befehle zurück (Windows `rundll32 url.dll,FileProtocolHandler`, mac `open`, Linux `xdg-open`).
+- [x] **Frontend-Viewer** (`public/index.html`):
+  - **Office-Viewer `renderOfficeView`**: lädt die markitdown-Vorschau, rendert sie über `renderMarkdown` mit Hinweis-
+    Banner + Toolbar-Button „📂 In Word/Excel/PowerPoint öffnen". Schlägt die Vorschau fehl → `renderExternalFallback`
+    **und** ein `uiConfirm`-**Popup** „… In Word öffnen?" → bei Ja `openExternalFile`.
+  - **Audio/Video** `renderMediaView` (native `<audio>`/`<video controls>`), Endungs-Sets `AUDIO_EXT`/`VIDEO_EXT`.
+  - **Binär-Fallback**: `looksBinary()` erkennt Nicht-Text (NUL/`�`-Anteil > 5 %); `renderPlain` zeigt dann statt
+    Kauderwelsch die `renderExternalFallback`-Karte mit „extern öffnen".
+  - **PDF-Viewer**: zusätzlicher „📂 Extern öffnen"-Button als Notausgang.
+  - **`openExternalFile()`** ruft `/api/open-external`; `friendlyApp(ext)` liefert Word/Excel/PowerPoint.
+  - **Dispatcher** (`openFile`) + **Splitscreen** (`openCenterSplit`) routen Office/Audio/Video/Binär konsistent.
+  - Neues CSS: `.media-view`, `.ext-fallback` (+`.ef-*`), `.of-banner` – theme-sicher (nur CSS-Vars).
+
+### Verifikation
+- [x] `node --check` für `src/ui-server.js` + `electron/main.js` → **OK**.
+- [x] `npm run verify:html` → **OK** (3128 Zeilen, Inline-Script grün, Ende `</html>`). Hinweis: bei der Bearbeitung war
+  kurzzeitig **1 NUL-Byte** in einem Kommentar (bekannte Mount-Divergenz) – entfernt, erneut grün.
+- [x] **markitdown vorhanden** (`python -m markitdown --help` → exit 0).
+- [x] **End-to-End-Test der Konvertierung** mit **Leerzeichen im Pfad** (`…/nexus test dir/demo file.csv`) → exit 0,
+  saubere Markdown-Tabelle. Bestätigt: `spawn` ohne Shell + Leerzeichen-Pfad funktioniert.
+- [x] **End-to-End-Test `/api/file`** (isolierter Test-Server, echte PDF): GET → 200 + `application/pdf` +
+  `Content-Length: 3646088` + `Accept-Ranges: bytes`; `Range: bytes=0-99` → **206** + `Content-Range: bytes 0-99/3646088`
+  + exakt 100 Bytes (PDF-Magic `%PDF-1.7`). Genau das, was PDFium braucht.
+- [ ] **Live-Augenschein offen (Paul):** App **neu starten** (wegen `plugins:true` + Server-Änderungen). Dann: PDF öffnet
+  und rendert; docx/xlsx/pptx zeigen eine lesbare Vorschau in Nexus + Button „In Word/Excel öffnen"; nicht konvertierbare
+  Office-Datei → Popup „In … öffnen?" → öffnet extern; mp4/mp3 spielen nativ; eine echte Binärdatei zeigt die
+  „extern öffnen"-Karte statt Kauderwelsch.
+
+### Bekannt / optional (nicht in dieser Session)
+- `/api/convert/markitdown` (Rechtsklick→Markdown, bestehend) nutzt weiterhin `shell:true` → **gleicher latenter
+  Leerzeichen-Bug** wie hier behoben. Nicht von Paul gemeldet, daher unangetastet; bei Bedarf analog auf `shell:false`
+  umstellen.
+
+### TODO Paul
+- [ ] **App neu starten** (neuer UI-Server + `plugins:true` greifen erst nach Neustart).
+- [ ] Git-Commit: `git add src/ui-server.js electron/main.js public/index.html STATUS.md && git commit -m "Session 40: Viewer-Reparatur – PDF (Content-Type + sendFile/Range + plugins), Office-In-App-Vorschau (markitdown) + extern öffnen, Audio/Video, Binär-Fallback"`
+
+---
+
 ## Stand: 2026-06-16 (Session 39 – Rail-Flyout: harte Obergrenze unter den Tabs, Tabs bleiben immer sichtbar)
 
 Paul-Report (Screenshot): Beim Anklicken eines Themen-Icons öffnet das **Rail-Flyout** (Ordner-Popup); zur Zentrierung

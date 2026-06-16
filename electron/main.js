@@ -110,6 +110,7 @@ function createWindow() {
       preload: join(__dir, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      plugins: true,   // aktiviert Chromiums eingebauten PDF-Viewer (sonst rendert <iframe src=*.pdf> nicht)
     },
   });
   mainWindow.loadURL(`http://localhost:${PORT}`);

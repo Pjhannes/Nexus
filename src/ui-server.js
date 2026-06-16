@@ -1,10 +1,11 @@
 // src/ui-server.js – Express Web-UI: Dateibaum, Drag&Drop, Markitdown-Konvertierung
 import express from 'express';
 import multer from 'multer';
-import { createReadStream, readdirSync, statSync, mkdirSync, renameSync, existsSync, writeFileSync, rmSync } from 'fs';
+import { readdirSync, statSync, mkdirSync, renameSync, existsSync, writeFileSync, rmSync, unlinkSync } from 'fs';
 import { join, extname, basename, dirname, relative, resolve, sep } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
+import { tmpdir } from 'os';
 import { readFileSync } from 'fs';
 import { buildIndexer } from './indexer.js';
 import { makeTools } from './tools.js';
@@ -329,13 +330,119 @@ app.post('/api/delete', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Korrekter MIME-Typ pro Endung – sonst rendert z. B. eine PDF im <iframe> nicht
+// (sie kam vorher IMMER als text/plain heraus -> PDF-Viewer sprang nicht an, Fehler).
+// Text-Endungen bleiben text/* (Frontend liest sie via fetch().text()), Binaeres
+// bekommt seinen echten Typ, Unbekanntes faellt auf octet-stream.
+const MIME = {
+  '.pdf':'application/pdf',
+  '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.gif':'image/gif',
+  '.webp':'image/webp', '.svg':'image/svg+xml', '.bmp':'image/bmp', '.avif':'image/avif',
+  '.ico':'image/x-icon',
+  '.html':'text/html; charset=utf-8', '.htm':'text/html; charset=utf-8',
+  '.md':'text/markdown; charset=utf-8', '.markdown':'text/markdown; charset=utf-8',
+  '.txt':'text/plain; charset=utf-8', '.log':'text/plain; charset=utf-8',
+  '.csv':'text/csv; charset=utf-8', '.tsv':'text/tab-separated-values; charset=utf-8',
+  '.json':'application/json; charset=utf-8', '.xml':'application/xml; charset=utf-8',
+  '.mp4':'video/mp4', '.webm':'video/webm', '.ogv':'video/ogg', '.mov':'video/quicktime', '.mkv':'video/x-matroska',
+  '.mp3':'audio/mpeg', '.wav':'audio/wav', '.ogg':'audio/ogg', '.m4a':'audio/mp4', '.flac':'audio/flac', '.aac':'audio/aac',
+  '.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.doc':'application/msword', '.xls':'application/vnd.ms-excel', '.ppt':'application/vnd.ms-powerpoint',
+  '.zip':'application/zip', '.rtf':'application/rtf',
+};
+function mimeForExt(ext) { return MIME[ext] || 'application/octet-stream'; }
+
 app.get('/api/file', (req, res) => {
   try {
     const { vault: v } = getVault(req.query.vault);
-    const full = join(v.path, req.query.path);
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    createReadStream(full).pipe(res);
-  } catch (e) { res.status(500).send(e.message); }
+    const full = safeFull(v.path, req.query.path);
+    if (!full || !existsSync(full)) return res.status(404).send('Datei nicht gefunden');
+    // Content-Type explizit setzen (send respektiert einen bereits gesetzten Typ).
+    // res.sendFile statt createReadStream().pipe(): liefert Content-Length, Accept-Ranges
+    // UND beantwortet Range-Requests mit 206. Chromiums PDF-Viewer (PDFium) und die nativen
+    // <audio>/<video>-Tags fordern Range/Content-Length an -> sonst "Fehler beim Laden
+    // des PDF-Dokuments" bzw. kein Seeking bei Medien.
+    res.type(mimeForExt(extname(full).toLowerCase()));
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(basename(full))}"`);
+    res.sendFile(full, err => { if (err && !res.headersSent) res.status(err.statusCode || 500).end(); });
+  } catch (e) { if (!res.headersSent) res.status(500).send(e.message); }
+});
+
+// ── Datei im Standardprogramm oeffnen (Word/Excel/...) ─────────────────────────
+// Wird vom Office-/Binaer-Viewer im Frontend aufgerufen. Bevorzugt Electrons
+// shell.openPath (robust, behandelt Sonderzeichen/Leerzeichen); faellt im reinen
+// Node-Betrieb (npm run ui) auf OS-Befehle zurueck.
+let _electronShell;
+async function getShell() {
+  if (_electronShell !== undefined) return _electronShell || null;
+  try {
+    const e = await import('electron');
+    _electronShell = (e && e.shell && typeof e.shell.openPath === 'function') ? e.shell : false;
+  } catch { _electronShell = false; }
+  return _electronShell || null;
+}
+function openInDefaultApp(full) {
+  const p = process.platform;
+  if (p === 'win32')      spawn('rundll32', ['url.dll,FileProtocolHandler', full], { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
+  else if (p === 'darwin') spawn('open', [full], { detached: true, stdio: 'ignore' }).unref();
+  else                    spawn('xdg-open', [full], { detached: true, stdio: 'ignore' }).unref();
+}
+app.post('/api/open-external', async (req, res) => {
+  try {
+    const { vault: vaultName, path: relPath } = req.body || {};
+    if (typeof relPath !== 'string' || !relPath) return res.status(400).json({ error: 'path fehlt' });
+    const { vault } = getVault(vaultName);
+    const full = safeFull(vault.path, relPath);
+    if (!full || !existsSync(full)) return res.status(404).json({ error: 'Datei nicht gefunden' });
+    const sh = await getShell();
+    if (sh) {
+      const err = await sh.openPath(full);   // '' = ok, sonst Fehlertext
+      if (err) return res.status(500).json({ error: err });
+    } else {
+      openInDefaultApp(full);
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Office-Vorschau (markitdown -> Markdown, NUR temporaer, nicht in den Vault) ──
+// Liefert das konvertierte Markdown zurueck, damit der Inhalt direkt in Nexus
+// lesbar ist ("so viel wie moeglich in Nexus"). Schlaegt es fehl (markitdown fehlt,
+// Format nicht unterstuetzt), antwortet es mit Fehler -> Frontend bietet "extern oeffnen".
+let _prevSeq = 0;
+app.post('/api/preview/office', (req, res) => {
+  const { filePath, vault: vaultName } = req.body || {};
+  if (!filePath) return res.status(400).json({ error: 'filePath fehlt' });
+  let vaultObj;
+  try { vaultObj = getVault(vaultName).vault; } catch (e) { return res.status(404).json({ error: e.message }); }
+  const full = safeFull(vaultObj.path, filePath);
+  if (!full || !existsSync(full)) return res.status(404).json({ error: 'Datei nicht gefunden' });
+
+  const tmpOut = join(tmpdir(), `nexus-prev-${process.pid}-${++_prevSeq}.md`);
+  let done = false;
+  const finish = (status, body) => {
+    if (done) return; done = true;
+    clearTimeout(timer);
+    try { if (existsSync(tmpOut)) unlinkSync(tmpOut); } catch {}
+    res.status(status).json(body);
+  };
+  // KEIN shell:true -> Node quotet die Argumente selbst, sodass Vault-Pfade mit
+  // Leerzeichen (z. B. "Nexus Vaults") korrekt ankommen. CreateProcess findet
+  // 'python' -> 'python.exe' auch ohne Shell.
+  const proc = spawn('python', ['-m', 'markitdown', full, '-o', tmpOut], { windowsHide: true });
+  const timer = setTimeout(() => { try { proc.kill(); } catch {} finish(504, { error: 'Zeitueberschreitung bei der Konvertierung' }); }, 25_000);
+  let stderr = '';
+  proc.stderr.on('data', d => stderr += d.toString());
+  proc.on('error', e => finish(500, { error: `markitdown nicht gestartet: ${e.message}` }));
+  proc.on('close', code => {
+    if (done) return;
+    if (code !== 0) return finish(500, { error: `markitdown Fehler (code ${code}): ${stderr.slice(0, 400)}` });
+    let md = '';
+    try { md = readFileSync(tmpOut, 'utf8'); } catch (e) { return finish(500, { error: e.message }); }
+    finish(200, { ok: true, markdown: md });
+  });
 });
 
 // ── R9: Claude Usage Proxy ───────────────────────────────────────────────────

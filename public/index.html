@@ -112,7 +112,7 @@ body.col-resizing{cursor:col-resize;user-select:none}
 .tree-file.selected{background:var(--accent-14);color:var(--text)}
 
 /* Note area */
-.note-area{overflow:auto;min-height:0;scroll-behavior:smooth;padding-top:var(--tab-h);scroll-padding-top:var(--tab-h)}
+.note-area{overflow:auto;min-height:0;scroll-behavior:smooth;padding-top:var(--tab-h);scroll-padding-top:var(--tab-h);position:relative}
 /* KEINE Zwangs-Zentrierung: statt margin:0 auto (zentriert + fixiert) bekommt die Notiz symmetrische Seitenraender
    = Fensterbreite - Notizbreite. So entsteht genau so viel horizontaler Scroll-Spielraum, dass man die schmale Notiz
    per (normaler, duenner) Scrollbar von buendig-links bis buendig-rechts schieben kann und nie ins Leere scrollt.
@@ -244,8 +244,39 @@ a.wikilink.broken{color:#e07b7b;border-bottom-style:dashed;border-bottom-color:r
 .html-frame{width:100%;border:none;background:#fff;display:block;min-height:calc(100vh - 160px)}
 .file-pre{white-space:pre;overflow:auto;font-family:Consolas,monospace;font-size:12.5px;line-height:1.6;color:#cdd6e8;padding:18px 22px}
 .pdf-frame{width:100%;height:calc(100vh - 130px);border:none}
+/* In Nexus integrierter PDF.js-Viewer (absolut -> fuellt den Host zuverlaessig,
+   unabhaengig von padding/overflow/Flex-Hoehenaufloesung des Containers) */
+.pdfv{position:absolute;left:0;right:0;top:var(--tab-h);bottom:0;display:flex;flex-direction:column;background:var(--bg);z-index:6}
+.pdfv.pdfv-compact{top:0}
+.pdfv-bar{flex-shrink:0;gap:8px;flex-wrap:wrap;position:static;backdrop-filter:none}
+.pdfv-grp{display:flex;align-items:center;gap:4px}
+.pdfv-bar .ft-btn{padding:4px 9px;line-height:1.1}
+.pdfv-pageinp{width:40px;text-align:center;background:var(--panel2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:3px 4px;outline:none}
+.pdfv-pageinp:focus{border-color:var(--accent)}
+.pdfv-total{font-size:12px;color:var(--dim)}
+.pdfv-zlabel{min-width:50px;text-align:center}
+.pdfv-scroll{flex:1;min-height:0;overflow:auto;padding:18px 12px 30px;background:var(--bg)}
+.pdfv-pages{display:flex;flex-direction:column;align-items:center;gap:16px}
+.pdf-page{background:#fff;border-radius:4px;box-shadow:0 6px 24px rgba(0,0,0,.5);overflow:hidden;display:flex;align-items:center;justify-content:center}
+.pdf-page canvas{display:block}
+.pdf-page .pdf-ph{font-size:22px;opacity:.35;color:#444}
+.pdfv-scroll::-webkit-scrollbar{width:8px;height:8px}
+.pdfv-scroll::-webkit-scrollbar-track{background:transparent}
+.pdfv-scroll::-webkit-scrollbar-thumb{background:var(--dim);border-radius:4px}
+.pdfv-scroll::-webkit-scrollbar-thumb:hover{background:var(--text)}
+.pdfv-scroll::-webkit-scrollbar-corner{background:transparent}
 .img-view{padding:24px;text-align:center}
 .img-view img{max-width:100%;border-radius:10px;border:1px solid var(--border)}
+.media-view{flex:1;display:flex;align-items:center;justify-content:center;padding:24px;min-height:0;height:calc(100vh - 130px)}
+/* Office-/Binaer-Fallback: zentrierte Karte mit "extern oeffnen" */
+.ext-fallback{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:60px 24px;text-align:center;color:var(--dim)}
+.ext-fallback .ef-icon{font-size:54px;line-height:1}
+.ext-fallback .ef-name{font-size:16px;font-weight:600;color:var(--text);word-break:break-word;max-width:560px}
+.ext-fallback .ef-note{font-size:13px;max-width:480px;line-height:1.5}
+.ext-fallback .ef-btn{margin-top:6px;font-size:14px;color:var(--accent);background:var(--accent-12);border:1px solid var(--accent-30);border-radius:9px;padding:9px 20px;cursor:pointer;transition:.15s;font-weight:600}
+.ext-fallback .ef-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+/* Hinweisbanner ueber einer Office-Vorschau */
+.of-banner{font-size:12px;color:var(--dim);background:var(--accent-12);border:1px solid var(--accent-30);border-radius:8px;padding:8px 12px;margin-bottom:16px}
 
 /* Backlinks */
 .backlinks{margin-top:34px;border-top:1px solid var(--border);padding-top:16px}
@@ -288,7 +319,7 @@ a.wikilink.broken{color:#e07b7b;border-bottom-style:dashed;border-bottom-color:r
 #note-pane2 .np2-tag{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);background:var(--accent-12);border:1px solid var(--accent-30);border-radius:99px;padding:1px 8px;flex-shrink:0}
 #note-pane2 .np2-x{flex-shrink:0;cursor:pointer;color:var(--dim);width:20px;height:20px;line-height:18px;text-align:center;border-radius:5px;font-size:15px}
 #note-pane2 .np2-x:hover{background:rgba(255,255,255,.12);color:var(--text)}
-#note-pane2 .np2-body{flex:1;overflow:auto;min-height:0}
+#note-pane2 .np2-body{flex:1;overflow:auto;min-height:0;position:relative}
 #note-pane2 .np2-body .note-content{padding:24px 30px 60px}
 #note-pane2 .np2-body .pdf-frame{height:100%}
 #note-pane2 .np2-pre{white-space:pre-wrap;word-break:break-word;font-family:Consolas,monospace;font-size:12px;line-height:1.6;color:#cdd6e8;padding:16px 18px}
@@ -887,7 +918,29 @@ function setCrumb(html){document.getElementById('crumb').innerHTML=html;}
 let toastTimer;
 function toast(msg,type=''){const el=document.getElementById('toast');el.textContent=msg;el.className='show'+(type?' '+type:'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),3200);}
 const IMG_EXT=['.png','.jpg','.jpeg','.gif','.webp','.svg','.bmp','.avif'];
+const VIDEO_EXT=['.mp4','.webm','.ogv','.mov','.mkv'];
+const AUDIO_EXT=['.mp3','.wav','.ogg','.m4a','.flac','.aac'];
+// Office/Dokument-Formate: in Nexus per markitdown-Vorschau lesbar, sonst extern oeffnen.
+const OFFICE_EXT=['.docx','.doc','.xlsx','.xls','.pptx','.ppt','.odt','.ods','.odp','.rtf'];
 function extOf(p){const m=/\.[^./\\]+$/.exec(p);return m?m[0].toLowerCase():'';}
+// Freundlicher Programmname je Office-Endung (fuer "In Word oeffnen" etc.)
+function friendlyApp(ext){
+  if(['.docx','.doc','.odt','.rtf'].includes(ext))return 'Word';
+  if(['.xlsx','.xls','.ods','.csv','.tsv'].includes(ext))return 'Excel';
+  if(['.pptx','.ppt','.odp'].includes(ext))return 'PowerPoint';
+  return 'dem Standardprogramm';
+}
+// Datei im Standardprogramm oeffnen (Server: Electron shell.openPath / OS-Befehl).
+async function openExternalFile(path){
+  const ext=extOf(path), app=friendlyApp(ext);
+  try{
+    const r=await fetch('/api/open-external',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,path})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status));
+    toast('Geoeffnet in '+(app==='dem Standardprogramm'?'Standardprogramm':app),'success');
+    logActivity('#7ec8e3','open_external → <b>'+esc(path.split('/').pop())+'</b>');
+  }catch(e){toast('Konnte nicht oeffnen: '+e.message,'error');}
+}
 function fileUrl(path){return `/api/file?vault=${encodeURIComponent(activeVault)}&path=${encodeURIComponent(path)}`;}
 
 // ───────── Tabs (Obsidian-Logik) ─────────
@@ -1674,10 +1727,19 @@ async function openFile(path,opts){
     } else if(ext==='.pdf'){
       renderPdfView(area,fname,path);
       logActivity('#ff6b6b','view_pdf → <b>'+esc(fname)+'</b>');
+    } else if(VIDEO_EXT.includes(ext)){
+      renderMediaView(area,fname,path,'video');
+      logActivity('#a78bfa','view_video → <b>'+esc(fname)+'</b>');
+    } else if(AUDIO_EXT.includes(ext)){
+      renderMediaView(area,fname,path,'audio');
+      logActivity('#a78bfa','view_audio → <b>'+esc(fname)+'</b>');
     } else if(ext==='.csv'||ext==='.tsv'){
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
       renderCsvView(area,fname,raw,path,ext==='.tsv'?'\t':',');
       logActivity('#10B981','view_csv → <b>'+esc(fname)+'</b>');
+    } else if(OFFICE_EXT.includes(ext)){
+      renderOfficeView(area,fname,path);
+      logActivity('#2b7de9','open_office → <b>'+esc(fname)+'</b>');
     } else {
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
       renderPlain(area,fname,raw,path);
@@ -1758,10 +1820,17 @@ async function openCenterSplit(path){
     }else if(IMG_EXT.includes(ext)){
       body.innerHTML='<div class="img-view"><img src="'+fileUrl(path)+'" alt="'+esc(fname)+'"></div>';
     }else if(ext==='.pdf'){
-      body.innerHTML='<iframe class="pdf-frame" src="'+fileUrl(path)+'#view=FitH"></iframe>';
+      mountPdfViewer(body,fname,path,{compact:true});
+    }else if(VIDEO_EXT.includes(ext)){
+      body.innerHTML='<div class="media-view"><video src="'+fileUrl(path)+'" controls playsinline style="max-width:100%;max-height:100%;border-radius:8px"></video></div>';
+    }else if(AUDIO_EXT.includes(ext)){
+      body.innerHTML='<div class="media-view"><audio src="'+fileUrl(path)+'" controls style="width:min(560px,90%)"></audio></div>';
+    }else if(OFFICE_EXT.includes(ext)){
+      renderExternalFallback(body,fname,path,'Office-Datei – im Hauptfenster öffnen für die Vorschau, oder hier extern öffnen.');
     }else{
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
-      body.innerHTML='<pre class="np2-pre">'+escHtml(raw)+'</pre>';
+      if(looksBinary(raw))renderExternalFallback(body,fname,path,'Diese Datei ist kein Text und kann in Nexus nicht angezeigt werden.');
+      else body.innerHTML='<pre class="np2-pre">'+escHtml(raw)+'</pre>';
     }
   }catch(e){body.innerHTML='<div class="placeholder" style="padding-top:40px">Fehler: '+esc(e.message)+'</div>';}
   logActivity('#7ec8e3','split (Mitte) &rarr; <b>'+esc(fname)+'</b>');
@@ -2030,7 +2099,19 @@ document.addEventListener('keydown',e=>{
 },true);
 
 // ── Mermaid + Math (lazy CDN, Fallback = Quelltext) ──
-let _mermaidLoaded=null,_katexLoaded=null;
+let _mermaidLoaded=null,_katexLoaded=null,_pdfjsLoaded=null;
+// PDF.js LOKAL eingebunden (public/vendor/pdfjs) -> offline-tauglich in Electron, kein CDN.
+function loadPdfJs(){
+  if(_pdfjsLoaded!==null)return _pdfjsLoaded;
+  _pdfjsLoaded=new Promise(res=>{
+    const s=document.createElement('script');
+    s.src='/vendor/pdfjs/pdf.min.js';
+    s.onload=()=>{try{if(window.pdfjsLib){window.pdfjsLib.GlobalWorkerOptions.workerSrc='/vendor/pdfjs/pdf.worker.min.js';res(window.pdfjsLib);}else res(null);}catch(e){res(null);}};
+    s.onerror=()=>res(null);
+    document.head.appendChild(s);
+  });
+  return _pdfjsLoaded;
+}
 function loadMermaid(){if(_mermaidLoaded!==null)return _mermaidLoaded;_mermaidLoaded=new Promise(res=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';s.onload=()=>{try{window.mermaid.initialize({startOnLoad:false,theme:'dark'});res(window.mermaid);}catch(e){res(null);}};s.onerror=()=>res(null);document.head.appendChild(s);});return _mermaidLoaded;}
 function renderMermaid(area){const blocks=area.querySelectorAll('.mermaid-block[data-mermaid]');if(!blocks.length)return;loadMermaid().then(m=>{if(!m)return;blocks.forEach(async(b,i)=>{try{const {svg}=await m.render('mmd'+Date.now()+'_'+i,b.getAttribute('data-mermaid'));b.innerHTML=svg;}catch(e){}});});}
 function loadKatex(){if(_katexLoaded!==null)return _katexLoaded;_katexLoaded=new Promise(res=>{const css=document.createElement('link');css.rel='stylesheet';css.href='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css';document.head.appendChild(css);const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js';s.onload=()=>res(window.katex);s.onerror=()=>res(null);document.head.appendChild(s);});return _katexLoaded;}
@@ -2050,13 +2131,194 @@ function renderHtmlView(area,fname,raw,path){
   sb.onclick=()=>{frame.style.display='none';pre.style.display='block';sb.classList.add('on');vb.classList.remove('on');};
 }
 function renderImageView(area,fname,path){area.innerHTML=`<div class="file-toolbar"><span class="ft-name">🖼 ${esc(fname)}</span></div><div class="img-view"><img src="${fileUrl(path)}" alt="${esc(fname)}"></div>`;}
-function renderPdfView(area,fname,path){area.innerHTML=`<div class="file-toolbar"><span class="ft-name">📄 ${esc(fname)}</span></div><iframe class="pdf-frame" src="${fileUrl(path)}#view=FitH"></iframe>`;}
+function renderPdfView(area,fname,path){ mountPdfViewer(area,fname,path,{}); }
+// Voll in Nexus integrierter PDF-Viewer (PDF.js): eigene Toolbar in Akzentfarben,
+// dunkler Seitenhintergrund, Nexus-Scrollbars, Lazy-Rendering pro Seite (IntersectionObserver).
+async function mountPdfViewer(host,fname,path,opts={}){
+  const compact=!!opts.compact;
+  // evtl. vorherigen Viewer auf demselben Host aufraeumen (Observer/Doc freigeben)
+  if(host._pdfCleanup){try{host._pdfCleanup();}catch(e){}host._pdfCleanup=null;}
+  host.innerHTML=`<div class="pdfv${compact?' pdfv-compact':''}">
+    <div class="file-toolbar pdfv-bar">
+      ${compact?'':`<span class="ft-name">📄 ${esc(fname)}</span>`}
+      <span class="ft-spacer"></span>
+      <div class="pdfv-grp">
+        <button class="ft-btn" data-act="prev" title="Vorherige Seite">‹</button>
+        <input class="pdfv-pageinp" type="text" value="1" inputmode="numeric" aria-label="Seite">
+        <span class="pdfv-total">/ ?</span>
+        <button class="ft-btn" data-act="next" title="Nächste Seite">›</button>
+      </div>
+      <div class="pdfv-grp">
+        <button class="ft-btn" data-act="zout" title="Verkleinern">−</button>
+        <button class="ft-btn pdfv-zlabel" data-act="reset" title="Zoom zurücksetzen (100%)">100%</button>
+        <button class="ft-btn" data-act="zin" title="Vergrößern">+</button>
+        <button class="ft-btn" data-act="fit" title="An Breite anpassen">⇆${compact?'':' Breite'}</button>
+      </div>
+      <button class="ft-btn" data-act="ext" title="In externem Programm öffnen">📂${compact?'':' Extern öffnen'}</button>
+    </div>
+    <div class="pdfv-scroll"><div class="pdfv-pages"></div></div>
+  </div>`;
+  const bar=host.querySelector('.pdfv-bar');
+  const scroll=host.querySelector('.pdfv-scroll');
+  const pagesWrap=host.querySelector('.pdfv-pages');
+  const pageInp=host.querySelector('.pdfv-pageinp');
+  const totalEl=host.querySelector('.pdfv-total');
+  const zlabel=host.querySelector('.pdfv-zlabel');
+  bar.querySelector('[data-act="ext"]').onclick=()=>openExternalFile(path);
+
+  const lib=await loadPdfJs();
+  if(!scroll.isConnected)return;                        // Tab gewechselt waehrend des Ladens
+  if(!lib){renderExternalFallback(host,fname,path,'PDF-Viewer (PDF.js) konnte nicht geladen werden.');return;}
+  let doc;
+  try{ doc=await lib.getDocument(fileUrl(path)).promise; }
+  catch(e){ if(scroll.isConnected)renderExternalFallback(host,fname,path,'PDF konnte nicht geladen werden ('+esc(e.message||e)+').'); return; }
+  if(!scroll.isConnected){try{doc.destroy();}catch(e){}return;}
+
+  const N=doc.numPages;
+  totalEl.textContent='/ '+N;
+  const dpr=Math.min(window.devicePixelRatio||1,2);     // Speicher begrenzen
+  const p1=await doc.getPage(1);
+  const base=p1.getViewport({scale:1});
+  let mode='fit', scale=1;
+  const pageEls=[];
+
+  const fitScale=()=>Math.max(0.1,(scroll.clientWidth-24)/base.width);
+  const effScale=()=>mode==='fit'?fitScale():scale;
+  function layout(){
+    const s=effScale();
+    zlabel.textContent=Math.round(s*100)+'%';
+    pageEls.forEach(el=>{el.style.width=Math.round(base.width*s)+'px';el.style.height=Math.round(base.height*s)+'px';});
+  }
+  for(let i=1;i<=N;i++){
+    const el=document.createElement('div');
+    el.className='pdf-page';el.dataset.page=i;el.innerHTML='<span class="pdf-ph">⏳</span>';
+    pagesWrap.appendChild(el);pageEls.push(el);
+  }
+
+  async function renderPage(i){
+    const el=pageEls[i-1];if(!el)return;
+    const s=effScale(), key=i+'@'+s.toFixed(3);
+    if(el._rk===key)return; el._rk=key;
+    try{
+      const page=await doc.getPage(i);
+      const vp=page.getViewport({scale:s*dpr});
+      const canvas=document.createElement('canvas');
+      canvas.width=Math.round(vp.width);canvas.height=Math.round(vp.height);
+      canvas.style.width='100%';canvas.style.height='100%';
+      await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+      if(el._rk!==key)return;                            // Zoom hat sich waehrenddessen geaendert
+      const real=page.getViewport({scale:s});
+      el.style.width=Math.round(real.width)+'px';el.style.height=Math.round(real.height)+'px';
+      el.innerHTML='';el.appendChild(canvas);
+    }catch(e){el._rk=null;}
+  }
+  // Geometrie ueber getBoundingClientRect (robust: offsetParent der Seiten ist das
+  // absolut positionierte .pdfv, nicht .pdfv-scroll -> offsetTop waere um die Toolbar verschoben).
+  function reRenderVisible(){
+    const sr=scroll.getBoundingClientRect();
+    pageEls.forEach((el,idx)=>{const r=el.getBoundingClientRect();if(r.bottom>=sr.top-500&&r.top<=sr.bottom+500)renderPage(idx+1);});
+  }
+  function updateCurrent(){
+    const sr=scroll.getBoundingClientRect(),mid=sr.top+sr.height/2;let cur=1,best=1e9;
+    for(let i=0;i<pageEls.length;i++){const r=pageEls[i].getBoundingClientRect(),c=r.top+r.height/2,d=Math.abs(c-mid);if(d<best){best=d;cur=i+1;}}
+    if(document.activeElement!==pageInp)pageInp.value=cur;
+  }
+  function gotoPage(i){i=Math.max(1,Math.min(N,i|0));const el=pageEls[i-1];if(!el)return;const sr=scroll.getBoundingClientRect(),er=el.getBoundingClientRect();scroll.scrollTo({top:scroll.scrollTop+(er.top-sr.top)-10,behavior:'instant'});}
+  function applyZoom(){layout();pageEls.forEach(el=>el._rk=null);reRenderVisible();}
+
+  const io=new IntersectionObserver(ents=>{
+    if(!scroll.isConnected){cleanup();return;}
+    ents.forEach(en=>{if(en.isIntersecting)renderPage(+en.target.dataset.page);});
+  },{root:scroll,rootMargin:'500px 0px'});
+  pageEls.forEach(el=>io.observe(el));
+
+  let _spy=0;
+  const onScroll=()=>{if(_spy)return;_spy=requestAnimationFrame(()=>{_spy=0;updateCurrent();});};
+  scroll.addEventListener('scroll',onScroll);
+  const onWheel=e=>{
+    e.stopPropagation();                                 // nie an #note-area-Handler (onNoteWheel) durchreichen
+    if(e.ctrlKey){e.preventDefault();mode='manual';const f=e.deltaY<0?1.1:1/1.1;scale=Math.max(0.2,Math.min(5,effScale()*f));applyZoom();}
+  };
+  scroll.addEventListener('wheel',onWheel,{passive:false});
+  bar.addEventListener('click',e=>{
+    const b=e.target.closest('[data-act]');if(!b)return;const a=b.dataset.act;
+    if(a==='prev')gotoPage((+pageInp.value||1)-1);
+    else if(a==='next')gotoPage((+pageInp.value||1)+1);
+    else if(a==='zin'){mode='manual';scale=Math.min(5,effScale()*1.2);applyZoom();}
+    else if(a==='zout'){mode='manual';scale=Math.max(0.2,effScale()/1.2);applyZoom();}
+    else if(a==='reset'){mode='manual';scale=1;applyZoom();}
+    else if(a==='fit'){mode='fit';applyZoom();}
+  });
+  pageInp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();gotoPage(+pageInp.value||1);}});
+  pageInp.addEventListener('blur',()=>gotoPage(+pageInp.value||1));
+  const ro=new ResizeObserver(()=>{if(mode==='fit'){layout();reRenderVisible();}});
+  ro.observe(scroll);
+
+  function cleanup(){try{io.disconnect();}catch(e){}try{ro.disconnect();}catch(e){}scroll.removeEventListener('scroll',onScroll);scroll.removeEventListener('wheel',onWheel);try{doc.destroy();}catch(e){}}
+  host._pdfCleanup=cleanup;
+
+  requestAnimationFrame(()=>{layout();reRenderVisible();updateCurrent();});
+}
+// Native Audio-/Video-Wiedergabe (Content-Type wird jetzt korrekt gesetzt).
+function renderMediaView(area,fname,path,kind){
+  const icon=kind==='video'?'🎬':'🎵';
+  const el=kind==='video'
+    ? `<video src="${fileUrl(path)}" controls playsinline style="max-width:100%;max-height:100%;border-radius:8px"></video>`
+    : `<audio src="${fileUrl(path)}" controls style="width:min(560px,90%)"></audio>`;
+  area.innerHTML=`<div class="file-toolbar"><span class="ft-name">${icon} ${esc(fname)}</span><span class="ft-spacer"></span><button class="ft-btn" id="md-ext">📂 Extern öffnen</button></div><div class="media-view">${el}</div>`;
+  const b=area.querySelector('#md-ext'); if(b)b.onclick=()=>openExternalFile(path);
+}
+// Fallback-Seite fuer nicht in Nexus darstellbare Dateien -> "extern oeffnen".
+function renderExternalFallback(area,fname,path,note){
+  const ext=extOf(path), app=friendlyApp(ext);
+  const label=app==='dem Standardprogramm'?'📂 Extern öffnen':'📂 In '+app+' öffnen';
+  area.innerHTML=`<div class="file-toolbar"><span class="ft-name">📎 ${esc(fname)}</span></div>
+    <div class="ext-fallback"><div class="ef-icon">${fileIcon(ext)}</div>
+      <div class="ef-name">${esc(fname)}</div>
+      <div class="ef-note">${esc(note||'Diese Datei kann in Nexus nicht direkt angezeigt werden.')}</div>
+      <button class="ef-btn" id="ef-open">${label}</button></div>`;
+  const b=area.querySelector('#ef-open'); if(b)b.onclick=()=>openExternalFile(path);
+}
+// Office-Viewer: versucht eine markitdown-Vorschau (so viel wie moeglich in Nexus),
+// faellt sonst auf ein Popup "In Word/Excel oeffnen?" + Extern-Button zurueck.
+async function renderOfficeView(area,fname,path){
+  const ext=extOf(path), app=friendlyApp(ext);
+  const openLabel=app==='dem Standardprogramm'?'📂 Extern öffnen':'📂 In '+app+' öffnen';
+  area.innerHTML=`<div class="file-toolbar"><span class="ft-name">${fileIcon(ext)} ${esc(fname)}</span><span class="ft-spacer"></span><button class="ft-btn" id="of-open">${openLabel}</button></div><div class="note-content" id="of-body"><div class="placeholder" style="padding-top:60px"><span class="big">⏳</span>Vorschau wird erstellt…</div></div>`;
+  const openBtn=area.querySelector('#of-open'); if(openBtn)openBtn.onclick=()=>openExternalFile(path);
+  const body=area.querySelector('#of-body');
+  try{
+    const r=await fetch('/api/preview/office',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,path,filePath:path})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.ok||!j.markdown)throw new Error(j.error||('HTTP '+r.status));
+    // Falls der Tab inzwischen gewechselt wurde, nicht ueberschreiben.
+    if(selectedPath!==path)return;
+    const res=renderMarkdown(j.markdown);
+    body.innerHTML=`<div class="of-banner">Vorschau aus <b>${esc(fname)}</b> – Formatierung kann abweichen. Zum Bearbeiten in ${app} öffnen.</div><h1 class="note-title">${esc(fname.replace(/\.[^.]+$/,''))}</h1><div class="md-body">${res.html}</div>`;
+    renderMermaid(body);renderMath(body);
+    body.querySelectorAll('a[href^="http"]').forEach(a=>{a.target='_blank';a.rel='noopener';});
+  }catch(e){
+    if(selectedPath!==path)return;
+    renderExternalFallback(area,fname,path,'Diese Datei kann in Nexus nicht angezeigt werden ('+esc(e.message)+').');
+    // Popup wie gewuenscht: fragen, ob extern geoeffnet werden soll.
+    const yes=await uiConfirm(`Diese Datei kann in Nexus nicht angezeigt werden.\nIn ${app} öffnen?`);
+    if(yes&&selectedPath===path)openExternalFile(path);
+  }
+}
 function renderCsvView(area,fname,raw,path,sep){
   const rows=raw.split(/\r?\n/).filter(r=>r.length).slice(0,1000).map(r=>r.split(sep||','));
   const head=rows.shift()||[];
   area.innerHTML=`<div class="note-content"><div class="note-meta"><span class="chip">${(extOf(path)||'.csv').slice(1).toUpperCase()}</span><span class="chip stat">${rows.length.toLocaleString('de')} Zeilen · ${head.length} Spalten</span></div><h1 class="note-title">${esc(fname)}</h1><div class="md-table-wrap"><table class="md-table"><thead><tr>${head.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`;
 }
+// Heuristik: Binaerdaten enthalten nach UTF-8-Dekodierung viele Ersatz-/NUL-Zeichen.
+function looksBinary(raw){
+  const n=Math.min(raw.length,2000); if(!n)return false;
+  let bad=0; for(let i=0;i<n;i++){const c=raw.charCodeAt(i); if(c===0||c===0xFFFD)bad++;}
+  return bad/n>0.05;
+}
 function renderPlain(area,fname,raw,path){
+  // Unbekannte Binaerdatei -> keinen Quellcode-Salat zeigen, sondern extern oeffnen anbieten.
+  if(looksBinary(raw)){renderExternalFallback(area,fname,path,'Diese Datei ist kein Text und kann in Nexus nicht angezeigt werden.');return;}
   area.innerHTML=`<div class="file-toolbar"><span class="ft-name">📎 ${esc(fname)}</span><span class="ft-spacer"></span><button class="ft-btn" id="pl-copy">Kopieren</button></div><pre class="file-pre">${escHtml(raw)}</pre>`;
   area.querySelector('#pl-copy').onclick=()=>{navigator.clipboard.writeText(raw);toast('Kopiert','success');};
 }
