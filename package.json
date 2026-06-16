@@ -1,8 +1,8 @@
 {
   "name": "nexus",
   "version": "0.3.1",
-  "description": "MCP-Server + Web-UI fuer Pauls Knowledge-Base",
-  "author": "Paul-Johannes Hunold",
+  "description": "Nexus – persoenliche Wissensdatenbank (MCP-Server + Web-UI)",
+  "author": "Nexus",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -28,17 +28,20 @@
     "zod": "^3.0.0 || ^4.0.0"
   },
   "devDependencies": {
+    "@electron/fuses": "^1.8.0",
     "electron": "^42.0.0",
     "electron-builder": "^25.0.0",
     "png-to-ico": "^2.1.8",
+    "png2icons": "^2.0.1",
     "sharp": "^0.33.0"
   },
   "engines": {
     "node": ">=20"
   },
   "build": {
-    "appId": "de.hunold.nexus",
+    "appId": "com.nexusapp.nexus",
     "productName": "Nexus",
+    "copyright": "© 2026 Nexus",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -49,6 +52,8 @@
       "public/**/*",
       "package.json"
     ],
+    "asar": true,
+    "afterPack": "scripts/afterPack.cjs",
     "win": {
       "target": [
         "nsis",
@@ -79,6 +84,20 @@
     },
     "portable": {
       "artifactName": "Nexus-${version}-portable.exe"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "identity": null,
+      "artifactName": "Nexus-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "Nexus ${version}",
+      "artifactName": "Nexus-${version}-${arch}.${ext}"
     }
   }
 }

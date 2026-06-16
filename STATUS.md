@@ -50,6 +50,47 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 
 ---
 
+## Stand: 2026-06-16 (Session 43 – Verteilbare, gehärtete App: Branding/Scrub, Electron-Fuses, macOS-CI, Dev-Start ohne CMD)
+
+Paul-Wunsch (große Aufgabe): aus dem aktuellen Stand zwei saubere Auslieferungen machen – **Windows-Installer +
+macOS-DMG** – ohne persönliche/Claude-Daten im Code, ohne sichtbare Electron-Hinweise, manipulationssicher (gehärtet),
+**ohne CMD-Fenster**. Quell-Repo bleibt Claude-editierbare Entwickler-Version; „Update-Paket" = neuer Installer drüber.
+Entscheidungen: `appId` `com.nexusapp.nexus`; **jetzt OHNE Zertifikate** (nur Härtung); Mac via **GitHub Actions**;
+**kein Auto-Update**. Vollständiges Konzept + Fortschritt: Vault-Thema „Nexus Anwendung/00 – Übersicht".
+
+### Erledigt
+- [x] **Branding/Scrub:** `package.json` author→„Nexus", description neutral, `appId` `de.hunold.nexus`→`com.nexusapp.nexus`,
+  copyright „© 2026 Nexus"; `app.setAppUserModelId` nachgezogen. Persönliche Pfad-/Namens-Kommentare in
+  `electron/main.js`, `src/paths.js`, `src/server.js` entfernt. `nexus.config.json` aus Git-Index entfernt + gitignored,
+  `nexus.config.example.json` als Vorlage.
+- [x] **Härtung:** `build.asar:true` + `build.afterPack` → `scripts/afterPack.cjs` (via `@electron/fuses`):
+  RunAsNode/NODE_OPTIONS/CLI-Inspect **AUS**, CookieEncryption + **OnlyLoadAppFromAsar AN**. Integritäts-Validierung
+  bewusst AUS bis Code-Signing (sonst unsignierter Fehlstart; Hash wird von electron-builder aber schon eingebettet).
+- [x] **Dev ohne CMD:** `Nexus-Dev.vbs` (startet `npm run app` unsichtbar) als Ersatz für `start-app.bat`.
+- [x] **macOS:** `build.mac` (dmg+zip, arm64+x64, `identity:null`) + `build.dmg`; `build/icon.icns` via erweitertem
+  `scripts/gen-icon.mjs` (png2icons, kein iconutil nötig). CI: `.github/workflows/release.yml` (Win+Mac auf Tag `v*`).
+- [x] **Doku:** `RELEASE.md` (Bauen/Updaten/Signing-Nachrüstung).
+
+### Verifikation (headless grün)
+- [x] `npm run dist:dir` + `npm run dist` → Build inkl. afterPack erfolgreich.
+- [x] Fuses im gebauten `dist\win-unpacked\Nexus.exe` ausgelesen: RunAsNode OFF, NodeOptions OFF, CliInspect OFF,
+  OnlyLoadAppFromAsar ON, CookieEncryption ON.
+- [x] `app.asar` extrahiert + gegrept: **0** Treffer eigener Personendaten (einzige „Paul"-Treffer = Lib-Autor
+  Paul Miller / chokidar – unvermeidbar + legal).
+- [x] Installer-Metadaten: ProductName/CompanyName/Copyright = „Nexus".
+- [x] Artefakte: `dist\Nexus Setup 0.3.1.exe` (103 MB) + `dist\Nexus-0.3.1-portable.exe` (102 MB).
+- [ ] **Live-Augenschein offen (Paul):** Installer ausführen → Start ohne CMD, Wizard, **Suche** (node:sqlite), PDF/Office,
+  Claude-Connect; `Nexus-Dev.vbs` testen.
+
+### TODO Paul
+- [ ] **Live-Test** (s. o.) – v. a.: lädt `node:sqlite` unter den neuen Fuses? (Suche muss funktionieren.)
+- [ ] **Mac-Build aktivieren:** `gh` installieren ODER auf github.com **privates** Repo anlegen → als Remote setzen →
+  `git push` + `git push --tags` → Actions baut die DMG (Draft-Release).
+- [ ] Git-Commit: `git add -A && git commit -m "Session 43: Verteilbare gehärtete App – Branding/Scrub, Electron-Fuses (afterPack), macOS-CI + icns, Nexus-Dev.vbs (kein CMD), RELEASE.md"`
+- [ ] Hinweis: privates Repo enthält auch Dev-Doku mit Namen (STATUS.md/CLAUDE.md). Falls unerwünscht → sagen, dann ausschließen.
+
+---
+
 ## Stand: 2026-06-16 (Session 42 – Graph-Beschriftungen: Ego-Zentrierung mit mehr Abstand oben + überlappungsfreie/kleinere Labels, Hauptgraph nur bei starkem Zoom, Start.md immer Hauptgraph; + Aktivitäts-Log: max. 3 Datei-Open-Einträge)
 
 Paul-Report (Screenshot Ego-Graph, 4 Punkte): (1) der **Ego-Graph** soll beim **automatischen Zentrieren mehr Abstand

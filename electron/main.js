@@ -13,7 +13,7 @@
 //        braucht KEIN separat installiertes Node.js. Self-contained.
 //
 // Schreibbare Pfade (Config, Index-DB, Upload-Temp):
-//   - Dev (npm run app): NEXUS_DATA_DIR ungesetzt -> Repo-Ordner (D:\Nexus).
+//   - Dev (npm run app): NEXUS_DATA_DIR ungesetzt -> App-Ordner (Quell-Repo).
 //   - Gepackt: NEXUS_DATA_DIR = userData (schreibbar).
 
 // R10: Erster-Start-Wizard, Hilfe-Fenster, Taskleisten-Identitaet.
@@ -38,7 +38,7 @@ const IS_MCP = process.argv.includes('--mcp');
 
 // Identitaet: Taskleiste zeigt "Nexus" + Nexus-Logo, userData heisst "Nexus".
 app.setName('Nexus');
-if (process.platform === 'win32') app.setAppUserModelId('de.hunold.nexus');
+if (process.platform === 'win32') app.setAppUserModelId('com.nexusapp.nexus');
 app.setAboutPanelOptions({ applicationName: 'Nexus', applicationVersion: app.getVersion(), credits: 'Nexus' });
 
 let mainWindow = null;

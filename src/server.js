@@ -30,7 +30,7 @@ const T = makeTools(indexer, vaultPath);
 
 // Wird dem Client (z.B. Claude Desktop) beim Verbinden mitgegeben. Stoesst die
 // Pflichtlektuere an, ohne dass jemand ans Lesen erinnern muss (Arbeitsweise-Regel 12).
-// Die eigentlichen Regeln leben editierbar im Vault unter _System/ – Scaffold: D:\Nexus\rules\.
+// Die eigentlichen Regeln leben editierbar im Vault unter _System/ – Scaffold im App-Ordner unter rules/.
 const NEXUS_INSTRUCTIONS = [
   'Du arbeitest auf einem persoenlichen Wissens-Vault ueber die Nexus-Tools',
   '(search, outline, read_note, write_note, append_to_section, patch, backlinks,',

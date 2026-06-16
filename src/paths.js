@@ -5,7 +5,7 @@
 //
 // Loesung: DATA_DIR.
 //   - Dev (npm run app / node src/server.js): NEXUS_DATA_DIR ist NICHT gesetzt
-//     -> DATA_DIR = App-Root (D:\Nexus). Verhalten exakt wie bisher.
+//     -> DATA_DIR = App-Root (Quell-Repo). Verhalten exakt wie bisher.
 //   - Gepackt: electron/main.js setzt NEXUS_DATA_DIR = app.getPath('userData')
 //     -> Config + DB + Temp liegen schreibbar neben den Nutzerdaten.
 //
@@ -38,7 +38,7 @@ export function dataPath(...parts) {
 }
 
 // Loest den DB-Pfad eines Vaults auf:
-//   - absoluter dbPath  -> unveraendert (Pauls Dev-Config: D:\Nexus\.nexus\...)
+//   - absoluter dbPath  -> unveraendert (z. B. Dev-Config mit absolutem .nexus-Pfad)
 //   - relativer dbPath  -> relativ zu DATA_DIR
 //   - kein dbPath        -> Default DATA_DIR/.nexus/<name>.db
 export function resolveDbPath(v) {

@@ -7,3 +7,7 @@ build/*.exe
 *.log
 .DS_Store
 Thumbs.db
+
+# Persoenliche Live-Config (Pfade zum eigenen Vault) – nie ins Repo/GitHub.
+# Vorlage: nexus.config.example.json. Wird zur Laufzeit vom Wizard erzeugt.
+nexus.config.json

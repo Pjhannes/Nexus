@@ -1,11 +1,13 @@
 // scripts/gen-icon.mjs — Nexus App-Icon-Generator (einmaliges Build-Script)
 //
 // Erzeugt aus EINER SVG-Definition:
-//   build/icon.png  (256x256, transparenter Hintergrund, dunkles Diamant-Theme)
-//   build/icon.ico  (multi-size: 16/24/32/48/64/128/256)
+//   build/icon.png   (512x512, transparenter Hintergrund, dunkles Diamant-Theme)
+//   build/icon.ico   (multi-size: 16/24/32/48/64/128/256)  -> Windows
+//   build/icon.icns  (bis 1024px)                            -> macOS
 //
-// Kein Fremd-Tool noetig – nur die devDependencies `sharp` (SVG->PNG-Raster)
-// und `png-to-ico` (PNG-Bundle -> .ico).
+// Kein Fremd-Tool noetig (insbesondere kein macOS/iconutil) – nur die
+// devDependencies `sharp` (SVG->PNG-Raster), `png-to-ico` (.ico) und
+// `png2icons` (.icns, plattformunabhaengig).
 //
 // Aufruf:  npm run gen:icon      (bzw.  node scripts/gen-icon.mjs)
 //
@@ -16,6 +18,7 @@
 
 import sharp from 'sharp';
 import pngToIco from 'png-to-ico';
+import png2icons from 'png2icons';
 import { writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -84,22 +87,28 @@ const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" vi
 // ── Rasterung ─────────────────────────────────────────────────────────────────
 const svgBuf = Buffer.from(SVG);
 
-// Haupt-PNG 256x256 (transparenter Rahmen ausserhalb des Rechtecks bleibt erhalten,
-// da das Rechteck die volle Flaeche fuellt -> effektiv deckend, aber Format mit Alpha).
-await sharp(svgBuf, { density: 384 })
-  .resize(256, 256)
+// Haupt-PNG 512x512 (gute Basis fuer Fenster-/Linux-Icon).
+await sharp(svgBuf, { density: 512 })
+  .resize(512, 512)
   .png()
   .toFile(join(BUILD, 'icon.png'));
 
-// ICO: mehrere Groessen aus demselben SVG rendern und buendeln.
+// ICO: mehrere Groessen aus demselben SVG rendern und buendeln (Windows).
 const sizes = [16, 24, 32, 48, 64, 128, 256];
 const pngBuffers = [];
 for (const s of sizes) {
   pngBuffers.push(
-    await sharp(svgBuf, { density: 384 }).resize(s, s).png().toBuffer()
+    await sharp(svgBuf, { density: 512 }).resize(s, s).png().toBuffer()
   );
 }
 const ico = await pngToIco(pngBuffers);
 writeFileSync(join(BUILD, 'icon.ico'), ico);
 
-console.error(`[gen-icon] build/icon.png (256) + build/icon.ico (${sizes.join('/')}) geschrieben.`);
+// ICNS (macOS): aus EINEM hochaufloesenden 1024er-PNG (png2icons skaliert die
+// noetigen Unterstufen selbst). Plattformunabhaengig, kein iconutil noetig.
+const png1024 = await sharp(svgBuf, { density: 1024 }).resize(1024, 1024).png().toBuffer();
+const icns = png2icons.createICNS(png1024, png2icons.BICUBIC, 0);
+if (!icns) throw new Error('png2icons.createICNS lieferte kein Ergebnis');
+writeFileSync(join(BUILD, 'icon.icns'), icns);
+
+console.error(`[gen-icon] build/icon.png (512) + build/icon.ico (${sizes.join('/')}) + build/icon.icns (1024) geschrieben.`);

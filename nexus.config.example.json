@@ -1,0 +1,22 @@
+{
+  "_comment": "Vorlage. Echte Live-Config heisst nexus.config.json (gitignored) und wird beim ersten Start vom Einrichtungs-Assistenten erzeugt. vaultsRoot = Ordner mit allen Vaults; App-Ordner ist davon getrennt (wie bei Obsidian).",
+  "vaultsRoot": "<PFAD-ZUM-VAULTS-ORDNER>",
+  "activeVault": "knowledge-base",
+  "vaults": [
+    {
+      "name": "knowledge-base",
+      "path": "<PFAD-ZUM-VAULTS-ORDNER>/knowledge-base",
+      "dbPath": ".nexus/knowledge-base.db"
+    }
+  ],
+  "ui": {
+    "port": 3000,
+    "autoOpen": false
+  },
+  "ignore": [
+    ".obsidian",
+    ".trash",
+    ".nexus",
+    "node_modules"
+  ]
+}

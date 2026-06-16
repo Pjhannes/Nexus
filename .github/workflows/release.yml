@@ -1,0 +1,79 @@
+name: Build Nexus (Windows + macOS)
+
+# Baut die verteilbaren Installer auf den passenden Betriebssystemen.
+# - Windows-Installer (NSIS + Portable) auf einem Windows-Runner
+# - macOS-DMG (arm64 + x64) + ZIP auf einem macOS-Runner  <-- KEIN eigener Mac noetig
+#
+# Ausloeser:
+#   - Tag pushen (z. B.  git tag v0.4.0 && git push --tags )  -> baut + haengt an einen (Draft-)Release
+#   - manuell ueber "Run workflow" (workflow_dispatch)         -> baut nur Artefakte
+#
+# Signierung ist bewusst AUS (keine Zertifikate). Die App wird per Electron-Fuses
+# (scripts/afterPack.cjs) gehaertet; macOS bekommt eine Ad-hoc-Signatur.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write          # noetig, um den Release zu erstellen/zu beschreiben
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+            args: --win nsis portable
+          - os: macos-14
+            name: macos
+            args: --mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20      # nur fuer das Build-Tool; die App laeuft auf Electrons eigenem Node
+          cache: npm
+
+      - name: Dependencies installieren
+        run: npm ci
+
+      - name: Build (electron-builder)
+        run: npx electron-builder ${{ matrix.args }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false   # nicht versehentlich signieren (unsigniert gewollt)
+
+      - name: Artefakte hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-${{ matrix.name }}
+          if-no-files-found: warn
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.blockmap
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Artefakte einsammeln
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Draft-Release mit Installern anlegen
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true            # Du gibst den Release manuell frei
+          generate_release_notes: true
+          files: artifacts/**/*
