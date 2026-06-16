@@ -7,11 +7,6 @@
       "name": "knowledge-base",
       "path": "D:\\Knowledge-base",
       "dbPath": "D:\\Nexus\\.nexus\\knowledge-base.db"
-    },
-    {
-      "name": "test",
-      "path": "D:\\Knowledge-base\\test",
-      "dbPath": "D:\\Nexus\\.nexus\\test.db"
     }
   ],
   "ui": {

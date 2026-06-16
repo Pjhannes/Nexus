@@ -50,6 +50,226 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 
 ---
 
+## Stand: 2026-06-16 (Session 39 – Rail-Flyout: harte Obergrenze unter den Tabs, Tabs bleiben immer sichtbar)
+
+Paul-Report (Screenshot): Beim Anklicken eines Themen-Icons öffnet das **Rail-Flyout** (Ordner-Popup); zur Zentrierung
+des Icons und des ausgewählten Unterordners **fährt das Popup nach oben** und schiebt sich dabei **über die Tab-Leiste**.
+Gewünscht: eine **harte Grenze unterhalb der Tabs**, sodass die Tabs **immer sichtbar** bleiben. Reine UI-Änderung in
+`public/index.html`.
+
+### Ursache
+- `openRailFlyout` klemmte die obere Position des Flyouts hart auf **`8px`** ab Viewport-Oberkante – an **zwei** Stellen:
+  (1) Initial-Positionierung (`finalTop=Math.max(8,…)`), (2) Unterordner-Zentrier-Animation
+  (`if(newTop<8){…newTop=8}`). 8px liegt **über** der Tab-Leiste → das Popup konnte die Tabs verdecken.
+
+### Erledigt
+- [x] **Neuer Helper `railTopLimit()`** (`public/index.html`): liefert den Viewport-y **knapp unter der Tab-Leiste**
+  (`#tabbar` ist `position:absolute;top:0` in der `.col` → `getBoundingClientRect().bottom + 6`; Flyout ist
+  `position:fixed`, also gleiche Viewport-Koordinaten). `Math.max(8,…)` als Sicherheitsnetz. **Layout-sicher:** misst
+  die echte Tab-Höhe, passt sich automatisch an Standard (~37px) **und** Studio-Layout (höhere Leiste) an.
+- [x] **Beide Klemm-Stellen auf `railTopLimit()` umgestellt:** (1) `finalTop=Math.max(railTopLimit(),Math.min(finalTop,
+  vh-margin-foH))`; (2) Unterordner-Zentrierung `const lim=railTopLimit(); if(newTop<lim){scrollRest=lim-newTop;
+  newTop=lim;}`. Reicht der Platz oben nicht, wird der Rest wie bisher **im Flyout gescrollt** (statt über die Tabs zu
+  fahren) – das Zentrier-Gefühl bleibt, nur die Obergrenze ist jetzt die Tab-Unterkante.
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (3023 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [x] Theme-/Layout-sicher: misst Tab-Leiste zur Laufzeit, kein Hartcode der Höhe; Studio- **und** Standard-Layout
+  abgedeckt.
+- [ ] **Live-Augenschein offen (Paul):** Themen-Icon mit vielen/tiefen Unterordnern anklicken → Popup öffnet/zentriert,
+  fährt aber **nie über die Tab-Leiste**; die Tabs bleiben oben sichtbar. Unterordner aufklappen → Reihe zentriert sich,
+  Rest scrollt im Popup. Standard- **und** Studio-Layout.
+
+### TODO Paul
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 39: Rail-Flyout harte Obergrenze unter den Tabs (railTopLimit), Tabs bleiben immer sichtbar"`
+
+---
+
+## Stand: 2026-06-16 (Session 38 – Achsen-Lock beim Scrollen: nie mehr diagonal, immer nur eine Achse)
+
+Paul-Report: Beim Scrollen passiert oft genau das Gewünschte (vertikal **oder** horizontal, die jeweils andere Achse wird
+ignoriert) – **aber** bei einer **schrägen** Scroll-Bewegung scrollt Nexus **beide Achsen parallel**. Gewünscht: **immer
+nur eine Achse** gleichzeitig. Reine UI-Änderung in `public/index.html`.
+
+### Ursache
+- `.note-area` ist `overflow:auto` (scrollt vertikal **und** horizontal). Trackpad/Maus melden bei schräger Bewegung
+  `deltaX` **und** `deltaY` gleichzeitig → der Browser scrollt **nativ beide Achsen** zugleich (Diagonal-Scroll). Es gab
+  keinen Achsen-Lock; der bestehende `wheel`-Listener fing nur `ctrlKey` (Zoom) ab, alles andere lief nativ durch.
+
+### Erledigt
+- [x] **`onNoteWheel`-Handler mit Achsen-Lock** (`public/index.html`): ersetzt den alten Inline-`wheel`-Listener auf
+  `#note-area`. Logik:
+  - `ctrlKey` weiterhin = Notiz-Zoom (`bumpNoteW`), unverändert.
+  - Sonst: dominante Achse bestimmen (`|deltaY| >= |deltaX|` → vertikal, sonst horizontal), `preventDefault`, und per
+    `area.scrollBy({…,behavior:'instant'})` **nur diese eine Achse** scrollen. `behavior:'instant'` umgeht das
+    `scroll-behavior:smooth` der `.note-area` (sonst träge/nachlaufend) – gleiche Technik wie beim Öffnen-Zentrieren.
+  - **Geste-Stickiness:** die einmal gewählte Achse bleibt für die laufende Geste fix; erst eine Pause > 140 ms
+    (`e.timeStamp`) startet eine neue Geste und bestimmt die Achse neu. So springt es bei einer Diagonalen nicht
+    Event-für-Event zwischen den Achsen hin und her.
+  - **deltaMode-Normalisierung:** `deltaMode 1` (Zeilen, v. a. Firefox) → ×16 px, `deltaMode 2` (Seiten) → ×Fensterhöhe;
+    Maus/Trackpad in Electron-Chromium = `deltaMode 0` (Pixel) → ×1, also 1:1 wie die native Scroll-Geschwindigkeit.
+  - State über zwei Modul-Variablen `_wheelAxis` / `_wheelTs` (kein `Date.now()` nötig, nutzt `e.timeStamp`).
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (3018 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [x] Theme-/Layout-sicher: reine JS-Scroll-Logik auf `#note-area`, kein CSS-/Hartcode-Eingriff; Zoom-Verhalten
+  (`ctrlKey`) unverändert.
+- [ ] **Live-Augenschein offen (Paul):** breit gezoomte / nach links-rechts verschobene Notiz öffnen → vertikal scrollen
+  ignoriert seitlich, seitlich scrollen ignoriert hoch/runter, **schräg** scrollt **nicht mehr** beidachsig (folgt der
+  dominanten Richtung). Strg+Mausrad zoomt weiterhin. Standard- **und** Studio-Layout.
+
+### TODO Paul
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 38: Achsen-Lock beim Scrollen (onNoteWheel) – nur eine Achse pro Geste, kein Diagonal-Scroll mehr"`
+
+---
+
+## Stand: 2026-06-16 (Session 37 – Bearbeiten-Button wandert ruckelfrei mit dem rechten Panel + Inhalt-Box beim Öffnen eingeklappt)
+
+Paul-Report (2 Punkte): (1) Beim **Vergrößern des rechten Panels im Studio-Layout** **wackelt der „Bearbeiten"-Button** –
+er soll **perfekt flüssig mit dem rechten Panel mitwandern**; (2) beim **Öffnen einer Notiz** soll das **Inhalt-Fenster**
+(„Inhalt"/Inhaltsverzeichnis in der Notiz) **standardmäßig eingeklappt** sein. Reine UI-Änderung in `public/index.html`.
+
+### Ursache (1) – das Wackeln
+- `#note-edit-fab` erbt von `.ed-edit-btn` die Regel `transition:.15s` (= `transition: all .15s`). Im Studio-Layout sitzt
+  der Button per `right:calc(var(--col-r)+38px)`. Beim Ziehen des Resizers wird `--col-r` pro `mousemove` neu gesetzt → das
+  **rechte Panel springt sofort** (kein transition), der **Button animiert sein `right` aber über 150 ms hinterher** und
+  „hängt" dem Panel ständig nach → sichtbares Wackeln/Ruckeln.
+
+### Erledigt
+- [x] **(1) Button-Transition entkoppelt** (`public/index.html`, `#note-edit-fab`): explizites
+  `transition:background-color .15s,border-color .15s` (überschreibt das geerbte `transition: all .15s`). Damit animiert
+  **nur** noch der Hover (Hintergrund/Rand) weich, die **Position (`right`) folgt instant** – der Button wandert jetzt
+  **synchron und ruckelfrei** mit dem rechten Panel (beide an `var(--col-r)` gekoppelt). Gilt für Studio-Layout.
+- [x] **(2) Inhalt-Box eingeklappt** (`public/index.html`, `renderToc`): `<details class="toc" open>` → `<details
+  class="toc">` (das `open`-Attribut entfernt). Beim Öffnen einer Notiz ist das „Inhalt"-Fenster jetzt **zugeklappt**
+  (Dreieck ▸), per Klick aufklappbar. CSS unverändert (`.toc[open] summary::before` dreht das Dreieck weiterhin korrekt).
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (3000 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [x] Theme-/Layout-sicher: nur CSS-Transition + entferntes HTML-Attribut, keine Hartcodes; Button-Logik an `--col-r`
+  unverändert.
+- [ ] **Live-Augenschein offen (Paul):** (1) Studio-Layout → rechtes Panel per Resizer vergrößern/verkleinern → der
+  „Bearbeiten"-Button gleitet flüssig mit, kein Wackeln; (2) Notiz mit >2 Überschriften öffnen → „Inhalt"-Box ist
+  eingeklappt, Klick klappt sie auf.
+
+### TODO Paul
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 37: Bearbeiten-Button ruckelfrei am rechten Panel (transition nur Hover, nicht Position) + Inhalt-Box beim Öffnen eingeklappt"`
+
+---
+
+## Stand: 2026-06-16 (Session 36 – Notiz frei nach links/rechts schiebbar (keine Zwangs-Zentrierung), weißer Scrollbar-Fleck weg)
+
+Paul-Report (in 3 Schritten präzisiert): (1) der **weiße Fleck unten** (Screenshot) muss weg; (2) **keine automatische
+Zentrierung** mehr; stattdessen eine **horizontale Scrollbar im gleichen (dünnen) Stil** wie die vertikale, **sodass man
+eine Notiz, die schmaler als das Fenster ist, ganz nach links bzw. ganz nach rechts schieben kann**, um den Text bündig
+an einen Rand zu legen.
+
+### Ursache / Konzept
+- Bisher zentrierte `.note-content{margin:0 auto}` die Notiz **fix** in der Mitte → bei schmaler Notiz kein horizontaler
+  Überlauf, also **keine** Scrollbar und **kein** Verschieben möglich.
+- (Fleck) Der weiße Fleck ist die **Scrollbar-Ecke** (`::-webkit-scrollbar-corner`) – Track/Thumb waren gestylt, die Ecke
+  nicht → WebKit rendert sie in der Default-Farbe (hell/weiß).
+
+### Erledigt
+- [x] **Zwangs-Zentrierung entfernt + Schiebe-Spielraum** (`public/index.html`): statt `margin:0 auto` jetzt
+  **symmetrische Seitenränder** `margin-inline:max(0px, 100% - var(--note-w,…))` (= Fensterbreite − Notizbreite je Seite).
+  Dadurch entsteht genau so viel horizontaler Scroll-Spielraum, dass die schmale Notiz von **bündig-links bis
+  bündig-rechts** wandert und **nie ins Leere** scrollt. Notiz ≥ Fenster → Ränder 0 → normaler Overflow-Scroll wie gehabt.
+  In **beiden** Layouts (Standard `min(1000px,100%)`, Studio `min(760px,100%)`).
+- [x] **Horizontale Scrollbar im Stil der vertikalen** (`public/index.html`): `.note-area` zurück auf `overflow:auto`
+  (Session-35-Sonderfall `overflow-x:scroll` + dicke Spur **rückgängig**). Da bei schmaler Notiz jetzt **immer** Überlauf
+  besteht, ist auch immer ein normaler **6px-Thumb** da – optisch identisch zur seitlichen Scrollbar.
+- [x] **Default-Position beim Öffnen = mittig** (`public/index.html`, `renderMarkdownView`):
+  `area.scrollTo({left:(area.scrollWidth-area.clientWidth)/2,behavior:'instant'})` (halber Scroll-Spielraum; `instant`
+  umgeht das `scroll-behavior:smooth`, sonst „fliegt" die Notiz beim Öffnen herein). Von dort frei nach ganz links/rechts
+  schiebbar. (Optik wie früher zentriert, aber jetzt verschiebbar.)
+- [x] **(Fleck) Globale Regel `::-webkit-scrollbar-corner{background:transparent}`** (`public/index.html`). Greift in
+  **beiden** Layouts (Studio überschreibt nur Track/Thumb, nicht die Ecke).
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (3000 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [x] CSS theme-/layout-sicher (nur CSS-Vars + `max()`/`min()`/`color-mix`, kein Hartcode).
+- [ ] **Live-Augenschein offen (Paul):** Notiz schmaler als Fenster öffnen → dünne horizontale Scrollbar unten (gleicher
+  Stil wie seitlich); Notiz lässt sich bis **ganz links** und **ganz rechts** schieben (Text bündig am Rand), nie ins
+  Leere; **kein weißer Fleck** an der Ecke. Breit-gezoomte Notiz scrollt normal. (Standard- **und** Studio-Layout.)
+
+---
+
+## Stand: 2026-06-15 (Session 35 – Themen löschbar (Watcher-Lock weg), fixierter Bearbeiten-Button, Schriftgrößen + Notiz-Zoom)
+
+Paul-Report (mehrere Punkte, teils nachgeschoben): (1) **Themen lassen sich nicht löschen** – weder in Nexus noch direkt
+im Windows-Vault-Ordner; (2) der **Bearbeiten-Button** soll **fixiert** bleiben (wie die Tabs), **genau so aussehen wie
+bisher** und – nachgereicht – **ganz rechts im Notizfeld auf gleicher Höhe wie die Tabs** sitzen;
+(3) in den Einstellungen gibt es nur die **Editor**-Schriftgröße – zusätzlich **Notiz-Schriftgröße** und
+**Schriftgröße rechtes Panel** separat regelbar; (4) Notizen **ranzoomen** wie gewohnt (**Trackpad-Pinch / Strg+Mausrad**),
+dazu **seitliche Scrollbar** und **zentrierter Text** bei Größenänderung des rechten Panels.
+
+### Ursache (1) – der eigentliche Bug
+- Der **MCP-Server** (`src/server.js`, läuft headless / über Claude Desktop) startet einen **chokidar-Watcher** auf den Vault.
+  Default = **nativer** `fs.watch` (Windows: `ReadDirectoryChangesW`) → hält **offene Verzeichnis-Handles**. Folge: der
+  Ordner ist gesperrt → `rmSync` in `ui-server.js` wirft **EPERM** (Löschen in Nexus scheitert) **und** der Windows-Explorer
+  kann den Ordner ebenfalls nicht löschen. Genau Pauls Symptom „weder in Nexus noch im Windows-Ordner".
+- `ui-server.js` (Electron-In-Process, **kein** eigener Watcher) und der MCP-Server sind getrennte Prozesse, teilen sich
+  aber den Vault → der Lock des MCP-Watchers blockiert das Löschen prozessübergreifend.
+
+### Erledigt
+- [x] **(1) Watcher auf Polling umgestellt** (`src/indexer.js`, `watchVault`): `usePolling:true, interval:700,
+  binaryInterval:1500`. Polling öffnet **keine** dauerhaften Verzeichnis-Handles → Ordner/Themen sind wieder löschbar
+  (Nexus **und** Explorer). Kommentar im Code erklärt das Windows-Problem.
+- [x] **(1) `rmSync` robuster** (`src/ui-server.js`, `/api/delete`): `maxRetries:5, retryDelay:120` fängt kurzzeitige
+  Windows-Locks (EPERM/EBUSY) ab, falls ein Watcher den Ordner gerade erst losgelassen hat.
+- [x] **(2) Bearbeiten-Button als fixiertes Overlay** (`public/index.html`): Button aus dem Notiz-Markup heraus als
+  **persistentes Element `#note-edit-fab` in die `.col`** (direkt nach der `.tabbar`) verlegt. Regel
+  `#note-edit-fab{position:absolute;top:calc(var(--tab-h)/2);right:28px;transform:translateY(-50%);z-index:21}` →
+  sitzt **ganz rechts im Notizfeld auf gleicher Höhe wie die Tabs** (im Tab-Band) und bleibt beim Scrollen fix.
+  `right:28px` (statt 14px) hält ihn **frei vom Scrollbalken**. **Optik 1:1** (gleiche `.ed-edit-btn`-Klasse).
+  Studio-Override: `right:calc(var(--col-r)+38px)`, damit der Button nicht hinter dem dort schwebenden rechten Panel verschwindet. Sichtbar nur in der Markdown-Leseansicht: `showEditFab(path)`
+  am Ende von `renderMarkdownView`, `hideEditFab()` an allen anderen Ansichts-Einstiegen (openFile/openEditor/
+  openFolderView/doSearch/showEmptyTab/switchVault/ctxDelete).
+- [x] **(3) Zwei neue Schriftgrößen-Regler** (`public/index.html`):
+  - **Notiz-Schriftgröße** → CSS-Var `--reader-fs` auf `.md-body` (Default 14.5px, Bereich 12–24, Schritt 0.5).
+    Gilt für Lese-Ansicht **und** die 2. Split-Ansicht (`#note-pane2`, ebenfalls `.md-body`).
+  - **Schriftgröße rechtes Panel (Gliederung)** → CSS-Var `--panel-fs` auf `#outline-panel .ol-row` (Default 12px,
+    Bereich 10–22, Schritt 0.5).
+  - JS analog zum Editor-Regler: `currentReaderFs/applyReaderFs/onReaderFsInput` + `currentPanelFs/applyPanelFs/
+    onPanelFsInput` (localStorage `nexus.readerFontSize` / `nexus.panelFontSize`), in `init()` angewandt, zwei neue
+    `set-section`-Slider direkt unter „Editor-Schriftgröße" in `renderSettings()`.
+- [x] **(4) Notiz-Zoom = Breite der Notiz, nicht Schriftgröße** (`public/index.html`): Strg+Mausrad / Trackpad-Pinch
+  setzt die **Breite** `.note-content` über CSS-Var **`--note-w`** (Default `min(1000px,100%)` = wie bisher). **Schmaler
+  als das Fenster** → `margin:0 auto` zentriert mit Rändern; **breiter als das Fenster** → `.note-area{overflow:auto}`
+  blendet **unten eine horizontale Scrollbar** ein (links/rechts verschieben). Schrift bleibt, Text reflowt. JS:
+  `currentNoteW/applyNoteW/setNoteW` (localStorage `nexus.noteW`, Clamp 300–4000px; 0 = Default-Var entfernt),
+  `bumpNoteW(deltaY)` = **additiv** `base - deltaY*1.1` (schnell + symmetrisch; Startbasis = aktuelle Content-Breite).
+  **Ein `wheel`-Listener** auf `#note-area` (`{passive:false}`) fängt `e.ctrlKey` ab (Chromium meldet **Trackpad-Pinch
+  als wheel+ctrlKey**), `preventDefault` unterdrückt den Chromium-Seiten-Zoom.
+- [x] **(4) Scrollbars** (`public/index.html`): vertikale (seitliche) Scrollbar in **Original-Optik** (6px,
+  `overflow-y:auto` – bei Bedarf). **Horizontale Bottom-Scrollbar IMMER sichtbar** (`overflow-x:scroll`), zum
+  Links/Rechts-Verschieben sobald die Notiz breiter als das Fenster gezoomt ist.
+- [x] **(4) Studio-Cap behoben** (`public/index.html`): `.app[data-layout="softdark"] .note-content` hatte hartes
+  `max-width:760px` → kappte die Zoom-Breite im Studio-Layout (dort „Zoom funktioniert gar nicht"). Jetzt ebenfalls
+  `width:var(--note-w,min(760px,100%));max-width:none`, damit der Zoom in **beiden** Layouts greift.
+- [x] **(4) Notiztext zentriert** (`public/index.html`): `.note-content{…;margin:0 auto}` → der Text **re-zentriert sich
+  automatisch**, wenn das rechte Panel (eigene Grid-Spalte) verkleinert/vergrößert wird. Studio hatte `margin:0 auto`
+  bereits.
+
+### Verifikation
+- [x] `node --check src/indexer.js` + `node --check src/ui-server.js` → **OK**.
+- [x] `npm run verify:html` → **OK** (2991 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [x] Theme-/Layout-sicher: nur CSS-Vars (`--reader-fs`, `--panel-fs`, `--note-w`, `--col-r`, bestehende
+  `.ed-edit-btn`-Styles + Original-Scrollbar), kein Hartcode; gilt für Standard- **und** Studio-Layout.
+- [ ] **Live-Augenschein offen (Paul):** (1) Claude Desktop **neu starten** (neuer Watcher mit Polling) → Thema/Ordner
+  in Nexus **und** im Windows-Explorer löschbar; (2) Notiz öffnen → „✎ Bearbeiten" sitzt ganz rechts auf Tab-Höhe,
+  bleibt beim Scrollen stehen, Optik wie bisher; (3) Einstellungen → „Notiz-Schriftgröße" und „Schriftgröße rechtes
+  Panel" regeln getrennt; (4) über der Notiz Strg+Mausrad / Trackpad-Pinch → Notiz wird **breiter/schmaler**; schmal =
+  zentriert mit Rändern, breit über Fensterbreite = **untere Scrollbar** zum Links/Rechts-Verschieben; vertikale
+  Scrollbar in Original-Optik. (Standard- **und** Studio-Layout prüfen.)
+
+### TODO Paul
+- [ ] **Claude Desktop neu starten** (sonst läuft der alte Watcher mit nativem Lock weiter).
+- [ ] Git-Commit: `git add src/indexer.js src/ui-server.js public/index.html STATUS.md && git commit -m "Session 35: Themen löschbar (chokidar Polling), Bearbeiten-Button als fixes Overlay (ganz rechts, Tab-Höhe), Notiz-/Panel-Schriftgröße + Notiz-Zoom (Strg+Mausrad/Pinch)"`
+
+---
+
 ## Stand: 2026-06-15 (Session 34g – „Neuer Vault"-Button im Vault-Auswahl-Dropdown, v. a. fürs Studio-Layout)
 
 Paul-Wunsch: In der **Vault-Auswahl** fehlt ein **Button zum Anlegen eines neuen Vaults** – optisch passend

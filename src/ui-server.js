@@ -18,11 +18,15 @@ const indexers = {};
 const toolsMap = {};
 
 for (const v of cfg.vaults) {
-  mkdirSync(v.path, { recursive: true });
-  const idx = buildIndexer(v.path, resolveDbPath(v), cfg.ignore ?? []);
-  idx.reindex();
-  indexers[v.name] = idx;
-  toolsMap[v.name] = makeTools(idx, v.path);
+  try {
+    mkdirSync(v.path, { recursive: true });
+    const idx = buildIndexer(v.path, resolveDbPath(v), cfg.ignore ?? []);
+    idx.reindex();
+    indexers[v.name] = idx;
+    toolsMap[v.name] = makeTools(idx, v.path);
+  } catch (e) {
+    console.error(`[Nexus] Vault "${v.name}" (${v.path}) übersprungen: ${e.message}`);
+  }
 }
 
 function getVault(name) {
@@ -317,7 +321,9 @@ app.post('/api/delete', (req, res) => {
     const full = safeFull(vault.path, relPath);
     if (!full || full === resolve(vault.path)) return res.status(400).json({ error: 'Ungueltiger Pfad' });
     if (!existsSync(full)) return res.status(404).json({ error: 'Nicht gefunden' });
-    rmSync(full, { recursive: true, force: true });
+    // maxRetries/retryDelay faengt kurzzeitige Windows-Locks (EPERM/EBUSY) ab,
+    // z.B. wenn ein Datei-Watcher den Ordner gerade noch losgelassen hat.
+    rmSync(full, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 });
     const result = tools.reindex();
     res.json({ ok: true, path: relPath.replace(/\\/g, '/'), indexed: result.indexed });
   } catch (e) { res.status(500).json({ error: e.message }); }

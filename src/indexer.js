@@ -124,6 +124,13 @@ export async function watchVault(indexer, vaultPath, ignoreList = [], onChange =
     },
     ignoreInitial: true,
     persistent: true,
+    // WICHTIG (Windows): Polling statt nativem fs.watch. Der native Watcher
+    // (ReadDirectoryChangesW) haelt offene Verzeichnis-Handles -> Ordner/Themen
+    // lassen sich dann weder in Nexus (rmSync EPERM) noch im Windows-Explorer
+    // loeschen. Polling oeffnet keine dauerhaften Handles und gibt Ordner frei.
+    usePolling: true,
+    interval: 700,
+    binaryInterval: 1500,
     awaitWriteFinish: { stabilityThreshold: 400, pollInterval: 100 },
   });
 

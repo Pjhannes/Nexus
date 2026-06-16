@@ -56,9 +56,9 @@ body.col-resizing{cursor:col-resize;user-select:none}
 .tabbar{position:absolute;top:0;left:0;right:0;z-index:20;display:flex;align-items:stretch;gap:2px;padding:4px 4px 0;background:transparent;border-bottom:none;overflow-x:auto;overflow-y:hidden;min-height:33px;pointer-events:none}
 .tabbar>*{pointer-events:auto}
 .tabbar::-webkit-scrollbar{height:0}
-.tab{display:flex;align-items:center;gap:6px;max-width:200px;padding:5px 7px 5px 10px;border-radius:8px 8px 0 0;color:var(--dim);font-size:12px;cursor:pointer;white-space:nowrap;border:1px solid transparent;border-bottom:none;background:color-mix(in srgb,var(--bg) 22%,transparent);backdrop-filter:blur(3px) saturate(1.3);-webkit-backdrop-filter:blur(8px) saturate(1.3)}
-.tab:hover{background:color-mix(in srgb,var(--bg) 24%,transparent);color:var(--text)}
-.tab.active{background:color-mix(in srgb,var(--bg) 26%,transparent);color:var(--text);border-color:var(--border)}
+.tab{display:flex;align-items:center;gap:6px;max-width:200px;padding:5px 7px 5px 10px;border-radius:8px 8px 0 0;color:var(--dim);font-size:12px;cursor:pointer;white-space:nowrap;border:1px solid transparent;border-bottom:none;background:color-mix(in srgb,var(--bg) 52%,transparent);backdrop-filter:blur(8px) saturate(1.3);-webkit-backdrop-filter:blur(8px) saturate(1.3)}
+.tab:hover{background:color-mix(in srgb,var(--bg) 64%,transparent);color:var(--text)}
+.tab.active{background:color-mix(in srgb,var(--bg) 86%,transparent);color:var(--text);border-color:var(--border)}
 .tab.tab-dragging{opacity:.5;cursor:grabbing}
 .tab-i{font-size:11px;flex:0 0 auto}
 .tab-t{overflow:hidden;text-overflow:ellipsis}
@@ -113,7 +113,11 @@ body.col-resizing{cursor:col-resize;user-select:none}
 
 /* Note area */
 .note-area{overflow:auto;min-height:0;scroll-behavior:smooth;padding-top:var(--tab-h);scroll-padding-top:var(--tab-h)}
-.note-content{padding:16px 46px 90px;max-width:1000px}
+/* KEINE Zwangs-Zentrierung: statt margin:0 auto (zentriert + fixiert) bekommt die Notiz symmetrische Seitenraender
+   = Fensterbreite - Notizbreite. So entsteht genau so viel horizontaler Scroll-Spielraum, dass man die schmale Notiz
+   per (normaler, duenner) Scrollbar von buendig-links bis buendig-rechts schieben kann und nie ins Leere scrollt.
+   Notiz >= Fenster -> Raender 0 (max(0px,..)) -> normaler Overflow-Scroll wie gehabt. */
+.note-content{padding:16px 46px 90px;width:var(--note-w,min(1000px,100%));max-width:none;margin-inline:max(0px,100% - var(--note-w,min(1000px,100%)))}
 .md-body{font-family:var(--reader-font)}
 .note-meta{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
 .chip{font-size:11px;padding:3px 10px;border-radius:99px;border:1px solid var(--border);color:var(--dim);background:var(--panel)}
@@ -148,7 +152,7 @@ h1.note-title{font-size:25px;font-weight:650;background:linear-gradient(90deg,#f
 .toc a:hover{color:var(--text);background:var(--panel2)}
 
 /* Rendered markdown */
-.md-body{font-size:14.5px;line-height:1.72;color:var(--text)}
+.md-body{font-size:var(--reader-fs,14.5px);line-height:1.72;color:var(--text)}
 .md-body>*:first-child{margin-top:0}
 .md-h{font-weight:650;line-height:1.3;margin:1.5em 0 .5em;scroll-margin-top:18px;position:relative}
 h1.md-h{font-size:24px;border-bottom:1px solid var(--border);padding-bottom:.3em}
@@ -398,6 +402,8 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 ::-webkit-scrollbar-track{background:var(--sb-track)}
 ::-webkit-scrollbar-thumb{background:var(--sb-thumb);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:var(--sb-thumb-h)}
+/* Ecke zwischen horizontaler & vertikaler Scrollbar – ohne Regel rendert WebKit sie weiss ("weisser Fleck") */
+::-webkit-scrollbar-corner{background:transparent}
 #note-area::-webkit-scrollbar,#outline-panel::-webkit-scrollbar,.side-scroll::-webkit-scrollbar,.log-rows::-webkit-scrollbar,.graph-filter::-webkit-scrollbar,.pal-results::-webkit-scrollbar,.graph-settings::-webkit-scrollbar{width:6px}
 .code-block pre::-webkit-scrollbar,.md-table-wrap::-webkit-scrollbar,.transclude .tc-body::-webkit-scrollbar,.file-pre::-webkit-scrollbar{height:4px}
 /* ── Editor (Bearbeiten/Speichern) ── */
@@ -429,6 +435,11 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 .new-note-btn:hover{background:var(--accent-20)}
 .ed-edit-btn{font-size:11px;color:var(--accent);background:var(--accent-10);border:1px solid var(--accent-30);border-radius:99px;padding:3px 11px;cursor:pointer;transition:.15s;margin-left:auto}
 .ed-edit-btn:hover{background:var(--accent-20)}
+/* Bearbeiten-Button fixiert: ganz rechts, auf gleicher Hoehe wie die Tabs (im Tab-Band, --tab-h).
+   Liegt als Overlay in der .col (wie die .tabbar), bleibt also beim Scrollen oben rechts. Optik unveraendert. */
+#note-edit-fab{position:absolute;top:calc(var(--tab-h)/2);right:28px;transform:translateY(-50%);z-index:21;margin:0;transition:background-color .15s,border-color .15s}
+/* Studio: rechtes Panel schwebt ueber der .col -> Button links davon halten */
+.app[data-layout="softdark"] #note-edit-fab{right:calc(var(--col-r,360px) + 38px)}
 .ovl-msg{padding:18px;font-size:13.5px;line-height:1.5;white-space:pre-line;color:var(--text)}
 .pk-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:13.5px;color:var(--text)}
 .pk-item:hover{background:var(--panel2)}
@@ -440,7 +451,7 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 #right-toggle button:hover{color:var(--text)}
 #right-toggle button.active{background:var(--panel2);border-color:var(--border);color:var(--text)}
 #outline-panel{display:none;overflow:auto}
-#outline-panel .ol-row{display:block;width:100%;padding:3px 10px;font-size:12px;color:var(--dim);cursor:pointer;background:transparent;border:none;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:.1s;line-height:1.6}
+#outline-panel .ol-row{display:block;width:100%;padding:3px 10px;font-size:var(--panel-fs,12px);color:var(--dim);cursor:pointer;background:transparent;border:none;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:.1s;line-height:1.6}
 #outline-panel .ol-row:hover{color:var(--text);background:rgba(255,255,255,.04)}
 #outline-panel .ol-row.active{color:var(--accent);background:var(--accent-08)}
 #outline-panel .ol-empty{padding:12px 14px;font-size:11px;color:var(--dim);font-style:italic}
@@ -627,7 +638,7 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
 .app[data-layout="softdark"] .tabbar{background:transparent;border-bottom:none;padding:8px 10px 16px}
 .app[data-layout="softdark"] .tab{border-radius:10px;border:none}
 .app[data-layout="softdark"] .tab.active{background:color-mix(in srgb,var(--bg) 82%,transparent);box-shadow:0 3px 12px rgba(0,0,0,.35);border:none}
-.app[data-layout="softdark"] .note-content{max-width:760px;margin:0 auto;padding-top:12px}
+.app[data-layout="softdark"] .note-content{width:var(--note-w,min(760px,100%));max-width:none;margin-inline:max(0px,100% - var(--note-w,min(760px,100%)));margin-top:0;padding-top:12px}
 /* Rechtes Panel schwebt als Fenster ÜBER dem Notizfenster (wie das Mockup-Overlay) */
 .app[data-layout="softdark"] .right-panel{position:absolute;top:10px;right:10px;bottom:10px;width:var(--col-r,360px);margin:0;background:var(--panel);border:none;border-radius:14px;overflow:hidden;box-shadow:0 10px 36px rgba(0,0,0,.6);z-index:20}
 .app[data-layout="softdark"] #rz-r{position:absolute;top:0;bottom:0;right:calc(var(--col-r,360px) + 10px);width:14px;background:transparent;border:none;z-index:21}
@@ -709,6 +720,7 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
     <div class="resizer" id="rz-l"></div>
     <div class="col">
       <div class="tabbar" id="tabbar"></div>
+      <button class="ed-edit-btn" id="note-edit-fab" title="Bearbeiten (Ctrl+E)" style="display:none">&#9998; Bearbeiten</button>
       <div class="center-body" id="center-body">
         <div class="note-area" id="note-area">
           <div class="placeholder"><span class="big">&#9670;</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>
@@ -925,6 +937,7 @@ async function tabForward(){
   await renderTab(t);renderTabBar();
 }
 function showEmptyTab(){
+  hideEditFab();
   document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';
   setCrumb(esc(activeVault));selectedPath=null;
   document.querySelectorAll('.tree-file.selected').forEach(e=>e.classList.remove('selected'));
@@ -1101,7 +1114,11 @@ function initSplitResizer(){
 async function init(){
   loadCols();initResizers();resetTabs();initTabDnd();initCenterSplitDrop();initCenterResizer();
   setRightMode(localStorage.getItem('nexus.rightmode')||'graph');
-  applyEditorFs(currentEditorFs());applyRailW(currentRailW());_graphGlow=currentGraphGlow()/100;applyLayout(currentLayout());
+  applyEditorFs(currentEditorFs());applyReaderFs(currentReaderFs());applyPanelFs(currentPanelFs());applyNoteW(currentNoteW());applyRailW(currentRailW());_graphGlow=currentGraphGlow()/100;applyLayout(currentLayout());
+  // Notiz-Zoom per Strg+Mausrad / Trackpad-Pinch (Chromium meldet Pinch als wheel+ctrlKey) -> aendert die Notiz-Breite.
+  // onNoteWheel uebernimmt zusaetzlich den Achsen-Lock (nur eine Achse pro Geste, nie diagonal beides).
+  const _na=document.getElementById('note-area');
+  if(_na)_na.addEventListener('wheel',onNoteWheel,{passive:false});
   const vaults=await api('/api/vaults');
   activeVault=vaults.find(v=>v.active)?.name ?? vaults[0]?.name;
   await refreshVaultSelector();
@@ -1137,6 +1154,7 @@ async function refreshTree(){
 async function switchVault(name){
   saveTabs();closeCenterSplit();
   activeVault=name; selectedPath=null; currentFolder='';
+  hideEditFab();
   document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';
   await loadVault();
   await refreshVaultSelector();
@@ -1280,6 +1298,9 @@ function tween(from,to,dur,apply){
   requestAnimationFrame(step);
 }
 let _railFlyoutPath=null, _railFlyoutBtn=null;
+// Harte Obergrenze fuer das Rail-Flyout: knapp UNTER der Tab-Leiste, damit die Tabs nie verdeckt werden.
+// Tab-Leiste ist position:absolute;top:0 in der .col -> ihr Viewport-Unterrand ist die Grenze (Flyout ist position:fixed).
+function railTopLimit(){const tb=document.getElementById('tabbar');const b=tb?tb.getBoundingClientRect().bottom:0;return Math.max(8,b+6);}
 function openRailFlyout(node,btn){
   const fo=document.getElementById('rail-flyout');if(!fo)return;
   if(_railFlyoutPath===node.path){closeRailFlyout();return;}
@@ -1312,8 +1333,9 @@ function openRailFlyout(node,btn){
       const ir=icon.getBoundingClientRect(), rr=row.getBoundingClientRect();
       const iconCenter=ir.top+ir.height/2, rowCenter=rr.top+rr.height/2;
       const curTop=parseFloat(fo.style.top)||fo.getBoundingClientRect().top;
+      const lim=railTopLimit();
       let newTop=curTop+(iconCenter-rowCenter), scrollRest=0;
-      if(newTop<8){scrollRest=8-newTop;newTop=8;}            // Oberkante erreicht -> Rest scrollen
+      if(newTop<lim){scrollRest=lim-newTop;newTop=lim;}      // Tab-Unterkante erreicht -> Rest IM Flyout scrollen
       tween(curTop,newTop,320,v=>{fo.style.top=v+'px';positionFlyoutResizer();});
       if(scrollRest>0.5){
         const maxScroll=Math.max(0,fo.scrollHeight-fo.clientHeight);
@@ -1337,7 +1359,8 @@ function openRailFlyout(node,btn){
     if(delta>0.5)smoothScrollTop(side,side.scrollTop+delta,360);
   }
   // Wenn die Leiste nicht weit genug scrollen kann (z.B. letztes Thema): Flyout am unteren Rand verankern.
-  finalTop=Math.max(8,Math.min(finalTop,vh-margin-foH));
+  // Obergrenze = knapp unter der Tab-Leiste (railTopLimit), damit die Tabs immer sichtbar bleiben.
+  finalTop=Math.max(railTopLimit(),Math.min(finalTop,vh-margin-foH));
   fo.style.top=finalTop+'px';
   positionFlyoutResizer();
 }
@@ -1635,6 +1658,7 @@ async function openFile(path,opts){
   const ext=extOf(path), area=document.getElementById('note-area');
   area.scrollTop=0;
   _curHeadings=[]; _curNotePath=path; renderOutline();
+  hideEditFab();
   try{
     if(ext==='.md'||ext==='.markdown'||ext===''){
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
@@ -1676,11 +1700,14 @@ function renderMarkdownView(area,fname,raw,path){
      <span class="chip stat">${words.toLocaleString('de')} Wörter · ~${rt} Min</span>
      ${res.headings.length?`<span class="chip stat">${res.headings.length} Abschnitte</span>`:''}
      ${tags.map(t=>`<span class="chip tag" data-tag="${esc(t)}">#${esc(t)}</span>`).join('')}
-     <button class="ed-edit-btn" title="Bearbeiten (Ctrl+E)">&#9998; Bearbeiten</button>
    </div>`;
   const props=renderProps(fm);
   const toc=res.headings.length>2?renderToc(res.headings):'';
   area.innerHTML=`<div class="note-content">${meta}<h1 class="note-title">${esc(title)}</h1>${props}${toc}<div class="md-body">${res.html}</div><div class="backlinks" id="backlinks"><h3>Backlinks <span class="bl-count">…</span></h3><div class="bl-empty">Lade…</div></div></div>`;
+  // Startposition mittig (halber Scroll-Spielraum). Keine fixe Zentrierung mehr -> von hier frei nach ganz links/rechts schiebbar.
+  // behavior:'instant' umgeht das scroll-behavior:smooth der .note-area, sonst "fliegt" die Notiz beim Oeffnen hinein.
+  area.scrollTo({left:(area.scrollWidth-area.clientWidth)/2,behavior:'instant'});
+  showEditFab(path);
   wireRendered(area,path,res);
   loadBacklinks(path);
 }
@@ -1696,7 +1723,7 @@ function renderProps(fm){
   return rows?`<details class="props" open><summary>Eigenschaften</summary><table>${rows}</table></details>`:'';
 }
 function renderToc(hs){
-  return `<details class="toc" open><summary>Inhalt</summary><ul>${hs.map(h=>`<li style="padding-left:${(h.level-1)*13}px"><a data-goto="${esc(h.id)}">${esc(h.text)}</a></li>`).join('')}</ul></details>`;
+  return `<details class="toc"><summary>Inhalt</summary><ul>${hs.map(h=>`<li style="padding-left:${(h.level-1)*13}px"><a data-goto="${esc(h.id)}">${esc(h.text)}</a></li>`).join('')}</ul></details>`;
 }
 
 // ─── Right-panel mode toggle (Session 16) ───
@@ -1841,7 +1868,6 @@ function wireRendered(area,path,res){
   area.querySelectorAll('.cb-copy').forEach(b=>b.addEventListener('click',()=>{const c=document.getElementById(b.dataset.copy);navigator.clipboard.writeText(c.textContent);const o=b.textContent;b.textContent='Kopiert ✓';setTimeout(()=>b.textContent=o,1400);}));
   area.querySelectorAll('.callout.foldable .callout-title').forEach(t=>t.addEventListener('click',()=>t.closest('.callout').classList.toggle('collapsed')));
   area.querySelectorAll('.transclude[data-embed]').forEach(tc=>{tc.querySelector('.tc-head').addEventListener('click',()=>openFile(tc.dataset.embed));loadTransclude(tc);});
-  area.querySelector('.ed-edit-btn')?.addEventListener('click',()=>openEditor(path));
   applyActivePanel(path,res.headings,res.links);
   area.querySelectorAll('.task-cb').forEach((cb,idx)=>{
     cb.style.cursor='pointer';
@@ -1911,6 +1937,7 @@ function loadCodeMirror(){
 }
 async function openEditor(path,isNew){
   if(!(await maybeLeaveEditor()))return;
+  hideEditFab();
   let raw='';
   if(!isNew){try{raw=await fetch(fileUrl(path)).then(r=>r.text());}catch(e){toast('Konnte Datei nicht laden','err');return;}}
   selectedPath=path;
@@ -2250,6 +2277,7 @@ function frameGraph(){
 }
 
 function openFolderView(folderPath){
+  hideEditFab();
   if(!_silentRender)updateActiveTab(folderPath,'folder');
   let node=null;(function w(ns){for(const n of ns){if(node)return;if(n.type==='folder'&&n.path===folderPath)node=n;else if(n.children)w(n.children);}})(vaultTree);
   if(!node)return;
@@ -2272,6 +2300,7 @@ function crumbHtml(path){
 }
 async function doSearch(q){
   if(!q||!q.trim())return;
+  hideEditFab();
   logActivity('#7ec8e3',`search("${esc(q)}")`);
   const results=await api(`/api/search?vault=${encodeURIComponent(activeVault)}&q=${encodeURIComponent(q)}`);
   const area=document.getElementById('note-area');area.scrollTop=0;
@@ -2403,7 +2432,7 @@ async function ctxDelete(path,type){
   const r=await api('/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,path})});
   if(r&&r.error){toast('Fehler: '+r.error,'err');return;}
   toast('Gelöscht');tabsClosePath&&tabsClosePath(path);
-  if(selectedPath===path){selectedPath=null;document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';setCrumb(esc(activeVault));}
+  if(selectedPath===path){selectedPath=null;hideEditFab();document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';setCrumb(esc(activeVault));}
   invalidateVaultGraph();await refreshTree();
 }
 function colorToHex(col){if(/^#[0-9a-f]{6}$/i.test(col))return col;const d=document.createElement('div');d.style.color=col;document.body.appendChild(d);const rgb=getComputedStyle(d).color;document.body.removeChild(d);const m=rgb.match(/\d+/g);if(!m||m.length<3)return '#808080';return '#'+[m[0],m[1],m[2]].map(v=>parseInt(v).toString(16).padStart(2,'0')).join('');}
@@ -2647,6 +2676,41 @@ function setTheme(id){if(!NEXUS_THEMES[id])return;localStorage.setItem('nexus.th
 function currentEditorFs(){const n=parseInt(localStorage.getItem('nexus.editorFontSize')||'',10);return (n>=12&&n<=20)?n:14;}
 function applyEditorFs(px){document.documentElement.style.setProperty('--editor-fs',px+'px');}
 function onEditorFsInput(v){const px=parseInt(v,10)||14;localStorage.setItem('nexus.editorFontSize',String(px));applyEditorFs(px);const e=document.getElementById('set-fs-val');if(e)e.textContent=px+'px';}
+// Notiz-Schriftgroesse (Lese-Ansicht, .md-body) – getrennt vom Editor
+function currentReaderFs(){const n=parseFloat(localStorage.getItem('nexus.readerFontSize')||'');return (n>=12&&n<=24)?n:14.5;}
+function applyReaderFs(px){document.documentElement.style.setProperty('--reader-fs',px+'px');}
+function onReaderFsInput(v){const px=parseFloat(v)||14.5;localStorage.setItem('nexus.readerFontSize',String(px));applyReaderFs(px);const e=document.getElementById('set-readerfs-val');if(e)e.textContent=px+'px';}
+// Schriftgroesse rechtes Panel (Gliederung/Outline) – getrennt von der Notiz
+function currentPanelFs(){const n=parseFloat(localStorage.getItem('nexus.panelFontSize')||'');return (n>=10&&n<=22)?n:12;}
+function applyPanelFs(px){document.documentElement.style.setProperty('--panel-fs',px+'px');}
+function onPanelFsInput(v){const px=parseFloat(v)||12;localStorage.setItem('nexus.panelFontSize',String(px));applyPanelFs(px);const e=document.getElementById('set-panelfs-val');if(e)e.textContent=px+'px';}
+// Notiz-Zoom (Strg+Mausrad / Trackpad-Pinch) = Breite der Notiz (--note-w), nicht die Schriftgroesse.
+// Aufziehen/Scroll-hoch = breiter; wird die Notiz breiter als das Fenster, kann man unten horizontal scrollen.
+// Schmaler als das Fenster -> zentriert mit Raendern. Trackpad-Pinch = wheel+ctrlKey (Chromium), ein Handler.
+function currentNoteW(){const n=parseInt(localStorage.getItem('nexus.noteW')||'',10);return (n>=300&&n<=4000)?n:0;}
+function applyNoteW(px){const s=document.documentElement.style;if(px>0)s.setProperty('--note-w',px+'px');else s.removeProperty('--note-w');}
+function setNoteW(px){px=Math.max(300,Math.min(4000,Math.round(px)));localStorage.setItem('nexus.noteW',String(px));applyNoteW(px);}
+function bumpNoteW(deltaY){let base=currentNoteW();if(!base){const el=document.querySelector('#note-area .note-content');base=el?el.offsetWidth:(document.getElementById('note-area')?.clientWidth||900);}setNoteW(base-deltaY*1.1);}
+// Achsen-Lock beim Scrollen: pro Geste nur EINE Achse (vertikal ODER horizontal), nie beides parallel.
+// Trackpad/Maus melden bei schraeger Bewegung deltaX UND deltaY gleichzeitig -> der Browser scrollt
+// nativ beide Achsen. Wir unterdruecken das und scrollen nur die dominante Achse. Die Achse bleibt fuer
+// die Dauer einer Geste fix (Pause > 140ms = neue Geste), damit es bei Diagonalen nicht hin- und herspringt.
+let _wheelAxis=null, _wheelTs=0;
+function onNoteWheel(e){
+  if(e.ctrlKey){e.preventDefault();bumpNoteW(e.deltaY);return;}   // Zoom (Pinch/Strg) unveraendert
+  const ax=Math.abs(e.deltaX), ay=Math.abs(e.deltaY);
+  if(!ax && !ay)return;
+  if(!_wheelAxis || e.timeStamp-_wheelTs>140) _wheelAxis = ay>=ax ? 'y' : 'x';   // neue Geste -> Achse neu bestimmen
+  _wheelTs=e.timeStamp;
+  const area=e.currentTarget;
+  const unit = e.deltaMode===1 ? 16 : (e.deltaMode===2 ? area.clientHeight : 1);  // line/page -> Pixel (Maus meist deltaMode 0)
+  e.preventDefault();
+  if(_wheelAxis==='y') area.scrollBy({top:e.deltaY*unit,behavior:'instant'});
+  else area.scrollBy({left:e.deltaX*unit,behavior:'instant'});
+}
+// Bearbeiten-Button (Overlay im Tab-Band): nur in der Markdown-Leseansicht sichtbar.
+function showEditFab(path){const f=document.getElementById('note-edit-fab');if(!f)return;f.style.display='inline-block';f.onclick=()=>openEditor(path);}
+function hideEditFab(){const f=document.getElementById('note-edit-fab');if(f)f.style.display='none';}
 function currentGraphDefault(){return localStorage.getItem('nexus.graphDefault')||'ego';}
 function setGraphDefault(v){localStorage.setItem('nexus.graphDefault',(v==='main')?'main':'ego');}
 // Graph-Glow (beide Layouts): 0..100 (%), 0 = aus
@@ -2722,6 +2786,10 @@ async function renderSettings(){
   }
   const fs=currentEditorFs();
   h+='<div class="set-section"><div class="set-label">Editor-Schriftgr&ouml;&szlig;e<span class="set-val" id="set-fs-val">'+fs+'px</span></div><input type="range" class="set-range" id="set-fs" min="12" max="20" step="1" value="'+fs+'" oninput="onEditorFsInput(this.value)"></div>';
+  const rfs=currentReaderFs();
+  h+='<div class="set-section"><div class="set-label">Notiz-Schriftgr&ouml;&szlig;e<span class="set-val" id="set-readerfs-val">'+rfs+'px</span></div><input type="range" class="set-range" id="set-readerfs" min="12" max="24" step="0.5" value="'+rfs+'" oninput="onReaderFsInput(this.value)"></div>';
+  const pfs=currentPanelFs();
+  h+='<div class="set-section"><div class="set-label">Schriftgr&ouml;&szlig;e rechtes Panel (Gliederung)<span class="set-val" id="set-panelfs-val">'+pfs+'px</span></div><input type="range" class="set-range" id="set-panelfs" min="10" max="22" step="0.5" value="'+pfs+'" oninput="onPanelFsInput(this.value)"></div>';
   const gd=currentGraphDefault();
   h+='<div class="set-section"><div class="set-label">Graph beim &Ouml;ffnen einer Notiz</div><select class="set-select" id="set-graph" onchange="setGraphDefault(this.value)"><option value="ego"'+(gd==='ego'?' selected':'')+'>Ego-Graph (Notiz im Fokus)</option><option value="main"'+(gd==='main'?' selected':'')+'>Hauptgraph (gesamtes Vault)</option></select></div>';
   const gg=currentGraphGlow();
