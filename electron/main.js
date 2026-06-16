@@ -27,7 +27,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const APP_ROOT   = join(__dir, '..');
 const UI_SERVER  = pathToFileURL(join(__dir, '..', 'src', 'ui-server.js')).href;
 const MCP_SERVER = pathToFileURL(join(__dir, '..', 'src', 'server.js')).href;
-const MAIN_JS    = join(__dir, 'main.js');
+const MCP_SERVER_PATH = join(__dir, '..', 'src', 'server.js'); // Plain-Pfad fuer ELECTRON_RUN_AS_NODE
 const WIZARD_HTML = join(APP_ROOT, 'public', 'wizard.html');
 const HELP_HTML   = join(APP_ROOT, 'public', 'help.html');
 const ICON_PNG    = join(APP_ROOT, 'build', 'icon.png');
@@ -190,9 +190,18 @@ function claudeConfigPath() {
   return join(app.getPath('home'), '.config', 'Claude', 'claude_desktop_config.json');
 }
 
+// Startet den MCP-Server als REINEN Node-Prozess via ELECTRON_RUN_AS_NODE.
+// Hintergrund: ein gepacktes GUI-Electron hat auf Windows keine brauchbaren
+// stdin/stdout-Pipes im Hauptprozess -> stdio-JSON-RPC schlaegt fehl
+// ("Unexpected end of JSON input"). Als Node startet kein Chromium (kein GPU-/
+// Netzwerk-Subprozess), und stdio funktioniert sauber. Erfordert den RunAsNode-Fuse
+// (siehe scripts/afterPack.cjs).
 function mcpLaunchSpec() {
-  if (app.isPackaged) return { command: process.execPath, args: ['--mcp'] };
-  return { command: process.execPath, args: [MAIN_JS, '--mcp'] };
+  const env = { ELECTRON_RUN_AS_NODE: '1' };
+  // Gepackt: der Node-Prozess hat kein app.getPath('userData') -> Datenordner mitgeben,
+  // damit server.js die Config/DB im schreibbaren userData findet.
+  if (app.isPackaged) env.NEXUS_DATA_DIR = app.getPath('userData');
+  return { command: process.execPath, args: [MCP_SERVER_PATH], env };
 }
 
 // Schreibt/merged den nexus-Eintrag. Gibt ein Ergebnisobjekt zurueck (kein Dialog).
@@ -208,7 +217,7 @@ function connectClaudeCore() {
   }
   if (!cfg.mcpServers || typeof cfg.mcpServers !== 'object') cfg.mcpServers = {};
   const spec = mcpLaunchSpec();
-  cfg.mcpServers.nexus = { command: spec.command, args: spec.args };
+  cfg.mcpServers.nexus = { command: spec.command, args: spec.args, env: spec.env };
   writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), 'utf8');
   return { ok: true, path: cfgPath, backedUp };
 }

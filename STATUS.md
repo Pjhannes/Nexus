@@ -89,6 +89,29 @@ Entscheidungen: `appId` `com.nexusapp.nexus`; **jetzt OHNE Zertifikate** (nur H�
 - [ ] Git-Commit: `git add -A && git commit -m "Session 43: Verteilbare gehärtete App – Branding/Scrub, Electron-Fuses (afterPack), macOS-CI + icns, Nexus-Dev.vbs (kein CMD), RELEASE.md"`
 - [ ] Hinweis: privates Repo enthält auch Dev-Doku mit Namen (STATUS.md/CLAUDE.md). Falls unerwünscht → sagen, dann ausschließen.
 
+### Nachtrag (Live-Test Paul): MCP-Verbindung „Unexpected end of JSON input" – GEFIXT
+Paul installierte die App und verband sie als MCP-Server in Claude Desktop → **failed: „Unexpected end of JSON input"**.
+- **Diagnose:** Die installierte `Nexus.exe --mcp` indexiert zwar sauber (3910 Dateien, `node:sqlite` lädt **trotz Fuses**),
+  antwortet aber **nie** auf stdout. Direkter Test (`initialize` gesendet, 16 s gewartet) → **stdout leer**. Ursache: ein
+  **gepacktes GUI-Subsystem-Electron** hat auf Windows **keine brauchbaren stdin/stdout-Pipes im Hauptprozess** → die
+  stdio-JSON-RPC-Verbindung schlägt fehl. (Der packaged `--mcp`-Pfad war faktisch immer kaputt; bisher lief der MCP nur
+  über den Dev-Node.)
+- **Fix:** MCP-Server als **reiner Node-Prozess via `ELECTRON_RUN_AS_NODE`** starten (kein Chromium, saubere stdio).
+  - `scripts/afterPack.cjs`: `RunAsNode`-Fuse **auf `true`** (zwingend für ELECTRON_RUN_AS_NODE). Übrige Härtung bleibt
+    (OnlyLoadAppFromAsar ON, NodeOptions/CliInspect OFF, CookieEncryption ON). Tradeoff: minimal weniger Härtung, aber nötig.
+  - `electron/main.js` `mcpLaunchSpec()`: `{ command: execPath, args:[server.js], env:{ ELECTRON_RUN_AS_NODE:'1',
+    NEXUS_DATA_DIR: userData } }`; `connectClaudeCore()` schreibt das `env` in `claude_desktop_config.json`. `MAIN_JS`
+    (ungenutzt) entfernt.
+- **Verifikation (headless, definitiv):** Neu gebaute `dist\win-unpacked\Nexus.exe` als run-as-node gegen `server.js`
+  **innerhalb app.asar** + `initialize` → **gültige JSON-RPC-Antwort** (`serverInfo nexus 0.2.0`, Tools-Capability).
+  Fuses korrekt: RunAsNode ON, CookieEncryption ON, NodeOptions OFF, CliInspect OFF, OnlyLoadAppFromAsar ON.
+  Voller Installer neu gebaut.
+
+### TODO Paul (nach dem Fix)
+- [ ] **Neu installieren:** `dist\Nexus Setup 0.3.1.exe` über die alte Version (Config/Index bleiben).
+- [ ] In Nexus **„Mit Claude Desktop verbinden"** erneut klicken (schreibt jetzt den korrekten run-as-node-Eintrag mit `env`).
+- [ ] **Claude Desktop komplett neu starten** → nexus-MCP sollte „connected" sein; Tools (search etc.) testen.
+
 ---
 
 ## Stand: 2026-06-16 (Session 42 – Graph-Beschriftungen: Ego-Zentrierung mit mehr Abstand oben + überlappungsfreie/kleinere Labels, Hauptgraph nur bei starkem Zoom, Start.md immer Hauptgraph; + Aktivitäts-Log: max. 3 Datei-Open-Einträge)

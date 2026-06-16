@@ -2,8 +2,11 @@
 //
 // Fuses sind beim Verpacken in die Electron-Binary eingebrannte Schalter, die zur
 // Laufzeit NICHT mehr aenderbar sind. Sie erschweren Manipulation/Debugging deutlich:
-//   - RunAsNode aus              -> kein ELECTRON_RUN_AS_NODE-Backdoor (App laesst sich
-//                                   nicht als beliebiges Node-Skript missbrauchen)
+//   - RunAsNode AN (true)        -> MUSS an bleiben: der MCP-Server (Claude Desktop)
+//                                   wird ueber ELECTRON_RUN_AS_NODE als reiner Node-Prozess
+//                                   gestartet. Nur so funktioniert die stdio-JSON-RPC-
+//                                   Verbindung (ein gepacktes GUI-Electron hat auf Windows
+//                                   keine brauchbaren stdin/stdout-Pipes im Hauptprozess).
 //   - NODE_OPTIONS-Env aus       -> kein Einschleusen von Startflags ueber die Umgebung
 //   - Node-CLI-Inspect aus       -> kein --inspect-Debugger gegen die laufende App
 //   - CookieEncryption an        -> lokal gespeicherte Cookies verschluesselt
@@ -34,7 +37,7 @@ module.exports = async function afterPack(context) {
     version: FuseVersion.V1,
     // Auf macOS die Ad-hoc-Signatur nach dem Flippen neu setzen (sonst „beschaedigt").
     resetAdHocDarwinSignature: electronPlatformName === 'darwin',
-    [FuseV1Options.RunAsNode]: false,
+    [FuseV1Options.RunAsNode]: true,   // noetig fuer den MCP-Server (ELECTRON_RUN_AS_NODE)
     [FuseV1Options.EnableCookieEncryption]: true,
     [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
     [FuseV1Options.EnableNodeCliInspectArguments]: false,
