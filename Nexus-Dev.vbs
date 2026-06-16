@@ -26,5 +26,9 @@ If Not fso.FolderExists(fso.BuildPath(projDir, "node_modules")) Then
   WScript.Quit 1
 End If
 
+' NEXUS_DEV=1 => eigene Identitaet "Nexus Dev" (Port 3001, Claude-Key nexus-dev), damit die
+' Dev-Version parallel zur installierten "Nexus"-App laufen kann - beide auf demselben Vault.
+sh.Environment("PROCESS")("NEXUS_DEV") = "1"
+
 ' 0 = unsichtbares Fenster, False = nicht auf Beenden warten.
 sh.Run "cmd /c npm run app", 0, False

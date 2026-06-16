@@ -487,11 +487,22 @@ app.get('/api/claude-orgs', async (req, res) => {
 });
 
 // ── Server starten ────────────────────────────────────────────────────────────
-const port = cfg.ui?.port ?? 3000;
-app.listen(port, () => {
+// NEXUS_PORT (von electron/main.js gesetzt) hat Vorrang -> Dev laeuft auf 3001, Prod auf 3000,
+// beide GUIs koennen gleichzeitig offen sein. Standalone (npm run ui) faellt auf cfg.ui.port zurueck.
+const port = Number(process.env.NEXUS_PORT) || cfg.ui?.port || 3000;
+const httpServer = app.listen(port, () => {
   console.log(`[Nexus UI] http://localhost:${port}`);
   if (cfg.ui?.autoOpen && !process.versions.electron) {
     const opener = process.platform === 'win32' ? 'start' : 'open';
     spawn(opener, [`http://localhost:${port}`], { shell: true, detached: true, windowsHide: true });
   }
+});
+// Belegten Port sauber abfangen statt als "JavaScript error"-Dialog hochblubbern zu lassen.
+// Greift dank Single-Instance-Lock (electron/main.js) im Normalfall gar nicht.
+httpServer.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`[Nexus UI] Port ${port} ist belegt - laeuft Nexus bereits? Beende diese Instanz.`);
+    process.exit(1);
+  }
+  throw err;
 });

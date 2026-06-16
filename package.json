@@ -15,6 +15,7 @@
     "dist": "electron-builder --win",
     "dist:dir": "electron-builder --dir",
     "gen:icon": "node scripts/gen-icon.mjs",
+    "gen:icon-dev": "node scripts/gen-icon-dev.mjs",
     "verify:html": "node scripts/verify-html.mjs public/index.html",
     "edit:html": "node scripts/safe-edit.mjs public/index.html",
     "prepare": "node scripts/install-hooks.mjs"

@@ -32,19 +32,41 @@ const WIZARD_HTML = join(APP_ROOT, 'public', 'wizard.html');
 const HELP_HTML   = join(APP_ROOT, 'public', 'help.html');
 const ICON_PNG    = join(APP_ROOT, 'build', 'icon.png');
 const ICON_ICO    = join(APP_ROOT, 'build', 'icon.ico');
-const PORT = 3000;
+const ICON_PNG_DEV = join(APP_ROOT, 'build', 'icon-dev.png');
+const ICON_ICO_DEV = join(APP_ROOT, 'build', 'icon-dev.ico');
+// NEXUS_DEV=1 (nur vom Dev-Starter Nexus-Dev.vbs gesetzt) => eigene Identitaet neben der
+// gehaerteten Installation: Name "Nexus Dev", appId ...-dev, Port 3001, Claude-Key "nexus-dev".
+// Die Installation setzt NEXUS_DEV NIE -> bleibt unveraendert "Nexus" auf Port 3000.
+const DEV      = process.env.NEXUS_DEV === '1';
+const APP_NAME = DEV ? 'Nexus Dev' : 'Nexus';
+const APP_ID   = DEV ? 'com.nexusapp.nexus-dev' : 'com.nexusapp.nexus';
+const PORT     = DEV ? 3001 : 3000;
+// ui-server.js wird in-process geladen und nimmt denselben Port aus NEXUS_PORT -> kein Mismatch.
+process.env.NEXUS_PORT = String(PORT);
 
 const IS_MCP = process.argv.includes('--mcp');
 
-// Identitaet: Taskleiste zeigt "Nexus" + Nexus-Logo, userData heisst "Nexus".
-app.setName('Nexus');
-if (process.platform === 'win32') app.setAppUserModelId('com.nexusapp.nexus');
-app.setAboutPanelOptions({ applicationName: 'Nexus', applicationVersion: app.getVersion(), credits: 'Nexus' });
+// Identitaet: Taskleiste/Fenster zeigen APP_NAME + Nexus-Logo.
+app.setName(APP_NAME);
+if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
+app.setAboutPanelOptions({ applicationName: APP_NAME, applicationVersion: app.getVersion(), credits: APP_NAME });
 
 let mainWindow = null;
 let wizardWin  = null;
 let helpWin    = null;
 let uiStarted  = false;
+
+// Single-Instance-Lock: eine zweite Instanz DERSELBEN Identitaet (Prod ODER Dev) verhindern,
+// sonst stuerzt der zweite Start beim Port-Binden mit EADDRINUSE ab. Dev ("Nexus Dev") und
+// Prod ("Nexus") haben getrennte Identitaeten -> je eigener Lock, laufen weiterhin parallel.
+// Im MCP-Modus nicht noetig (kein Fenster/Port).
+const gotSingleLock = IS_MCP || app.requestSingleInstanceLock();
+if (!gotSingleLock) app.quit();
+app.on('second-instance', () => {
+  // Erneuter Start derselben App -> vorhandenes Fenster nach vorne holen statt zweiter Instanz.
+  const win = mainWindow || wizardWin || helpWin;
+  if (win && !win.isDestroyed()) { if (win.isMinimized()) win.restore(); win.focus(); }
+});
 
 // --- Logging: niemals sichtbares stdout (MCP nutzt stdout fuer JSON-RPC). --------
 // Alles geht nach stderr + optional in eine Logdatei im Datenordner.
@@ -57,7 +79,14 @@ function log(...parts) {
   } catch {}
 }
 
-function winIcon() { return existsSync(ICON_ICO) ? ICON_ICO : (existsSync(ICON_PNG) ? ICON_PNG : undefined); }
+function winIcon() {
+  // Dev-Variante bevorzugen (optisch abgesetzt), mit Fallback aufs normale Icon.
+  if (DEV) {
+    if (existsSync(ICON_ICO_DEV)) return ICON_ICO_DEV;
+    if (existsSync(ICON_PNG_DEV)) return ICON_PNG_DEV;
+  }
+  return existsSync(ICON_ICO) ? ICON_ICO : (existsSync(ICON_PNG) ? ICON_PNG : undefined);
+}
 
 // --- Schreibbaren Datenordner sicherstellen (kein Seeding hier mehr) -----------
 // Seeding der Erst-Config macht jetzt der Wizard (wizard:finish). Dev unveraendert.
@@ -102,7 +131,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
-    title: 'Nexus',
+    title: APP_NAME,
     icon: winIcon(),
     backgroundColor: '#07090f',
     autoHideMenuBar: false,
@@ -122,7 +151,7 @@ function createWizard() {
   wizardWin = new BrowserWindow({
     width: 620,
     height: 560,
-    title: 'Nexus – Einrichtung',
+    title: APP_NAME + ' – Einrichtung',
     icon: winIcon(),
     resizable: false,
     backgroundColor: '#07090f',
@@ -143,7 +172,7 @@ function openHelpWindow() {
   helpWin = new BrowserWindow({
     width: 640,
     height: 720,
-    title: 'Nexus – Einrichtung & Anbindung',
+    title: APP_NAME + ' – Einrichtung & Anbindung',
     icon: winIcon(),
     backgroundColor: '#07090f',
     autoHideMenuBar: true,
@@ -217,9 +246,11 @@ function connectClaudeCore() {
   }
   if (!cfg.mcpServers || typeof cfg.mcpServers !== 'object') cfg.mcpServers = {};
   const spec = mcpLaunchSpec();
-  cfg.mcpServers.nexus = { command: spec.command, args: spec.args, env: spec.env };
+  // Dev traegt sich als eigener Key "nexus-dev" ein -> ueberschreibt NICHT den Prod-Eintrag "nexus".
+  const mcpKey = DEV ? 'nexus-dev' : 'nexus';
+  cfg.mcpServers[mcpKey] = { command: spec.command, args: spec.args, env: spec.env };
   writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), 'utf8');
-  return { ok: true, path: cfgPath, backedUp };
+  return { ok: true, path: cfgPath, backedUp, key: mcpKey };
 }
 
 function connectClaudeDesktop() {
@@ -228,9 +259,9 @@ function connectClaudeDesktop() {
     dialog.showMessageBox(mainWindow, {
       type: 'info',
       title: 'Mit Claude Desktop verbunden',
-      message: 'Nexus wurde als MCP-Server eingetragen.',
+      message: `${APP_NAME} wurde als MCP-Server eingetragen.`,
       detail:
-        `Konfiguration: ${r.path}\n` +
+        `Eintrag: ${r.key}\nKonfiguration: ${r.path}\n` +
         (r.backedUp ? 'Backup der alten Datei: claude_desktop_config.json.nexus-backup\n' : '') +
         '\nClaude Desktop bitte komplett neu starten (beenden + oeffnen), damit der Server geladen wird.',
       buttons: ['OK'],
@@ -340,7 +371,7 @@ function registerIpc() {
 }
 
 // --- Start --------------------------------------------------------------------
-app.whenReady().then(async () => {
+if (gotSingleLock) app.whenReady().then(async () => {
   ensureDataDir();
 
   if (IS_MCP) {
