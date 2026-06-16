@@ -50,6 +50,58 @@ Priorisierung: **P0** = Quick-Fix | **P1** = Core-Feature | **P2** = Erweiterung
 
 ---
 
+## Stand: 2026-06-16 (Session 42 – Graph-Beschriftungen: Ego-Zentrierung mit mehr Abstand oben + überlappungsfreie/kleinere Labels, Hauptgraph nur bei starkem Zoom, Start.md immer Hauptgraph; + Aktivitäts-Log: max. 3 Datei-Open-Einträge)
+
+Paul-Report (Screenshot Ego-Graph, 4 Punkte): (1) der **Ego-Graph** soll beim **automatischen Zentrieren mehr Abstand
+zur oberen Grenze** halten; (2) **Beschriftungen dürfen sich nicht überschneiden** (gern etwas **kleinere Schrift**);
+(3) im **Baum/Hauptgraph** sollen **keine Knoten-Beschriftungen** zu sehen sein – **außer beim starken Ranzoomen**, vor
+allem **nicht beim Anvisieren (Hover) eines Punktes**, damit nicht der ganze Bildschirm voller Labels ist; (4) **Start.md**
+soll **nie einen Ego-Graph** haben, dort **immer der Hauptgraph**. (5) Nachgereicht: in der **Claude-Aktivität unten**
+sollen **maximal die letzten 3 Einträge von geöffneten Dateien** stehen. Reine UI-Änderung in `public/index.html`.
+
+### Erledigt
+- [x] **(1) Ego-Zentrierung mit mehr Abstand oben** (`buildEgo`): Kreis-Zentrum von `graph.H*0.46` → **`0.52`** (tiefer ⇒
+  mehr Luft zur Oberkante), Radius `min(W,H)*0.34` → **`0.30`** (kompakter ⇒ mehr Rand oben/unten/seitlich). Der oberste
+  Knoten samt Label stößt nicht mehr an die Kante.
+- [x] **(2) Überlappungsfreie, kleinere Ego-Labels** (`buildEgo` + `frameGraph`): jeder Ego-Knoten speichert seinen
+  **Kreiswinkel `lblDir`**; das Label wird beim Zeichnen **radial nach außen** versetzt (`textAlign`/`textBaseline` je
+  nach Quadrant: links→rechtsbündig, rechts→linksbündig, oben→darüber, unten→darunter). Dadurch **fächern die Labels nach
+  außen** statt sich mittig über den Knoten zu stapeln. Schrift **9 px** (statt 10,5), Kürzung auf **18 Zeichen** (statt
+  26). Zentrum-Label nach oben (`lblDir=-π/2`).
+- [x] **(3) Hauptgraph-Labels nur bei starkem Zoom, nie bei Hover** (`frameGraph`): alte Bedingung
+  (`mode==='note' || nodes<=60 || k>1.8` **plus** Hover-/`deg>8`-Labels) ersetzt durch **`vaultLabels = k>2.2`**. Im
+  Vault-Modus erscheinen Beschriftungen jetzt **ausschließlich beim starken Ranzoomen** – **kein** Label mehr beim
+  Anvisieren/Hover (der **Tooltip `#graph-tip`** zeigt den Namen weiterhin). Ego-Modus zeigt wie gewünscht **immer** alle
+  Labels (s. Punkt 2). `textBaseline` nach der Knoten-Schleife auf `alphabetic` zurückgesetzt.
+- [x] **(4) Start.md immer Hauptgraph** (`updateGraphForNote` + `updateGraphBacklinks`): neuer Helper
+  **`isStartNote(p)`** (`/(^|\/)start\.md$/i`). Beim Öffnen einer Start.md wird statt `buildEgo()` direkt **`graphToMain()`**
+  aufgerufen (schaltet nur, falls nicht schon Vault) – greift für beide Einstiegspunkte (Links **und** Backlinks),
+  unabhängig von der Default-Einstellung „Graph beim Öffnen".
+- [x] **(5) Aktivitäts-Log: max. 3 Datei-Open-Einträge** (`logActivity`): optionaler 3. Parameter **`kind`**. Die **9
+  Datei-Öffnen-Logs** in `openFile` (`read_note`, `render_html`, `view_image`, `view_pdf`, `view_video`, `view_audio`,
+  `view_csv`, `open_office`, `open`) übergeben jetzt `'open'`. Nach jedem Log werden ältere `kind==='open'`-Einträge
+  **gekappt, sodass höchstens die letzten 3** bleiben (`splice`-Schleife). Andere Aktionen (Suche, Ordner, Split, Edit,
+  Reindex, Vault-Wechsel, extern öffnen) bleiben vom 16er-Gesamtlimit unberührt – nur die **Datei-Opens** sind auf 3
+  begrenzt, damit das Log nicht damit volläuft.
+
+### Verifikation
+- [x] `npm run verify:html` → **OK** (3303 Zeilen, Inline-Script `node --check` grün, Ende `</html>`).
+- [x] Theme-/Layout-sicher: nur Canvas-Zeichenlogik + Label-Color aus `--text` (`_graphLabelColor`), keine neuen Hartcodes;
+  Tooltip-/Hover-Hervorhebung (Dimmen) unverändert.
+- [x] **Datei-Open-Cap geprüft**: genau **9** getaggte `logActivity(...,'open')`-Aufrufe (alle in `openFile`); Split/Edit/
+  Ordner/extern nutzen `&rarr;` bzw. andere Variablen und sind **nicht** betroffen.
+- [ ] **Live-Augenschein offen (Paul):** (1) Notiz mit mehreren Links öffnen → Ego-Graph sitzt tiefer, klarer Abstand
+  oben; (2) Labels fächern nach außen, **überlappen nicht** mehr, etwas kleiner; (3) Hauptgraph: beim Hovern erscheint nur
+  der **Tooltip**, **keine** Label-Flut; erst **starkes Ranzoomen** blendet Beschriftungen ein; (4) **Start.md** öffnen →
+  **Hauptgraph** (kein Ego), egal welche Default-Einstellung; (5) 4+ Dateien nacheinander öffnen → im Aktivitäts-Log
+  stehen **höchstens 3** Datei-Open-Zeilen (ältere fallen raus), andere Aktionen bleiben sichtbar. Standard- **und**
+  Studio-Layout.
+
+### TODO Paul
+- [ ] Git-Commit: `git add public/index.html STATUS.md && git commit -m "Session 42: Graph-Labels (Ego mehr Abstand oben + radial/kleiner, Hauptgraph nur bei starkem Zoom, Start.md immer Hauptgraph) + Aktivitäts-Log max. 3 Datei-Opens"`
+
+---
+
 ## Stand: 2026-06-16 (Session 41 – PDF.js: voll in Nexus integrierter PDF-Viewer (eigene Toolbar, dunkel, Lazy-Render))
 
 Paul-Wunsch (nach Session 40, PDF lädt jetzt): Der **Chromium-PDF-Viewer** sieht nicht stimmig aus. Da dessen Toolbar in

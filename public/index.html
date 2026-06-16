@@ -1716,34 +1716,34 @@ async function openFile(path,opts){
     if(ext==='.md'||ext==='.markdown'||ext===''){
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
       renderMarkdownView(area,fname,raw,path);
-      logActivity(folderColor(path.split('/')[0]||''),'read_note → <b>'+esc(fname)+'</b>');
+      logActivity(folderColor(path.split('/')[0]||''),'read_note → <b>'+esc(fname)+'</b>','open');
     } else if(ext==='.html'||ext==='.htm'){
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
       renderHtmlView(area,fname,raw,path);
-      logActivity('#e07b4b','render_html → <b>'+esc(fname)+'</b>');
+      logActivity('#e07b4b','render_html → <b>'+esc(fname)+'</b>','open');
     } else if(IMG_EXT.includes(ext)){
       renderImageView(area,fname,path);
-      logActivity('#EC4899','view_image → <b>'+esc(fname)+'</b>');
+      logActivity('#EC4899','view_image → <b>'+esc(fname)+'</b>','open');
     } else if(ext==='.pdf'){
       renderPdfView(area,fname,path);
-      logActivity('#ff6b6b','view_pdf → <b>'+esc(fname)+'</b>');
+      logActivity('#ff6b6b','view_pdf → <b>'+esc(fname)+'</b>','open');
     } else if(VIDEO_EXT.includes(ext)){
       renderMediaView(area,fname,path,'video');
-      logActivity('#a78bfa','view_video → <b>'+esc(fname)+'</b>');
+      logActivity('#a78bfa','view_video → <b>'+esc(fname)+'</b>','open');
     } else if(AUDIO_EXT.includes(ext)){
       renderMediaView(area,fname,path,'audio');
-      logActivity('#a78bfa','view_audio → <b>'+esc(fname)+'</b>');
+      logActivity('#a78bfa','view_audio → <b>'+esc(fname)+'</b>','open');
     } else if(ext==='.csv'||ext==='.tsv'){
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
       renderCsvView(area,fname,raw,path,ext==='.tsv'?'\t':',');
-      logActivity('#10B981','view_csv → <b>'+esc(fname)+'</b>');
+      logActivity('#10B981','view_csv → <b>'+esc(fname)+'</b>','open');
     } else if(OFFICE_EXT.includes(ext)){
       renderOfficeView(area,fname,path);
-      logActivity('#2b7de9','open_office → <b>'+esc(fname)+'</b>');
+      logActivity('#2b7de9','open_office → <b>'+esc(fname)+'</b>','open');
     } else {
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
       renderPlain(area,fname,raw,path);
-      logActivity('#888','open → <b>'+esc(fname)+'</b>');
+      logActivity('#888','open → <b>'+esc(fname)+'</b>','open');
     }
   }catch(e){ area.innerHTML='<div class="placeholder"><span class="big">⚠</span>Fehler: '+esc(e.message)+'</div>'; }
 }
@@ -2349,6 +2349,7 @@ function refitGraph(){
 const graph={inited:false,cv:null,cx:null,W:0,H:0,nodes:[],edges:[],mode:'vault',hover:null,raf:0,alpha:0,view:{x:0,y:0,k:1},drag:null,pinnedMain:false,filter:new Set(),hoverSet:null,hoverFor:null};
 let egoShowIndex=(function(){try{return localStorage.getItem('nexus.ego.index')!=='0';}catch(e){return true;}})();
 const isIndexFile=p=>/index/i.test(p.split('/').pop());
+const isStartNote=p=>/(^|\/)start\.md$/i.test(p||'');   // Start.md -> nie Ego-Graph, immer Hauptgraph
 let graphData={nodes:[],links:[]};
 let _ego={path:null,links:[],backlinks:[]};
 
@@ -2464,23 +2465,25 @@ function updateGraphChrome(){
   updateFilterBtn();
 }
 
-function updateGraphForNote(path,links){if(graph.pinnedMain)return;_ego={path,links:links||[],backlinks:_ego.path===path?_ego.backlinks:[]};buildEgo();}
-function updateGraphBacklinks(path,bl){if(graph.pinnedMain)return;if(_ego.path!==path)_ego={path,links:[],backlinks:[]};_ego.backlinks=bl||[];buildEgo();}
+function updateGraphForNote(path,links){if(isStartNote(path)){graphToMain();return;}if(graph.pinnedMain)return;_ego={path,links:links||[],backlinks:_ego.path===path?_ego.backlinks:[]};buildEgo();}
+function updateGraphBacklinks(path,bl){if(isStartNote(path)){graphToMain();return;}if(graph.pinnedMain)return;if(_ego.path!==path)_ego={path,links:[],backlinks:[]};_ego.backlinks=bl||[];buildEgo();}
 function buildEgo(){
   graph.mode='note';graph.view={x:0,y:0,k:1};graph.hover=null;graph.hoverSet=null;graph.hoverFor=null;
   document.getElementById('graph-mode').textContent='Notiz-Graph';
   updateGraphChrome();
-  const cx=graph.W/2,cy=graph.H*0.46;
-  const center={x:cx,y:cy,vx:0,vy:0,fx:cx,fy:cy,homeX:cx,homeY:cy,r0:6.5,color:'#EAB308',label:_ego.path.split('/').pop().replace(/\.md$/,''),path:_ego.path};
+  // Zentrum etwas tiefer (0.52 statt 0.46) -> mehr Abstand zur oberen Grenze beim automatischen Zentrieren.
+  const cx=graph.W/2,cy=graph.H*0.52;
+  const center={x:cx,y:cy,vx:0,vy:0,fx:cx,fy:cy,homeX:cx,homeY:cy,r0:6.5,color:'#EAB308',label:_ego.path.split('/').pop().replace(/\.md$/,''),path:_ego.path,lblDir:-1.5708};
   const nodes=[center],edges=[];const seen=new Set([_ego.path]);
   const out=[],back=[];
   // egoShowIndex=false blendet Dateien mit "index" im Namen aus
   for(const p of _ego.links)if(!seen.has(p)&&(egoShowIndex||!isIndexFile(p))){seen.add(p);out.push(p);}
   for(const p of _ego.backlinks)if(!seen.has(p)&&(egoShowIndex||!isIndexFile(p))){seen.add(p);back.push(p);}
   const all=[].concat(out.map(p=>({p,kind:'out'})),back.map(p=>({p,kind:'in'})));
-  const R=Math.min(graph.W,graph.H)*0.34;
-  // Knoten gleichmaessig auf dem Kreis FIXIEREN (fx/fy) -> ruhige, saubere Anordnung statt Physik-Chaos
-  all.forEach((it,i)=>{const ang=(i/Math.max(all.length,1))*6.283-1.5708;const color=it.kind==='in'?'#10B981':'#7ec8e3';const nx=cx+Math.cos(ang)*R,ny=cy+Math.sin(ang)*R;nodes.push({x:nx,y:ny,vx:0,vy:0,fx:nx,fy:ny,homeX:nx,homeY:ny,r0:4.5,color,label:it.p.split('/').pop().replace(/\.md$/,''),path:it.p});edges.push([center,nodes[nodes.length-1],it.kind]);});
+  const R=Math.min(graph.W,graph.H)*0.30;   // etwas kleiner -> mehr Luft am Rand (oben/unten/seitlich)
+  // Knoten gleichmaessig auf dem Kreis FIXIEREN (fx/fy) -> ruhige, saubere Anordnung statt Physik-Chaos.
+  // lblDir = Kreiswinkel -> Beschriftung wird beim Zeichnen radial nach AUSSEN gesetzt (keine Ueberlappung).
+  all.forEach((it,i)=>{const ang=(i/Math.max(all.length,1))*6.283-1.5708;const color=it.kind==='in'?'#10B981':'#7ec8e3';const nx=cx+Math.cos(ang)*R,ny=cy+Math.sin(ang)*R;nodes.push({x:nx,y:ny,vx:0,vy:0,fx:nx,fy:ny,homeX:nx,homeY:ny,r0:4.5,color,label:it.p.split('/').pop().replace(/\.md$/,''),path:it.p,lblDir:ang});edges.push([center,nodes[nodes.length-1],it.kind]);});
   if(!all.length)center.label+=' · keine Links';
   graph.nodes=nodes;graph.edges=edges;
   document.getElementById('graph-legend').innerHTML='<span><i style="background:#7ec8e3"></i>ausgehend</span> <span><i style="background:#EAB308"></i>aktuell</span> <span><i style="background:#10B981"></i>Backlink</span>';
@@ -2527,13 +2530,26 @@ function frameGraph(){
   cx.globalAlpha=1;
   // shadowBlur ist sehr teuer -> bei grossen Graphen nur ambient bei <=200 Knoten
   const glowAll=graph.nodes.length<=200;
-  const showLabels=graph.mode==='note'||graph.nodes.length<=60||k>1.8;
+  const isNoteMode=graph.mode==='note';
+  const vaultLabels=!isNoteMode&&k>2.2;   // Hauptgraph: Beschriftungen NUR bei starkem Zoom (nie bei Hover/Anvisieren)
   for(const n of graph.nodes){const dim=hs&&!hs.has(n);const px=n.x*k+vx,py=n.y*k+vy;const r=nodeRadius(n)*k;
     cx.globalAlpha=dim?0.16:1;
     if(glowAll&&!dim&&_graphGlow>0){cx.shadowColor=n.color;cx.shadowBlur=(n.fx!=null||n.deg>6?14:7)*dpr*_graphGlow;}else{cx.shadowBlur=0;}
     cx.fillStyle=n.color;cx.beginPath();cx.arc(px,py,r,0,6.283);cx.fill();cx.shadowBlur=0;
-    if(n.label&&!dim&&((hs&&hs.has(n))||(showLabels&&(graph.mode==='note'||n.deg>8)))){cx.fillStyle=_graphLabelColor;cx.font=(10.5*dpr)+'px Segoe UI';cx.textAlign='center';cx.fillText(n.label.slice(0,26),px,py-r-5*dpr);}}
-  cx.globalAlpha=1;
+    if(n.label&&!dim){
+      if(isNoteMode){
+        // Ego-Graph: jede Beschriftung radial nach AUSSEN versetzen -> benachbarte Labels ueberlappen nicht; kleinere Schrift.
+        const ang=(n.lblDir!=null)?n.lblDir:-1.5708;const dx=Math.cos(ang),dy=Math.sin(ang),off=r+6*dpr;
+        cx.fillStyle=_graphLabelColor;cx.font=(9*dpr)+'px Segoe UI';
+        cx.textAlign=dx>0.34?'left':(dx<-0.34?'right':'center');
+        cx.textBaseline=dy>0.34?'top':(dy<-0.34?'bottom':'middle');
+        cx.fillText(n.label.slice(0,18),px+dx*off,py+dy*off);
+      }else if(vaultLabels){
+        cx.fillStyle=_graphLabelColor;cx.font=(10*dpr)+'px Segoe UI';cx.textAlign='center';cx.textBaseline='alphabetic';
+        cx.fillText(n.label.slice(0,24),px,py-r-5*dpr);
+      }
+    }}
+  cx.globalAlpha=1;cx.textBaseline='alphabetic';
   // Schleife anhalten, wenn beruhigt und keine Interaktion -> spart CPU/Akku. wakeGraph() startet sie bei Bedarf neu.
   if(graph.alpha>=0.004||graph.hover||graph.drag||graph._needFit){graph.raf=requestAnimationFrame(frameGraph);}else{graph.raf=0;}
 }
@@ -2774,9 +2790,11 @@ function copyPath(p){navigator.clipboard.writeText(p);toast('Pfad kopiert','succ
 
 // ═════════════════════ ACTIVITY LOG ═════════════════════
 const actLog=[];
-function logActivity(color,msg){
+function logActivity(color,msg,kind){
   const t=new Date().toLocaleTimeString('de',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  actLog.unshift({color,msg,time:t});if(actLog.length>16)actLog.pop();
+  actLog.unshift({color,msg,time:t,kind:kind||null});if(actLog.length>16)actLog.pop();
+  // Höchstens die letzten 3 "Datei geöffnet"-Einträge behalten -> Log läuft nicht mit Datei-Opens voll.
+  let _seenOpen=0;for(let i=0;i<actLog.length;i++){if(actLog[i].kind==='open'&&++_seenOpen>3){actLog.splice(i,1);i--;}}
   document.getElementById('log-rows').innerHTML=actLog.map(e=>`<div class="log-row"><span class="log-pulse" style="background:${e.color};box-shadow:0 0 6px ${e.color}"></span><span class="log-msg">${e.msg}</span><span class="log-time">${e.time}</span></div>`).join('');
 }
 
