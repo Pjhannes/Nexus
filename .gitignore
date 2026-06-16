@@ -11,3 +11,19 @@ Thumbs.db
 # Persoenliche Live-Config (Pfade zum eigenen Vault) – nie ins Repo/GitHub.
 # Vorlage: nexus.config.example.json. Wird zur Laufzeit vom Wizard erzeugt.
 nexus.config.json
+
+# --- Dev-Doku & lokale Helfer: bleiben LOKAL, nicht ins (GitHub-)Repo ---
+# Entscheidung Paul (Session 43/44): persoenliche Entwickler-Notizen (enthalten
+# Namen/Verlauf) und lokale Starthelfer werden aus dem Repo ausgeschlossen. Die
+# Dateien bleiben auf der Platte (nur untracked) – nur fuer Commit/Push ignoriert.
+STATUS.md
+CLAUDE.md
+rules/
+
+# Dev-Altlasten / lokale Starthelfer (durch Nexus-Dev.vbs ersetzt)
+start-app.bat
+restart.bat
+setup.ps1
+tmp-trunc.html
+aufgaben Nexus.txt
+*.lnk
