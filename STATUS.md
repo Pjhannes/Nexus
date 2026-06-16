@@ -107,10 +107,10 @@ Paul installierte die App und verband sie als MCP-Server in Claude Desktop → *
   Fuses korrekt: RunAsNode ON, CookieEncryption ON, NodeOptions OFF, CliInspect OFF, OnlyLoadAppFromAsar ON.
   Voller Installer neu gebaut.
 
-### TODO Paul (nach dem Fix)
-- [ ] **Neu installieren:** `dist\Nexus Setup 0.3.1.exe` über die alte Version (Config/Index bleiben).
-- [ ] In Nexus **„Mit Claude Desktop verbinden"** erneut klicken (schreibt jetzt den korrekten run-as-node-Eintrag mit `env`).
-- [ ] **Claude Desktop komplett neu starten** → nexus-MCP sollte „connected" sein; Tools (search etc.) testen.
+### TODO Paul (nach dem Fix) — ERLEDIGT ✅
+- [x] **Neu installiert:** `dist\Nexus Setup 0.3.1.exe`.
+- [x] **„Mit Claude Desktop verbinden"** erneut geklickt (run-as-node-Eintrag mit `env` geschrieben).
+- [x] **Claude Desktop neu gestartet** → **nexus-MCP verbindet**, `search` über den gepackten Server **bestätigt** (Vault-Suche live ok). Damit ist der Kern-Live-Test grün.
 
 ---
 
