@@ -67,5 +67,36 @@ ok('Block-Math', r.html.includes('class="math-block"'));
 ok('Footnote ref+def', r.html.includes('fnref-1') && r.html.includes('id="fn-1"'));
 ok('Links gesammelt', r.links.includes('Wissen/Controlling.md'));
 
+// ── Roh-HTML / inline-SVG durchreichen (Session 45) ──
+const svg = renderMarkdown([
+  'Text davor.','',
+  '<details><summary>📊 Diagramm</summary>','',
+  '<svg width="100%" viewBox="0 0 680 360" role="img">',
+  '  <title>Test</title>',
+  '  <rect class="bx" x="46" y="68" width="250" height="100"/>',
+  '  <text x="64" y="96">1 · Entwickler & "Zeug"</text>',
+  '</svg>','',
+  '</details>','',
+  'Text danach mit a < b und 2024.',
+].join('\n')).html;
+ok('SVG-Tag roh durchgereicht (nicht escaped)', svg.includes('<svg width="100%" viewBox="0 0 680 360"') && !svg.includes('&lt;svg'));
+ok('SVG-Kindelemente erhalten', svg.includes('<rect class="bx"') && svg.includes('<text x="64"'));
+ok('details/summary erhalten', svg.includes('<details>') && svg.includes('<summary>📊 Diagramm</summary>') && svg.includes('</details>'));
+ok('Text vor/nach SVG normal gerendert', svg.includes('<p>Text davor.</p>') && svg.includes('Text danach'));
+ok('Echtes < ausserhalb HTML weiter escaped', svg.includes('a &lt; b'));
+
+const evil = renderMarkdown([
+  '<div onclick="steal()">',
+  '<script>alert(1)<\/script>',
+  '<a href="javascript:evil()">x</a>',
+  '</div>',
+].join('\n')).html;
+ok('Script-Tag entfernt', !/<script/i.test(evil));
+ok('Inline-Event-Handler entfernt', !/onclick/i.test(evil));
+ok('javascript:-URL neutralisiert', !/javascript:/i.test(evil) && evil.includes('href="#"'));
+
+const gluedHtml = renderMarkdown('Absatz direkt davor\n<svg viewBox="0 0 10 10"><rect/></svg>').html;
+ok('HTML-Block ohne Leerzeile trennt vom Absatz', gluedHtml.includes('<p>Absatz direkt davor</p>') && gluedHtml.includes('<svg viewBox="0 0 10 10">'));
+
 console.log(`\n${fail === 0 ? '\x1b[32m' : '\x1b[31m'}${pass} bestanden, ${fail} Fehler\x1b[0m`);
 process.exit(fail === 0 ? 0 : 1);

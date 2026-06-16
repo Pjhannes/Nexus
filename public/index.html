@@ -1635,7 +1635,21 @@ function renderList(buf){
   return level(items[0].indent);
 }
 
-function isBlockStart(l){return /^\s*(#{1,6}\s|```|~~~|>|[-*+]\s|\d+[.)]\s)/.test(l)||/^\s*\$\$\s*$/.test(l)||/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(l);}
+// Roh-HTML-Blöcke (inkl. inline-SVG, <details> etc.) durchreichen statt escapen.
+// Container-Tags mit Schluss-Tag; Void-Tags (img/br/hr/…) bewusst NICHT, sonst läuft die Tiefenzählung nie auf 0.
+const RAW_HTML_TAGS=new Set(['svg','details','summary','div','section','article','aside','header','footer','nav','main','figure','figcaption','table','thead','tbody','tfoot','tr','td','th','caption','colgroup','blockquote','dl','dt','dd','iframe','video','audio','picture','canvas','math','center','pre']);
+function isRawHtmlStart(l){const m=/^\s*<([a-zA-Z][a-zA-Z0-9-]*)/.exec(l);return m&&RAW_HTML_TAGS.has(m[1].toLowerCase())?m[1].toLowerCase():null;}
+// Verschachtelungs-Saldo eines Tags auf einer Zeile: +1 je <tag …>, -1 je </tag>, 0 für selbstschließende <tag …/>.
+function htmlTagDepth(text,tag){let d=0;const re=new RegExp('<(/?)'+tag+'(?=[\\s/>])([^>]*)>','gi');let m;while((m=re.exec(text))){if(m[1]==='/')d--;else if(/\/\s*$/.test(m[2])){}else d++;}return d;}
+// Sicherheitsnetz für durchgereichtes HTML (Notizen können aus markitdown-Konvertierungen stammen):
+// Skripte, Inline-Event-Handler (on…) und javascript:-URLs raus; SVG/Style/Details bleiben erhalten.
+function sanitizeRawHtml(html){return html
+  .replace(/<script\b[\s\S]*?<\/script\s*>/gi,'')
+  .replace(/<script\b[^>]*>/gi,'')
+  .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,'')
+  .replace(/((?:href|src|xlink:href)\s*=\s*)(["'])\s*javascript:[^"']*\2/gi,'$1$2#$2');}
+
+function isBlockStart(l){return /^\s*(#{1,6}\s|```|~~~|>|[-*+]\s|\d+[.)]\s)/.test(l)||/^\s*\$\$\s*$/.test(l)||/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(l)||!!isRawHtmlStart(l);}
 
 function renderBlocks(src,headings,slug){
   const lines=src.replace(/\r\n/g,'\n').split('\n');
@@ -1652,6 +1666,10 @@ function renderBlocks(src,headings,slug){
       else html.push(codeBlock(code,lang));
       continue;}
     if(/^\s*\$\$\s*$/.test(line)){const body=[];i++;while(i<lines.length&&!/^\s*\$\$\s*$/.test(lines[i])){body.push(lines[i]);i++;}if(i<lines.length)i++;const tex=body.join('\n');html.push('<div class="math-block" data-tex="'+esc(tex)+'"><span class="math-raw">'+escHtml(tex)+'</span></div>');continue;}
+    const htag=isRawHtmlStart(line);
+    if(htag){const buf=[line];let depth=htmlTagDepth(line,htag);i++;
+      while(i<lines.length&&depth>0){buf.push(lines[i]);depth+=htmlTagDepth(lines[i],htag);i++;}
+      html.push(sanitizeRawHtml(buf.join('\n')));continue;}
     const hm=/^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
     if(hm){const lvl=hm[1].length;const txt=hm[2];const id=slug(txt);headings.push({level:lvl,text:stripInline(txt),id});html.push('<h'+lvl+' id="'+id+'" class="md-h"><a class="h-anchor" href="#'+id+'">#</a>'+mdInline(txt)+'</h'+lvl+'>');i++;continue;}
     if(/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(line)){html.push('<hr>');i++;continue;}
