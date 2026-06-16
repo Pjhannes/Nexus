@@ -22,7 +22,7 @@
 //                      read-back-verifizieren, Exit 1. Die kanonische Datei
 //                      bleibt damit IMMER gesund oder unveraendert.
 //
-// AM SICHERSTEN auf Pauls Windows-PC ausfuehren (dann gar kein Mount im Spiel).
+// AM SICHERSTEN lokal auf dem Windows-PC ausfuehren (dann gar kein Mount im Spiel).
 // In der Sandbox schuetzt der Read-Back-Hash (Schritt 5) trotzdem zuverlaessig.
 //
 // Nutzung:

@@ -13,7 +13,7 @@ Thumbs.db
 nexus.config.json
 
 # --- Dev-Doku & lokale Helfer: bleiben LOKAL, nicht ins (GitHub-)Repo ---
-# Entscheidung Paul (Session 43/44): persoenliche Entwickler-Notizen (enthalten
+# Projekt-Entscheidung (Session 43/44): persoenliche Entwickler-Notizen (enthalten
 # Namen/Verlauf) und lokale Starthelfer werden aus dem Repo ausgeschlossen. Die
 # Dateien bleiben auf der Platte (nur untracked) – nur fuer Commit/Push ignoriert.
 STATUS.md
