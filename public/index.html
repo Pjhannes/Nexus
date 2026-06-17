@@ -3101,6 +3101,17 @@ function applyTheme(id){
   const t=NEXUS_THEMES[id]||NEXUS_THEMES.dark;
   THEME_VARS.forEach(v=>document.documentElement.style.removeProperty(v));
   Object.keys(t.vars).forEach(k=>document.documentElement.style.setProperty(k,t.vars[k]));
+  syncExternalTheme();
+}
+// Aktuelle Theme-Farben + Layout in localStorage spiegeln, damit das Hilfe-Fenster (help.html, gleiche
+// Origin) sie uebernehmen kann (uebernimmt Layout/Theme/Akzent live ueber das storage-Event).
+function syncExternalTheme(){
+  try{
+    const cs=getComputedStyle(document.documentElement);
+    const vars={};['--bg','--panel','--panel2','--border','--text','--dim','--accent'].forEach(k=>{const v=cs.getPropertyValue(k).trim();if(v)vars[k]=v;});
+    const lay=currentLayout();
+    localStorage.setItem('nexus.themeVars',JSON.stringify({layout:lay,studio:(lay==='softdark'?currentStudioVariant():''),vars}));
+  }catch(e){}
 }
 function setTheme(id){if(!NEXUS_THEMES[id])return;localStorage.setItem('nexus.theme',id);if(currentLayout()==='classic')applyTheme(id);}
 function currentEditorFs(){const n=parseInt(localStorage.getItem('nexus.editorFontSize')||'',10);return (n>=12&&n<=20)?n:14;}
@@ -3210,11 +3221,11 @@ function setGraphGlow(v){const n=Math.max(0,Math.min(100,parseInt(v,10)||0));loc
 function onGraphGlowInput(v){setGraphGlow(v);const e=document.getElementById('set-glow-val');if(e)e.textContent=(+v===0?'aus':v+'%');}
 // Soft-Dark-Akzentfarbe ('' = Standard-Amber). Setzt --sd-accent auf :root -> body[data-layout=softdark] liest var(--sd-accent)
 function currentSdAccent(){return localStorage.getItem('nexus.sdAccent')||'';}
-function applySdAccent(c){if(c)document.documentElement.style.setProperty('--sd-accent',c);else document.documentElement.style.removeProperty('--sd-accent');}
+function applySdAccent(c){if(c)document.documentElement.style.setProperty('--sd-accent',c);else document.documentElement.style.removeProperty('--sd-accent');syncExternalTheme();}
 function setSdAccent(c){if(c)localStorage.setItem('nexus.sdAccent',c);else localStorage.removeItem('nexus.sdAccent');applySdAccent(c);}
 // Studio-Untervariante: 'default' (aktuell) | 'dark' (gleichmaessig dunkler) | 'cream' (helles Creme-Theme)
 function currentStudioVariant(){const v=localStorage.getItem('nexus.studioVariant');return (v==='dark'||v==='cream')?v:'default';}
-function applyStudioVariant(v){const val=(v==='dark'||v==='cream')?v:'default';document.documentElement.dataset.studio=val;document.body.dataset.studio=val;const app=document.querySelector('.app');if(app)app.dataset.studio=val;refreshGraphColors();}
+function applyStudioVariant(v){const val=(v==='dark'||v==='cream')?v:'default';document.documentElement.dataset.studio=val;document.body.dataset.studio=val;const app=document.querySelector('.app');if(app)app.dataset.studio=val;refreshGraphColors();syncExternalTheme();}
 function clearStudioVariant(){document.documentElement.removeAttribute('data-studio');document.body.removeAttribute('data-studio');const app=document.querySelector('.app');if(app)app.removeAttribute('data-studio');}
 function setStudioVariant(v){localStorage.setItem('nexus.studioVariant',(v==='dark'||v==='cream')?v:'default');applyStudioVariant(v);renderSettings();requestAnimationFrame(()=>requestAnimationFrame(refitGraph));}
 // Graph-Label-Farbe folgt dem aktiven Theme (--text), damit Labels auch auf hellem Creme lesbar bleiben

@@ -85,6 +85,34 @@
   </div>
 
 <script>
+  // Aktives Layout/Theme der Haupt-UI uebernehmen. Funktioniert nur, wenn dieses Fenster ueber den
+  // UI-Server geladen wurde (gleiche Origin wie index.html -> geteilter localStorage). Bei Laden als
+  // lokale Datei (Fallback) ist 'nexus.themeVars' leer -> es bleibt beim Default-Look (kein Fehler).
+  function applyNexusTheme(){
+    try{
+      const t = JSON.parse(localStorage.getItem('nexus.themeVars') || 'null');
+      if(!t || !t.vars) return;
+      const r = document.documentElement.style;
+      Object.keys(t.vars).forEach(k => { if(t.vars[k]) r.setProperty(k, t.vars[k]); });
+      const acc = t.vars['--accent'];
+      if(acc) r.setProperty('--accent2', acc); // Primary-Button-Verlauf einfarbig an den Akzent koppeln
+      if(t.layout) document.documentElement.dataset.layout = t.layout;
+      if(t.studio) document.documentElement.dataset.studio = t.studio; else delete document.documentElement.dataset.studio;
+      // Body-Hintergrund (hartkodierter dunkler Verlauf) an die Theme-Flaechen koppeln (auch fuer helle Themes korrekt)
+      if(t.vars['--panel2'] && t.vars['--bg'])
+        document.body.style.background = 'radial-gradient(120% 120% at 50% 0%, '+t.vars['--panel2']+' 0%, '+t.vars['--bg']+' 60%)';
+      // Logo (feste Cyan/Violett-Farben) auf den Akzent umfaerben
+      if(acc){
+        document.querySelectorAll('.logo svg [stroke]').forEach(el => el.setAttribute('stroke', acc));
+        document.querySelectorAll('.logo svg [fill]').forEach(el => { if(el.getAttribute('fill') !== 'none') el.setAttribute('fill', acc); });
+        const lg = document.querySelector('.logo svg'); if(lg) lg.style.filter = 'drop-shadow(0 0 9px '+acc+')';
+      }
+    }catch(e){}
+  }
+  applyNexusTheme();
+  // Live mitziehen, wenn das Theme im Hauptfenster gewechselt wird (storage-Event feuert origin-weit).
+  window.addEventListener('storage', e => { if(e.key === 'nexus.themeVars') applyNexusTheme(); });
+
   const api = window.nexusAPI;
   async function connect(){
     const s = document.getElementById('connStatus');

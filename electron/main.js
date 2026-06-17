@@ -184,7 +184,11 @@ function openHelpWindow() {
     },
   });
   helpWin.setMenu(null);
-  helpWin.loadFile(HELP_HTML);
+  // Ueber den UI-Server laden (gleiche Origin wie das Hauptfenster) -> help.html teilt den localStorage
+  // und uebernimmt das aktive Layout/Theme/Akzent. Faellt auf die lokale Datei zurueck, falls der
+  // Server (noch) nicht laeuft (dann ungethemt im Default-Look, aber funktionsfaehig).
+  if (uiStarted) helpWin.loadURL(`http://localhost:${PORT}/help.html`);
+  else helpWin.loadFile(HELP_HTML);
   helpWin.on('closed', () => { helpWin = null; });
 }
 
@@ -348,7 +352,7 @@ function registerIpc() {
       const w = wizardWin;
 
       if (launch) { await startUIServer(); buildMenu(); createWindow(); }
-      if (guide)  openHelpWindow();
+      if (guide)  { try { await startUIServer(); } catch (e) { log('Server fuer Hilfe-Fenster:', e.message); } openHelpWindow(); }
       if (w && !w.isDestroyed()) w.close();
       if (!launch && !guide) app.quit();
       return { ok: true };
