@@ -252,16 +252,22 @@ app.post('/api/convert/markitdown', (req, res) => {
   if (!existsSync(fullPath)) return res.status(404).json({ error: 'Datei nicht gefunden' });
 
   const outPath = fullPath.replace(/\.[^.]+$/, '.md');
-  const proc = spawn('python', ['-m', 'markitdown', fullPath, '-o', outPath], { shell: true, windowsHide: true });
+  // KEIN shell:true -> Node quotet die Argumente selbst, sodass Vault-Pfade mit
+  // Leerzeichen (z. B. "5. Semester") korrekt als EIN Argument ankommen. Mit
+  // shell:true zerteilt cmd.exe den Pfad am Leerzeichen -> markitdown bekommt
+  // den Rest als "unrecognized arguments" (Exit-Code 2).
+  const proc = spawn('python', ['-m', 'markitdown', fullPath, '-o', outPath], { windowsHide: true });
 
-  let stderr = '';
+  let stderr = '', replied = false;
+  const reply = (status, body) => { if (replied) return; replied = true; res.status(status).json(body); };
   proc.stderr.on('data', d => stderr += d.toString());
+  proc.on('error', e => reply(500, { error: `markitdown nicht gestartet: ${e.message}` }));
   proc.on('close', code => {
-    if (code !== 0) return res.status(500).json({ error: `markitdown Fehler (code ${code}): ${stderr}` });
+    if (code !== 0) return reply(500, { error: `markitdown Fehler (code ${code}): ${stderr}` });
     const relOut = relative(vaultObj.path, outPath).replace(/\\/g, '/');
     // Index neue .md-Datei
     try { getVault(vaultName).indexer.indexFile(outPath); } catch {}
-    res.json({ ok: true, mdPath: relOut });
+    reply(200, { ok: true, mdPath: relOut });
   });
 });
 
