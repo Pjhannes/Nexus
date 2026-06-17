@@ -221,6 +221,9 @@ table.dataview-table tr:last-child td{border-bottom:none}
 table.dataview-table tr:hover td{background:var(--accent-08)}
 .dataview-block a.wikilink{color:var(--accent-tx);border-bottom-color:var(--accent-30)}
 .dataview-block a.wikilink:hover{background:var(--accent-14)}
+/* Rückkehr zu einer Notiz mit Dataview am Ende: Inhalt verbergen, bis Dataview geladen + Scroll-Stand
+   final gesetzt ist – sonst sieht man kurz die falsche Stelle und es springt (Layout bleibt, kein Reflow). */
+#note-area.dv-restoring .note-content{visibility:hidden}
 
 /* Callouts */
 .callout{border-radius:10px;margin:14px 0;border:1px solid var(--border);border-left-width:3px;overflow:hidden;background:var(--panel)}
@@ -1770,11 +1773,12 @@ async function openFile(path,opts){
   setCrumb(esc(activeVault)+' / '+esc(folder)+' / <b>'+esc(fname)+'</b>');
   document.getElementById('sb-vault').textContent=path;
   const ext=extOf(path), area=document.getElementById('note-area');
-  // WICHTIG: behavior:'instant' – die .note-area hat scroll-behavior:smooth, ein blosses
-  // area.scrollTop=0 wuerde ANIMIERT laufen und vom folgenden await fetch + innerHTML-Wechsel
-  // unterbrochen, sodass die neue Notiz nicht oben startet (sichtbar v.a. bei Klick aus den
-  // unten stehenden Dataview-Listen heraus). Instant springt sofort auf 0 und bleibt dort.
-  area.scrollTo({top:0,behavior:'instant'});
+  // Bei MD NICHT hier auf 0 scrollen: das liefe auf der noch sichtbaren ALTEN Notiz, und der
+  // folgende `await fetch` malt sie kurz am Anfang (= Flackern). Den Scroll-Stand der NEUEN Notiz
+  // setzt applyNoteScroll direkt nach dem Render (oben bei frischem Öffnen, gemerkte Stelle bei
+  // Rückkehr). Nicht-MD-Ansichten (PDF/Bild/Office/CSV/Plain) hier wie gehabt auf Anfang.
+  const _isMdView=(ext===''||ext==='.md'||ext==='.markdown');
+  if(!_isMdView)area.scrollTo({top:0,behavior:'instant'});
   _curHeadings=[]; _curNotePath=path; renderOutline();
   hideEditFab();
   try{
@@ -3102,18 +3106,23 @@ function flushNoteScroll(){
 // die Höhe noch verändern (sie laden async) – sonst ist die Höhe sofort final.
 function applyNoteScroll(area,top){
   top=Math.max(0,top|0);
+  // Re-Apply/Verbergen nur nötig, wenn zu einer Stelle >0 zurückgekehrt wird UND Dataview-Blöcke
+  // die Höhe noch async ändern. Dann Inhalt kurz verbergen (kein „erst falsch, dann Sprung").
   const needsReapply=top>0&&!!area.querySelector('.dataview-block[data-dvquery]');
   area.__restoreTop=top;
   area.__restoreActive=needsReapply;
+  area.classList.toggle('dv-restoring',needsReapply);
   area.scrollTo({top:top,behavior:'instant'});
+  if(needsReapply){clearTimeout(area.__dvRevealTimer);area.__dvRevealTimer=setTimeout(()=>area.classList.remove('dv-restoring'),900);}  // Sicherheitsnetz, falls Dataview nie lädt
 }
 // Nach dem Nachladen aller Dataview-Blöcke (Höhe jetzt final) den Ziel-Scroll-Stand erneut anwenden.
 function afterDataviewLoaded(area){
-  if(!area.__restoreActive)return;
+  clearTimeout(area.__dvRevealTimer);
+  if(!area.__restoreActive){area.classList.remove('dv-restoring');return;}
+  // Höhe jetzt final: gemerkten Scroll-Stand setzen und im SELBEN Frame wieder einblenden (kein Flackern).
   requestAnimationFrame(()=>{
-    if(!area.__restoreActive)return;
-    area.scrollTo({top:area.__restoreTop,behavior:'instant'});
-    area.__restoreActive=false;
+    if(area.__restoreActive){area.scrollTo({top:area.__restoreTop,behavior:'instant'});area.__restoreActive=false;}
+    area.classList.remove('dv-restoring');
   });
 }
 function currentNoteXFrac(){const v=parseFloat(localStorage.getItem('nexus.noteXFrac'));return (v>=0&&v<=1)?v:0.5;}
@@ -3135,7 +3144,7 @@ function onNoteScrollX(e){
 // die Dauer einer Geste fix (Pause > 140ms = neue Geste), damit es bei Diagonalen nicht hin- und herspringt.
 let _wheelAxis=null, _wheelTs=0;
 function onNoteWheel(e){
-  e.currentTarget.__restoreActive=false;                          // eigene Scroll-Geste bricht ein laufendes Restore ab
+  e.currentTarget.__restoreActive=false;e.currentTarget.classList.remove('dv-restoring');  // eigene Scroll-Geste bricht ein laufendes Restore ab (und blendet sofort ein)
   if(e.ctrlKey){e.preventDefault();bumpNoteW(e.deltaY);return;}   // Zoom (Pinch/Strg) unveraendert
   const ax=Math.abs(e.deltaX), ay=Math.abs(e.deltaY);
   if(!ax && !ay)return;
