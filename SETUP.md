@@ -8,7 +8,7 @@ Der Ziel-PC braucht **kein Node.js** und keine Entwicklungsumgebung.
 
 ## Schnellstart (Ziel-PC)
 
-1. **`Nexus Setup 0.3.1.exe` herunterladen** und doppelklicken.
+1. **`Nexus Setup X.Y.Z.exe` herunterladen** (z. B. `Nexus Setup 0.3.2.exe`) und doppelklicken.
 2. **SmartScreen-Hinweis:** Windows zeigt evtl. „Der Computer wurde durch Windows
    geschützt". Das ist normal bei noch nicht signierten Apps.
    → **„Weitere Informationen"** anklicken → **„Trotzdem ausführen"**.
@@ -23,7 +23,7 @@ Der Ziel-PC braucht **kein Node.js** und keine Entwicklungsumgebung.
 5. Das Nexus-Fenster öffnet sich – leerer Vault, voll funktionsfähig.
    In der Taskleiste erscheint das Nexus-Logo mit dem Namen „Nexus".
 
-> **Portable Variante:** Statt des Installers kann `Nexus-0.3.1-portable.exe` einfach
+> **Portable Variante:** Statt des Installers kann `Nexus-X.Y.Z-portable.exe` einfach
 > doppelgeklickt werden (z. B. vom USB-Stick) – ohne Installation. Der Einrichtungs-
 > Assistent läuft genauso beim ersten Start.
 
@@ -78,8 +78,8 @@ Ergebnis in `D:\Nexus\dist\`:
 
 | Datei | Was |
 |---|---|
-| `Nexus Setup 0.3.1.exe` | NSIS-Installer (Ordnerwahl, Desktop-/Startmenü-Verknüpfung, Autostart nach Installation) |
-| `Nexus-0.3.1-portable.exe` | Portable Variante – kein Installieren, direkt startbar |
+| `Nexus Setup X.Y.Z.exe` | NSIS-Installer (Ordnerwahl, Desktop-/Startmenü-Verknüpfung, Autostart nach Installation) |
+| `Nexus-X.Y.Z-portable.exe` | Portable Variante – kein Installieren, direkt startbar |
 
 Eine dieser Dateien kopierst du auf den Ziel-PC. Mehr nicht.
 

@@ -12,11 +12,19 @@ gehärteten Installer für **Windows** und **macOS** entstehen und wie du sie al
 
 ## 0. Versionsnummer erhöhen (vor jedem Release)
 
+**Empfohlen (lokal):**
+
 ```powershell
 npm version patch    # 0.3.1 -> 0.3.2  (oder: minor / major)
 ```
 
-Das aktualisiert `package.json` und legt einen Git-Tag `vX.Y.Z` an.
+Das aktualisiert `package.json` und legt einen Git-Tag `vX.Y.Z` an. Danach `git push --tags`.
+
+> **Robust gegen Vergessen:** Der CI-Workflow setzt die `package.json`-Version beim Build
+> ohnehin **aus dem gepushten Tag** (`v0.3.2` → Version `0.3.2`). Dadurch heißen die
+> Installer **immer** wie der Tag – auch wenn `npm version` mal vergessen wurde und der
+> Tag von Hand (z. B. über die GitHub-Oberfläche) gesetzt wird. Wichtig bleibt nur, dass
+> der **Tag** die gewünschte Versionsnummer trägt.
 
 ---
 

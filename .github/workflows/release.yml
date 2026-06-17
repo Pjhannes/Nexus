@@ -43,6 +43,18 @@ jobs:
       - name: Dependencies installieren
         run: npm ci
 
+      # Bei einem Tag-Push (v0.3.2) die package.json-Version aus dem Tag setzen.
+      # electron-builder benennt die Installer nach package.json#version – ohne das
+      # heissen die Dateien nach der (evtl. veralteten) Versionsnummer im Quellcode.
+      # shell: bash laeuft auf beiden Runnern (Windows-Runner liefert Git-Bash mit).
+      - name: Version aus Git-Tag setzen
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Setze package.json-Version auf $VERSION (Tag: $GITHUB_REF_NAME)"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
       - name: Build (electron-builder)
         run: npx electron-builder ${{ matrix.args }} --publish never
         env:
