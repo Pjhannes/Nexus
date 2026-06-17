@@ -1179,6 +1179,9 @@ async function init(){
   // onNoteWheel uebernimmt zusaetzlich den Achsen-Lock (nur eine Achse pro Geste, nie diagonal beides).
   const _na=document.getElementById('note-area');
   if(_na)_na.addEventListener('wheel',onNoteWheel,{passive:false});
+  // Horizontale Notiz-Position merken: beim Schieben der Notiz nach links/rechts den Bruchteil sichern,
+  // damit die naechste geoeffnete Notiz genauso positioniert startet (global, wie die Notiz-Breite).
+  if(_na)_na.addEventListener('scroll',onNoteScrollX,{passive:true});
   const vaults=await api('/api/vaults');
   activeVault=vaults.find(v=>v.active)?.name ?? vaults[0]?.name;
   await refreshVaultSelector();
@@ -1799,9 +1802,9 @@ function renderMarkdownView(area,fname,raw,path){
   const props=renderProps(fm);
   const toc=res.headings.length>2?renderToc(res.headings):'';
   area.innerHTML=`<div class="note-content">${meta}<h1 class="note-title">${esc(title)}</h1>${props}${toc}<div class="md-body">${res.html}</div><div class="backlinks" id="backlinks"><h3>Backlinks <span class="bl-count">…</span></h3><div class="bl-empty">Lade…</div></div></div>`;
-  // Startposition mittig (halber Scroll-Spielraum). Keine fixe Zentrierung mehr -> von hier frei nach ganz links/rechts schiebbar.
+  // Horizontale Startposition = zuletzt gemerkte Position (global, wie die Notiz-Breite). Default = mittig.
   // behavior:'instant' umgeht das scroll-behavior:smooth der .note-area, sonst "fliegt" die Notiz beim Oeffnen hinein.
-  area.scrollTo({left:(area.scrollWidth-area.clientWidth)/2,behavior:'instant'});
+  applyNoteX(area);
   showEditFab(path);
   wireRendered(area,path,res);
   loadBacklinks(path);
@@ -3004,6 +3007,22 @@ function currentNoteW(){const n=parseInt(localStorage.getItem('nexus.noteW')||''
 function applyNoteW(px){const s=document.documentElement.style;if(px>0)s.setProperty('--note-w',px+'px');else s.removeProperty('--note-w');}
 function setNoteW(px){px=Math.max(300,Math.min(4000,Math.round(px)));localStorage.setItem('nexus.noteW',String(px));applyNoteW(px);}
 function bumpNoteW(deltaY){let base=currentNoteW();if(!base){const el=document.querySelector('#note-area .note-content');base=el?el.offsetWidth:(document.getElementById('note-area')?.clientWidth||900);}setNoteW(base-deltaY*1.1);}
+// Horizontale Notiz-Position (global, wie --note-w): als Bruchteil 0..1 des Scroll-Spielraums gespeichert
+// (0 = buendig rechts, 1 = buendig links, 0.5 = mittig). Bruchteil statt Pixel -> robust gegen Breiten-/Fenster-
+// aenderungen. Default 0.5 = mittig (bisheriges Verhalten beim allerersten Oeffnen).
+let _noteXTimer=null, _noteXLast=-1;
+function currentNoteXFrac(){const v=parseFloat(localStorage.getItem('nexus.noteXFrac'));return (v>=0&&v<=1)?v:0.5;}
+function saveNoteXFrac(area){const max=area.scrollWidth-area.clientWidth;if(max>1)localStorage.setItem('nexus.noteXFrac',String(Math.min(1,Math.max(0,area.scrollLeft/max))));}
+function applyNoteX(area){const max=area.scrollWidth-area.clientWidth;area.scrollTo({left:max>0?currentNoteXFrac()*max:0,behavior:'instant'});_noteXLast=area.scrollLeft;}
+function onNoteScrollX(e){
+  const area=e.currentTarget;
+  if(area.scrollLeft===_noteXLast)return;            // nur horizontale Aenderungen merken (vertikales Scrollen ignorieren)
+  _noteXLast=area.scrollLeft;
+  if(!area.querySelector('#backlinks'))return;        // NUR in der echten Markdown-Leseansicht (sie allein rendert #backlinks);
+                                                      // Ordner-/CSV-/Office-/PDF-/Bild-/Such-Ansicht aendern die Position nicht
+  clearTimeout(_noteXTimer);
+  _noteXTimer=setTimeout(()=>saveNoteXFrac(area),160);
+}
 // Achsen-Lock beim Scrollen: pro Geste nur EINE Achse (vertikal ODER horizontal), nie beides parallel.
 // Trackpad/Maus melden bei schraeger Bewegung deltaX UND deltaY gleichzeitig -> der Browser scrollt
 // nativ beide Achsen. Wir unterdruecken das und scrollen nur die dominante Achse. Die Achse bleibt fuer
