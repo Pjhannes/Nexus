@@ -1002,12 +1002,14 @@ function pushHist(t,path,mode){
 async function tabBack(){
   const t=tabs[activeTab];if(!t||!t.hist||t.hi<=0)return;
   if(!(await maybeLeaveEditor()))return;
+  flushNoteScroll();
   t.hi--;const e=t.hist[t.hi];t.path=e.path;t.mode=e.mode;
   await renderTab(t);renderTabBar();
 }
 async function tabForward(){
   const t=tabs[activeTab];if(!t||!t.hist||t.hi>=t.hist.length-1)return;
   if(!(await maybeLeaveEditor()))return;
+  flushNoteScroll();
   t.hi++;const e=t.hist[t.hi];t.path=e.path;t.mode=e.mode;
   await renderTab(t);renderTabBar();
 }
@@ -1019,12 +1021,17 @@ function showEmptyTab(){
 }
 async function renderTab(t){
   _silentRender=true;
+  // Beim "Zurückkehren" zu einer Notiz (Tab-Wechsel, Zurück/Vor, Restore) den gemerkten
+  // vertikalen Scroll-Stand des History-Eintrags wiederherstellen; sonst (frisches Öffnen
+  // via Link/Baum läuft NICHT über renderTab) bleibt es bei oben.
+  const e=(Array.isArray(t.hist)&&t.hi>=0)?t.hist[t.hi]:null;
+  _navScrollTarget=(e&&typeof e.scroll==='number')?e.scroll:0;
   try{
     if(t.mode==='file')await openFile(t.path);
     else if(t.mode==='editor')await openEditor(t.path);
     else if(t.mode==='folder')openFolderView(t.path);
     else showEmptyTab();
-  }finally{_silentRender=false;}
+  }finally{_silentRender=false;_navScrollTarget=null;}
 }
 async function newTab(){
   if(!(await maybeLeaveEditor()))return;
@@ -1034,6 +1041,7 @@ async function newTab(){
 async function switchTab(i){
   if(i===activeTab||i<0||i>=tabs.length)return;
   if(!(await maybeLeaveEditor()))return;
+  flushNoteScroll();
   activeTab=i;renderTabBar();await renderTab(tabs[i]);
   syncFromActivation();
 }
@@ -1754,7 +1762,7 @@ async function openFile(path,opts){
   if(!(await maybeLeaveEditor()))return;
   if(!(opts&&opts.startup))graph.pinnedMain=(localStorage.getItem('nexus.graphDefault')==='main');
   selectedPath=path;
-  if(!_silentRender)updateActiveTab(path,'file');
+  if(!_silentRender){flushNoteScroll();updateActiveTab(path,'file');}
   document.querySelectorAll('.tree-file.selected').forEach(e=>e.classList.remove('selected'));
   document.querySelector('.tree-file[data-path="'+cssAttr(path)+'"]')?.classList.add('selected');
   const parts=path.split('/'), fname=parts[parts.length-1];
@@ -1762,13 +1770,18 @@ async function openFile(path,opts){
   setCrumb(esc(activeVault)+' / '+esc(folder)+' / <b>'+esc(fname)+'</b>');
   document.getElementById('sb-vault').textContent=path;
   const ext=extOf(path), area=document.getElementById('note-area');
-  area.scrollTop=0;
+  // WICHTIG: behavior:'instant' – die .note-area hat scroll-behavior:smooth, ein blosses
+  // area.scrollTop=0 wuerde ANIMIERT laufen und vom folgenden await fetch + innerHTML-Wechsel
+  // unterbrochen, sodass die neue Notiz nicht oben startet (sichtbar v.a. bei Klick aus den
+  // unten stehenden Dataview-Listen heraus). Instant springt sofort auf 0 und bleibt dort.
+  area.scrollTo({top:0,behavior:'instant'});
   _curHeadings=[]; _curNotePath=path; renderOutline();
   hideEditFab();
   try{
     if(ext==='.md'||ext==='.markdown'||ext===''){
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
       renderMarkdownView(area,fname,raw,path);
+      applyNoteScroll(area,typeof _navScrollTarget==='number'?_navScrollTarget:0);
       logActivity(folderColor(path.split('/')[0]||''),'read_note → <b>'+esc(fname)+'</b>','open');
     } else if(ext==='.html'||ext==='.htm'){
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
@@ -2188,17 +2201,20 @@ function dataviewHtml(r){
   return '<ul class="dataview-list">'+(r.rows||[]).map(row=>'<li>'+dvCellHtml(row.cell)+'</li>').join('')+'</ul>';
 }
 function renderDataview(area){
-  const blocks=area.querySelectorAll('.dataview-block[data-dvquery]');
-  if(!blocks.length)return;
+  const blocks=[...area.querySelectorAll('.dataview-block[data-dvquery]')].filter(el=>!el.dataset.dvDone);
+  if(!blocks.length){afterDataviewLoaded(area);return;}
+  let pending=blocks.length;
+  const done=()=>{if(--pending<=0)afterDataviewLoaded(area);};   // Höhe final → gemerkten Scroll-Stand erneut anwenden
   blocks.forEach(async el=>{
-    if(el.dataset.dvDone)return; el.dataset.dvDone='1';
-    if(el.dataset.dvkind==='js'){el.innerHTML='<div class="dv-note">DataviewJS-Blöcke werden in Nexus nicht ausgeführt (nur ```dataview-Abfragen).</div>';return;}
+    el.dataset.dvDone='1';
+    if(el.dataset.dvkind==='js'){el.innerHTML='<div class="dv-note">DataviewJS-Blöcke werden in Nexus nicht ausgeführt (nur ```dataview-Abfragen).</div>';done();return;}
     const q=el.getAttribute('data-dvquery')||'';
     try{
       const r=await fetch('/api/dataview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,source:q})}).then(r=>r.json());
       el.innerHTML=dataviewHtml(r);
       el.querySelectorAll('a.wikilink').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();if(a.dataset.path)openFile(a.dataset.path);}));
     }catch(e){el.innerHTML='<div class="dv-error">⚠ Dataview-Fehler: '+esc(e.message)+'</div>';}
+    done();
   });
 }
 function loadKatex(){if(_katexLoaded!==null)return _katexLoaded;_katexLoaded=new Promise(res=>{const css=document.createElement('link');css.rel='stylesheet';css.href='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css';document.head.appendChild(css);const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js';s.onload=()=>res(window.katex);s.onerror=()=>res(null);document.head.appendChild(s);});return _katexLoaded;}
@@ -3062,11 +3078,50 @@ function bumpNoteW(deltaY){let base=currentNoteW();if(!base){const el=document.q
 // (0 = buendig rechts, 1 = buendig links, 0.5 = mittig). Bruchteil statt Pixel -> robust gegen Breiten-/Fenster-
 // aenderungen. Default 0.5 = mittig (bisheriges Verhalten beim allerersten Oeffnen).
 let _noteXTimer=null, _noteXLast=-1;
+// ─── Vertikaler Scroll-Stand pro History-Eintrag (Zurückkehren zu einer Notiz behält die Stelle) ───
+let _navScrollTarget=null, _noteYTimer=null;
+// Scroll-Stand der aktuell gelesenen Notiz debounced in ihren History-Eintrag merken.
+function saveNoteScroll(area){
+  if(area.__restoreActive)return;                     // während eines laufenden Restores nicht zurückschreiben
+  if(!area.querySelector('#backlinks'))return;        // nur echte Markdown-Leseansicht
+  const t=tabs[activeTab];
+  if(!t||t.mode!=='file'||!Array.isArray(t.hist)||t.hi<0)return;
+  clearTimeout(_noteYTimer);
+  _noteYTimer=setTimeout(()=>{const e=t.hist[t.hi];if(e){e.scroll=area.scrollTop;saveTabs();}},200);
+}
+// Vor jedem Wegnavigieren den aktuellen Scroll-Stand SOFORT in den aktuellen History-Eintrag schreiben
+// (debounced reicht nicht: bei schnellem Klick ginge die letzte Position verloren / landete im falschen Eintrag).
+function flushNoteScroll(){
+  if(_noteYTimer){clearTimeout(_noteYTimer);_noteYTimer=null;}
+  const area=document.getElementById('note-area');
+  if(!area||!area.querySelector('#backlinks')||area.__restoreActive)return;
+  const t=tabs[activeTab];
+  if(t&&t.mode==='file'&&Array.isArray(t.hist)&&t.hi>=0){const e=t.hist[t.hi];if(e)e.scroll=area.scrollTop;}
+}
+// Beim Öffnen/Zurückkehren den Ziel-Scroll-Stand setzen. Re-Apply nur nötig, wenn Dataview-Blöcke
+// die Höhe noch verändern (sie laden async) – sonst ist die Höhe sofort final.
+function applyNoteScroll(area,top){
+  top=Math.max(0,top|0);
+  const needsReapply=top>0&&!!area.querySelector('.dataview-block[data-dvquery]');
+  area.__restoreTop=top;
+  area.__restoreActive=needsReapply;
+  area.scrollTo({top:top,behavior:'instant'});
+}
+// Nach dem Nachladen aller Dataview-Blöcke (Höhe jetzt final) den Ziel-Scroll-Stand erneut anwenden.
+function afterDataviewLoaded(area){
+  if(!area.__restoreActive)return;
+  requestAnimationFrame(()=>{
+    if(!area.__restoreActive)return;
+    area.scrollTo({top:area.__restoreTop,behavior:'instant'});
+    area.__restoreActive=false;
+  });
+}
 function currentNoteXFrac(){const v=parseFloat(localStorage.getItem('nexus.noteXFrac'));return (v>=0&&v<=1)?v:0.5;}
 function saveNoteXFrac(area){const max=area.scrollWidth-area.clientWidth;if(max>1)localStorage.setItem('nexus.noteXFrac',String(Math.min(1,Math.max(0,area.scrollLeft/max))));}
 function applyNoteX(area){const max=area.scrollWidth-area.clientWidth;area.scrollTo({left:max>0?currentNoteXFrac()*max:0,behavior:'instant'});_noteXLast=area.scrollLeft;}
 function onNoteScrollX(e){
   const area=e.currentTarget;
+  saveNoteScroll(area);                               // vertikalen Scroll-Stand der Notiz merken
   if(area.scrollLeft===_noteXLast)return;            // nur horizontale Aenderungen merken (vertikales Scrollen ignorieren)
   _noteXLast=area.scrollLeft;
   if(!area.querySelector('#backlinks'))return;        // NUR in der echten Markdown-Leseansicht (sie allein rendert #backlinks);
@@ -3080,6 +3135,7 @@ function onNoteScrollX(e){
 // die Dauer einer Geste fix (Pause > 140ms = neue Geste), damit es bei Diagonalen nicht hin- und herspringt.
 let _wheelAxis=null, _wheelTs=0;
 function onNoteWheel(e){
+  e.currentTarget.__restoreActive=false;                          // eigene Scroll-Geste bricht ein laufendes Restore ab
   if(e.ctrlKey){e.preventDefault();bumpNoteW(e.deltaY);return;}   // Zoom (Pinch/Strg) unveraendert
   const ax=Math.abs(e.deltaX), ay=Math.abs(e.deltaY);
   if(!ax && !ay)return;
