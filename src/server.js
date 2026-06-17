@@ -34,7 +34,7 @@ const T = makeTools(indexer, vaultPath);
 const NEXUS_INSTRUCTIONS = [
   'Du arbeitest auf einem persoenlichen Wissens-Vault ueber die Nexus-Tools',
   '(search, outline, read_note, write_note, append_to_section, patch, backlinks,',
-  'list_notes, query, reindex, create_folder, move, delete, vault_check). Prinzip: maximale',
+  'list_notes, query, dataview, reindex, create_folder, move, delete, vault_check). Prinzip: maximale',
   'Information pro Token – erst outline/search-Snippet/read_note(section), nicht',
   'blind ganze Dateien lesen; schreiben bevorzugt mit append_to_section/patch.',
   'Ordner/Notizen anlegen, verschieben, umbenennen oder loeschen IMMER ueber',
@@ -165,6 +165,19 @@ server.tool(
   },
   async ({ field, op, value, limit }) => {
     const r = T.query({ field, op, value, limit });
+    return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
+  }
+);
+
+server.tool(
+  'dataview',
+  'Fuehrt eine Dataview-(DQL)-Query gegen den Vault aus (LIST/TABLE [WITHOUT ID], FROM "Ordner", ' +
+  'WHERE mit AND/OR/!/contains()/Vergleichen, SORT feld ASC|DESC, LIMIT n, dateformat()). ' +
+  'Loest dynamische Listen/Tabellen zur Laufzeit auf – das Nexus-Aequivalent zu Obsidians ' +
+  'eingebetteten Dataview-Bloecken. Gibt {kind, headers, rows, count} mit aufgeloesten Links zurueck.',
+  { source: z.string().describe('Die DQL-Query, z.B.: LIST FROM "Wissen" WHERE file.name != "00 – Index" SORT file.mtime DESC LIMIT 5') },
+  async ({ source }) => {
+    const r = T.dataview({ source });
     return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
   }
 );

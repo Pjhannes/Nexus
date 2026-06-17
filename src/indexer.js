@@ -52,7 +52,11 @@ export function buildIndexer(vaultPath, dbPath, ignoreList = []) {
     const relPath = toRel(fullPath);
     let stat;
     try { stat = statSync(fullPath); } catch { return; }
-    const mtime = stat.mtimeMs | 0;
+    // WICHTIG: NICHT `| 0` – das trunkiert mtimeMs (~1.75e12) auf 32-Bit und liefert
+    // einen ungueltigen Zeitstempel. Dataview (SORT file.mtime / dateformat) braucht den
+    // echten Epoch-ms-Wert. Math.floor haelt es ganzzahlig (Spalte ist INTEGER) und bleibt
+    // deterministisch fuer die Aenderungs-Erkennung (existing.mtime === mtime).
+    const mtime = Math.floor(stat.mtimeMs);
     const size  = stat.size;
 
     const existing = stmts.get.get(relPath);

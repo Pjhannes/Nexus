@@ -197,6 +197,16 @@ app.get('/api/graph', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Dataview: dynamische LIST/TABLE-Bloecke zur Laufzeit aufloesen ──────────────
+// Das Frontend rendert ```dataview-Bloecke als Platzhalter und fuellt sie ueber
+// diesen Endpunkt (Nexus-Aequivalent zu Obsidians Dataview-Plugin).
+app.post('/api/dataview', (req, res) => {
+  try {
+    const { tools } = getVault(req.body?.vault);
+    res.json(tools.dataview({ source: req.body?.source }));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Reindex ───────────────────────────────────────────────────────────────────
 app.post('/api/reindex', (req, res) => {
   try {

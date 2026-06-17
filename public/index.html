@@ -207,6 +207,21 @@ a.wikilink.broken{color:#e07b7b;border-bottom-style:dashed;border-bottom-color:r
 .md-table td:last-child,.md-table th:last-child{border-right:none}
 .md-table tr:hover td{background:rgba(255,255,255,.02)}
 
+/* Dataview – dynamische LIST/TABLE-Bloecke (Akzentfarbe + Layout aus den Theme-Variablen) */
+.dataview-block{margin:14px 0}
+.dataview-block .dv-loading,.dataview-block .dv-empty,.dataview-block .dv-note{color:var(--dim);font-size:13px;font-style:italic;padding:3px 2px}
+.dataview-block .dv-error{color:#e8a0a0;font-size:13px;background:rgba(224,123,123,.08);border:1px solid rgba(224,123,123,.32);border-radius:8px;padding:8px 12px}
+ul.dataview-list{margin:.35em 0;padding:0 0 0 1.45em;list-style:none}
+ul.dataview-list li{position:relative;padding:2.5px 0;line-height:1.5}
+ul.dataview-list li::before{content:'';position:absolute;left:-15px;top:.72em;width:5px;height:5px;border-radius:50%;background:var(--accent);opacity:.75}
+table.dataview-table{border-collapse:collapse;width:100%;margin:.4em 0;font-size:13px;border:1px solid var(--accent-30);border-radius:10px;overflow:hidden}
+table.dataview-table th{text-align:left;padding:7px 13px;background:var(--accent-12);color:var(--accent-tx);font-weight:600;border-bottom:1px solid var(--accent-30)}
+table.dataview-table td{padding:6px 13px;border-bottom:1px solid var(--border)}
+table.dataview-table tr:last-child td{border-bottom:none}
+table.dataview-table tr:hover td{background:var(--accent-08)}
+.dataview-block a.wikilink{color:var(--accent-tx);border-bottom-color:var(--accent-30)}
+.dataview-block a.wikilink:hover{background:var(--accent-14)}
+
 /* Callouts */
 .callout{border-radius:10px;margin:14px 0;border:1px solid var(--border);border-left-width:3px;overflow:hidden;background:var(--panel)}
 .callout-title{display:flex;align-items:center;gap:9px;padding:9px 14px;font-weight:600;font-size:13.5px}
@@ -1680,7 +1695,9 @@ function renderBlocks(src,headings,slug){
       while(i<lines.length&&!closeRe.test(lines[i].trim())){body.push(lines[i]);i++;}
       if(i<lines.length)i++;
       const code=body.join('\n');
-      if(lang.toLowerCase()==='mermaid')html.push('<div class="mermaid-block" data-mermaid="'+esc(code)+'">'+escHtml(code)+'</div>');
+      const ll=lang.toLowerCase();
+      if(ll==='mermaid')html.push('<div class="mermaid-block" data-mermaid="'+esc(code)+'">'+escHtml(code)+'</div>');
+      else if(ll==='dataview'||ll==='dataviewjs')html.push('<div class="dataview-block" data-dvkind="'+(ll==='dataviewjs'?'js':'dql')+'" data-dvquery="'+esc(code)+'"><div class="dv-loading">Dataview wird ausgewertet…</div></div>');
       else html.push(codeBlock(code,lang));
       continue;}
     if(/^\s*\$\$\s*$/.test(line)){const body=[];i++;while(i<lines.length&&!/^\s*\$\$\s*$/.test(lines[i])){body.push(lines[i]);i++;}if(i<lines.length)i++;const tex=body.join('\n');html.push('<div class="math-block" data-tex="'+esc(tex)+'"><span class="math-raw">'+escHtml(tex)+'</span></div>');continue;}
@@ -1852,7 +1869,7 @@ async function openCenterSplit(path){
       body.innerHTML='<div class="note-content"><div class="md-body">'+res.html+'</div></div>';
       body.querySelectorAll('a.wikilink').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();if(a.dataset.path)openCenterSplit(a.dataset.path);}));
       body.querySelectorAll('.callout.foldable .callout-title').forEach(t=>t.addEventListener('click',()=>t.closest('.callout').classList.toggle('collapsed')));
-      renderMermaid(body);renderMath(body);
+      renderMermaid(body);renderMath(body);renderDataview(body);
     }else if(IMG_EXT.includes(ext)){
       body.innerHTML='<div class="img-view"><img src="'+fileUrl(path)+'" alt="'+esc(fname)+'"></div>';
     }else if(ext==='.pdf'){
@@ -1993,6 +2010,7 @@ function wireRendered(area,path,res){
   });
   renderMermaid(area);
   renderMath(area);
+  renderDataview(area);
 }
 
 async function loadTransclude(tc){
@@ -2150,6 +2168,39 @@ function loadPdfJs(){
 }
 function loadMermaid(){if(_mermaidLoaded!==null)return _mermaidLoaded;_mermaidLoaded=new Promise(res=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';s.onload=()=>{try{window.mermaid.initialize({startOnLoad:false,theme:'dark'});res(window.mermaid);}catch(e){res(null);}};s.onerror=()=>res(null);document.head.appendChild(s);});return _mermaidLoaded;}
 function renderMermaid(area){const blocks=area.querySelectorAll('.mermaid-block[data-mermaid]');if(!blocks.length)return;loadMermaid().then(m=>{if(!m)return;blocks.forEach(async(b,i)=>{try{const {svg}=await m.render('mmd'+Date.now()+'_'+i,b.getAttribute('data-mermaid'));b.innerHTML=svg;}catch(e){}});});}
+
+// ── Dataview: ```dataview-Bloecke serverseitig aufloesen + themed rendern ──
+function dvCellHtml(c){
+  if(!c)return '';
+  if(c.type==='link')return '<a class="wikilink" data-path="'+esc(c.path)+'">'+esc(c.text||c.path)+'</a>';
+  if(c.type==='links')return c.items.map(it=>'<a class="wikilink" data-path="'+esc(it.path)+'">'+esc(it.text||it.path)+'</a>').join(', ');
+  return esc(c.text||'');
+}
+function dataviewHtml(r){
+  if(!r||r.error)return '<div class="dv-error">⚠ Dataview: '+esc((r&&r.error)||'unbekannter Fehler')+'</div>';
+  if(r.unsupported)return '<div class="dv-note">'+esc(r.note||'Diese Dataview-Abfrage wird nicht unterstützt.')+'</div>';
+  if(!r.count)return '<div class="dv-empty">Keine Einträge.</div>';
+  if(r.kind==='TABLE'){
+    const head='<tr>'+(r.headers||[]).map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr>';
+    const body=(r.rows||[]).map(row=>'<tr>'+row.map(c=>'<td>'+dvCellHtml(c)+'</td>').join('')+'</tr>').join('');
+    return '<table class="dataview-table"><thead>'+head+'</thead><tbody>'+body+'</tbody></table>';
+  }
+  return '<ul class="dataview-list">'+(r.rows||[]).map(row=>'<li>'+dvCellHtml(row.cell)+'</li>').join('')+'</ul>';
+}
+function renderDataview(area){
+  const blocks=area.querySelectorAll('.dataview-block[data-dvquery]');
+  if(!blocks.length)return;
+  blocks.forEach(async el=>{
+    if(el.dataset.dvDone)return; el.dataset.dvDone='1';
+    if(el.dataset.dvkind==='js'){el.innerHTML='<div class="dv-note">DataviewJS-Blöcke werden in Nexus nicht ausgeführt (nur ```dataview-Abfragen).</div>';return;}
+    const q=el.getAttribute('data-dvquery')||'';
+    try{
+      const r=await fetch('/api/dataview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,source:q})}).then(r=>r.json());
+      el.innerHTML=dataviewHtml(r);
+      el.querySelectorAll('a.wikilink').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();if(a.dataset.path)openFile(a.dataset.path);}));
+    }catch(e){el.innerHTML='<div class="dv-error">⚠ Dataview-Fehler: '+esc(e.message)+'</div>';}
+  });
+}
 function loadKatex(){if(_katexLoaded!==null)return _katexLoaded;_katexLoaded=new Promise(res=>{const css=document.createElement('link');css.rel='stylesheet';css.href='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css';document.head.appendChild(css);const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js';s.onload=()=>res(window.katex);s.onerror=()=>res(null);document.head.appendChild(s);});return _katexLoaded;}
 function renderMath(area){const els=area.querySelectorAll('[data-tex]');if(!els.length)return;loadKatex().then(k=>{if(!k)return;els.forEach(el=>{try{el.innerHTML=k.renderToString(el.getAttribute('data-tex'),{displayMode:el.classList.contains('math-block'),throwOnError:false});}catch(e){}});});}
 

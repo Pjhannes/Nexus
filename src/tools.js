@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, existsSync,
 import { join, dirname, resolve, sep, relative } from 'path';
 import { transaction } from './db.js';
 import { runVaultCheck, renderReport, REPORT_REL } from './vault-check.js';
+import { evaluateDataview } from './dataview.js';
 
 const SNIPPET_LINES = 30;
 
@@ -41,6 +42,7 @@ export function makeTools(indexer, vaultPath) {
     allLinks:    db.prepare('SELECT n.path AS src, l.target AS target FROM links l JOIN notes n ON l.src_id = n.id'),
     vcNotes:     db.prepare('SELECT id, path, title, frontmatter FROM notes'),
     vcLinks:     db.prepare('SELECT src_id, target FROM links'),
+    dvNotes:     db.prepare('SELECT path, title, mtime, size, tags, frontmatter FROM notes'),
   };
 
   // FTS5-Sanitizer: Sonderzeichen entfernen, je Wort Prefix-Wildcard anhaengen.
@@ -267,6 +269,34 @@ export function makeTools(indexer, vaultPath) {
     return { nodes: stmts.allNotes.all(), links: stmts.allLinks.all() };
   }
 
+  // dataview: fuehrt eine Dataview-(DQL)-Query (LIST/TABLE) gegen den Live-Index aus.
+  // Baut die "pages" (Notiz-Metadaten) aus der DB und reicht sie an die pure Engine
+  // (src/dataview.js) weiter. Ersetzt die in Obsidian eingebetteten Dataview-Bloecke.
+  function dataview({ source } = {}) {
+    if (typeof source !== 'string' || !source.trim()) return { error: 'Leere Dataview-Query' };
+    const noExt = (s) => s.replace(/\.md$/i, '');
+    const pages = stmts.dvNotes.all().map(r => {
+      let fm; try { fm = JSON.parse(r.frontmatter ?? '{}'); } catch { fm = {}; }
+      let tags; try { tags = JSON.parse(r.tags ?? '[]'); } catch { tags = []; }
+      const name = noExt(r.path.split('/').pop());
+      const slash = r.path.lastIndexOf('/');
+      const folder = slash >= 0 ? r.path.slice(0, slash) : '';
+      const tagList = tags.map(t => '#' + String(t).replace(/^#/, ''));
+      return {
+        file: {
+          path: r.path, name, folder,
+          link: { __link: true, path: r.path, display: name },
+          // mtime/ctime als Epoch-ms (Indexer speichert Math.floor(mtimeMs)); ctime mangels
+          // birthtime im Index = mtime (Vault sortiert ohnehin nur nach file.mtime).
+          mtime: r.mtime, ctime: r.mtime, size: r.size,
+          tags: tagList, etags: tagList,
+        },
+        fm,
+      };
+    });
+    return evaluateDataview(source, pages);
+  }
+
   // vault_check: Gesundheits-Check ueber den LIVE-Index (kein Voll-Reparse).
   // Speist die reine Pruef-Logik (src/vault-check.js) aus der DB + einem billigen
   // readdir-Lauf fuer Anhang-Dateinamen (damit [[bild.png]]-Embeds nicht als
@@ -353,6 +383,6 @@ export function makeTools(indexer, vaultPath) {
     };
   }
 
-  return { search, outline, readNote, writeNote, appendToSection, backlinks, listNotes, reindex, query, patch, graph, createFolder, move, delete: deleteEntry, vaultCheck };
+  return { search, outline, readNote, writeNote, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, vaultCheck };
 }
 // rev: graph() fuer UI-Graph (Session 13)
