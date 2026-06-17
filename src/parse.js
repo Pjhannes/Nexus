@@ -3,8 +3,39 @@ import { parse as parseYaml } from 'yaml';
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 const HEADING_RE    = /^(#{1,6})\s+(.+)/;
-const WIKILINK_RE   = /\[\[([^\]|#]+)(?:#[^\]|]*)?\|?([^\]]*)\]\]/g;
+// Permissiv: alles zwischen [[ ]] (inkl. "\" fuer escapte Tabellen-Pipes), nicht-greedy
+// bis zum ersten ]]. Alias/Heading werden in extractLinks abgetrennt.
+const WIKILINK_RE   = /\[\[([^\]\n]+?)\]\]/g;
 const TAG_RE        = /(?:^|\s)#([\w/\-]+)/g;
+
+// Code aus dem Body entfernen, damit dokumentierte Wikilink-BEISPIELE in Code-Spans/
+// Fences NICHT als echte Links indiziert werden (wie Obsidian). Nur fuer die
+// Link-Extraktion – Headings/Tags laufen weiter ueber den Originaltext.
+function stripCode(body) {
+  return (body || '')
+    .replace(/```[\s\S]*?```/g, '')   // fenced code (```)
+    .replace(/~~~[\s\S]*?~~~/g, '')   // fenced code (~~~)
+    .replace(/`[^`\n]*`/g, '');       // inline code
+}
+
+// Code-bewusste Wikilink-Extraktion. Trennt Alias (escapter/normaler Pipe "\|"/"|")
+// und Heading-Anker (#...) ab, strippt trailing Backslashes (escapte Tabellen-Pipes)
+// und trimmt. Liefert [{target, alias}]. GEMEINSAME Quelle fuer App-Index (indexer.js)
+// und scripts/vault-check.mjs, damit Check und App identisch parsen.
+export function extractLinks(body) {
+  const cleaned = stripCode(body);
+  const out = [];
+  WIKILINK_RE.lastIndex = 0;
+  let m;
+  while ((m = WIKILINK_RE.exec(cleaned)) !== null) {
+    const [targetPart, ...aliasParts] = m[1].split(/\\?\|/);
+    const target = targetPart.split('#')[0].trim().replace(/\\+$/, '').trim();
+    if (!target || /^https?:/i.test(target)) continue;
+    const alias = aliasParts.length ? aliasParts.join('|').trim() : '';
+    out.push({ target, alias: alias || null });
+  }
+  return out;
+}
 
 export function parseNote(content) {
   let body = content;
@@ -37,13 +68,8 @@ export function parseNote(content) {
   const inlineTags = [...body.matchAll(TAG_RE)].map(m => m[1]);
   const tags = [...new Set([...fmTags, ...inlineTags])];
 
-  // Wikilinks
-  const links = [];
-  let m;
-  WIKILINK_RE.lastIndex = 0;
-  while ((m = WIKILINK_RE.exec(body)) !== null) {
-    links.push({ target: m[1].trim(), alias: m[2] || null });
-  }
+  // Wikilinks – code-bewusst, Alias/Heading/escapte Pipes normalisiert (siehe extractLinks)
+  const links = extractLinks(body);
 
   return { frontmatter, title, headings, tags, links, body };
 }

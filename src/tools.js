@@ -1,7 +1,8 @@
 // src/tools.js – MCP-Tool-Implementierungen (node:sqlite, positionale Parameter)
-import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, existsSync } from 'fs';
-import { join, dirname, resolve, sep } from 'path';
+import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, existsSync, readdirSync } from 'fs';
+import { join, dirname, resolve, sep, relative } from 'path';
 import { transaction } from './db.js';
+import { runVaultCheck, renderReport, REPORT_REL } from './vault-check.js';
 
 const SNIPPET_LINES = 30;
 
@@ -38,6 +39,8 @@ export function makeTools(indexer, vaultPath) {
     allFm:       db.prepare('SELECT path, title, frontmatter FROM notes'),
     allNotes:    db.prepare('SELECT path, title FROM notes'),
     allLinks:    db.prepare('SELECT n.path AS src, l.target AS target FROM links l JOIN notes n ON l.src_id = n.id'),
+    vcNotes:     db.prepare('SELECT id, path, title, frontmatter FROM notes'),
+    vcLinks:     db.prepare('SELECT src_id, target FROM links'),
   };
 
   // FTS5-Sanitizer: Sonderzeichen entfernen, je Wort Prefix-Wildcard anhaengen.
@@ -264,6 +267,92 @@ export function makeTools(indexer, vaultPath) {
     return { nodes: stmts.allNotes.all(), links: stmts.allLinks.all() };
   }
 
-  return { search, outline, readNote, writeNote, appendToSection, backlinks, listNotes, reindex, query, patch, graph, createFolder, move, delete: deleteEntry };
+  // vault_check: Gesundheits-Check ueber den LIVE-Index (kein Voll-Reparse).
+  // Speist die reine Pruef-Logik (src/vault-check.js) aus der DB + einem billigen
+  // readdir-Lauf fuer Anhang-Dateinamen (damit [[bild.png]]-Embeds nicht als
+  // "broken" zaehlen). Schreibt den Bericht nach _System/Vault-Check.md und gibt
+  // eine kompakte Zusammenfassung zurueck (max. Info pro Token).
+  const VC_IGNORE_DIRS = new Set(['.obsidian', '.trash', '.nexus', 'node_modules', '.git']);
+  function walkAllFiles(dir, out = []) {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (VC_IGNORE_DIRS.has(e.name)) continue;
+        walkAllFiles(join(dir, e.name), out);
+      } else if (e.isFile()) {
+        out.push(join(dir, e.name));
+      }
+    }
+    return out;
+  }
+
+  function vaultCheck({ dryRun = false } = {}) {
+    // Frischer Index – inkrementell, ueberspringt unveraenderte mtimes (quasi gratis).
+    indexer.reindex();
+
+    const noExt = (s) => s.replace(/\.md$/i, '');
+    const base  = (p) => p.split('/').pop();
+
+    // Links pro Notiz gruppieren (eine Query statt N).
+    const linksBy = new Map();
+    for (const l of stmts.vcLinks.all()) {
+      let arr = linksBy.get(l.src_id);
+      if (!arr) { arr = []; linksBy.set(l.src_id, arr); }
+      arr.push(l.target);
+    }
+    const notes = stmts.vcNotes.all().map(r => {
+      let fm; try { fm = JSON.parse(r.frontmatter ?? '{}'); } catch { fm = {}; }
+      const basename = noExt(base(r.path));
+      return {
+        path: r.path,
+        basename,
+        pathNoExt: noExt(r.path),
+        title: r.title || basename,
+        fm,
+        links: linksBy.get(r.id) ?? [],
+      };
+    });
+
+    // Alle Dateien (inkl. Anhaenge) – nur readdir, KEIN Lesen/Parsen.
+    const allRelPaths = walkAllFiles(vaultPath).map(f => relative(vaultPath, f).split(sep).join('/'));
+
+    const now = Date.now();
+    const result = runVaultCheck({ notes, allRelPaths, now });
+    const report = renderReport(result, { now, notesCount: notes.length, filesCount: allRelPaths.length });
+
+    let reportPath = null;
+    if (!dryRun) {
+      const w = writeNote({ path: REPORT_REL, content: report, create: true });
+      if (w.error) return { error: 'Bericht konnte nicht geschrieben werden: ' + w.error };
+      reportPath = REPORT_REL;
+    }
+
+    const cap = 5;
+    return {
+      vault: vaultPath,
+      notesScanned: notes.length,
+      filesScanned: allRelPaths.length,
+      summary: {
+        brokenLinks: result.brokenLinks.length,
+        orphans:     result.orphans.length,
+        staleDates:  result.staleDates.length,
+        deadRefs:    result.deadRefs.length,
+        duplicates:  result.duplicates.length,
+      },
+      // Erste Treffer je Kategorie fuer sofortige Sicht; voller Bericht in reportPath.
+      samples: {
+        brokenLinks: result.brokenLinks.slice(0, cap),
+        orphans:     result.orphans.slice(0, cap),
+        staleDates:  result.staleDates.slice(0, cap),
+        deadRefs:    result.deadRefs.slice(0, cap),
+        duplicates:  result.duplicates.slice(0, cap),
+      },
+      reportPath,
+      dryRun,
+    };
+  }
+
+  return { search, outline, readNote, writeNote, appendToSection, backlinks, listNotes, reindex, query, patch, graph, createFolder, move, delete: deleteEntry, vaultCheck };
 }
 // rev: graph() fuer UI-Graph (Session 13)

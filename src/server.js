@@ -34,7 +34,7 @@ const T = makeTools(indexer, vaultPath);
 const NEXUS_INSTRUCTIONS = [
   'Du arbeitest auf einem persoenlichen Wissens-Vault ueber die Nexus-Tools',
   '(search, outline, read_note, write_note, append_to_section, patch, backlinks,',
-  'list_notes, query, reindex, create_folder, move, delete). Prinzip: maximale',
+  'list_notes, query, reindex, create_folder, move, delete, vault_check). Prinzip: maximale',
   'Information pro Token – erst outline/search-Snippet/read_note(section), nicht',
   'blind ganze Dateien lesen; schreiben bevorzugt mit append_to_section/patch.',
   'Ordner/Notizen anlegen, verschieben, umbenennen oder loeschen IMMER ueber',
@@ -218,6 +218,19 @@ server.tool(
   async ({ path }) => {
     const r = T.delete({ path });
     return { content: [{ type: 'text', text: JSON.stringify(r) }] };
+  }
+);
+
+server.tool(
+  'vault_check',
+  'Vault-Gesundheits-Check ueber den Live-Index (kein Voll-Reparse): kaputte Links, ' +
+  'verwaiste Notizen, veraltete Daten (>30 Tage), Karteileichen, doppelte Dateinamen. ' +
+  'Schreibt den vollen Bericht nach _System/Vault-Check.md und gibt eine kompakte ' +
+  'Zusammenfassung (Zahlen + erste Treffer je Kategorie) zurueck.',
+  { dry_run: z.boolean().optional().describe('true = nur pruefen, Bericht NICHT in den Vault schreiben') },
+  async ({ dry_run }) => {
+    const r = T.vaultCheck({ dryRun: dry_run });
+    return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
   }
 );
 
