@@ -14,6 +14,12 @@ import { loadConfig, resolveDbPath, dataPath, CONFIG_PATH } from './paths.js';
 const __dir = dirname(fileURLToPath(import.meta.url));
 const cfg   = loadConfig();
 
+// App-Version aus package.json – eine Quelle der Wahrheit, passt sich bei jedem Build automatisch an
+// (gleiche Version, die electron-builder einbettet). package.json liegt sowohl im Dev-Baum als auch im
+// gepackten asar (steht in build.files) unter dem Projekt-Root, also ein Level über src/.
+let APP_VERSION = '';
+try { APP_VERSION = JSON.parse(readFileSync(join(__dir, '..', 'package.json'), 'utf8')).version || ''; } catch { /* ignore */ }
+
 // ── Vaults laden ─────────────────────────────────────────────────────────────
 const indexers = {};
 const toolsMap = {};
@@ -162,6 +168,10 @@ app.post('/api/vaults/active', (req, res) => {
 // POST validiert + persistiert ihn strukturell in nexus.config.json via saveConfig().
 app.get('/api/settings/vaultsRoot', (_req, res) => {
   res.json({ vaultsRoot: cfg.vaultsRoot || dataPath('vaults') });
+});
+
+app.get('/api/version', (_req, res) => {
+  res.json({ version: APP_VERSION });
 });
 
 app.post('/api/settings/vaultsRoot', (req, res) => {

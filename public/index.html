@@ -520,7 +520,12 @@ body.row-resizing{cursor:row-resize;user-select:none}
 .side-settings .ss-ic{font-size:15px;line-height:1}
 .settings-modal{width:520px;max-height:82vh;display:flex;flex-direction:column}
 .settings-modal .set-head{padding:14px 18px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
-.set-body{overflow:auto;padding:4px 18px 10px}
+.set-tabs{display:flex;gap:2px;padding:0 12px;border-bottom:1px solid var(--border);flex-shrink:0}
+.set-tab{appearance:none;background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);font-size:12.5px;font-weight:500;padding:10px 12px;cursor:pointer;transition:.15s;margin-bottom:-1px;white-space:nowrap}
+.set-tab:hover{color:var(--text)}
+.set-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.set-body{overflow:auto;padding:4px 18px 10px;flex:1 1 auto;min-height:0}
+.set-version{margin-left:auto;color:var(--dim);font-family:Consolas,monospace}
 .set-section{padding:13px 2px;border-bottom:1px solid rgba(255,255,255,.05)}
 .set-section:last-child{border-bottom:none}
 .set-label{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:9px;display:flex;align-items:center;gap:8px}
@@ -901,8 +906,9 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
 <div class="overlay" id="settings-overlay" onclick="closeSettings()">
   <div class="palette settings-modal" onclick="event.stopPropagation()">
     <div class="set-head">&#9881; Einstellungen</div>
+    <div class="set-tabs" id="settings-tabs"></div>
     <div class="set-body" id="settings-body"></div>
-    <div class="pal-footer"><span>Visuelle Einstellungen: lokal &middot; Vault-Speicherort: nexus.config.json</span></div>
+    <div class="pal-footer"><span>Einstellungen lokal &middot; Vault-Speicherort: nexus.config.json</span><span class="set-version" id="set-version"></span></div>
   </div>
 </div>
 <div id="usage-popover"><div class="uw-head">&#x26A1; Claude-Verbrauch<span class="uw-refresh" id="uw-refresh-btn" onclick="uwManualRefresh()" title="Jetzt aktualisieren">&#x27F3;</span><span class="uw-close" onclick="closeUsagePopover()">&#xD7;</span></div><div class="uw-body" id="uw-body"></div></div>
@@ -3260,8 +3266,11 @@ function applyLayout(id){
 function setLayout(id){localStorage.setItem('nexus.layout',(id==='softdark')?'softdark':'classic');applyLayout(id);renderSidebar();renderSettings();requestAnimationFrame(()=>requestAnimationFrame(refitGraph));}
 function openSettings(){renderSettings();const o=document.getElementById('settings-overlay');if(o)o.classList.add('show');}
 function closeSettings(){const o=document.getElementById('settings-overlay');if(o)o.classList.remove('show');}
-async function renderSettings(){
-  const body=document.getElementById('settings-body');if(!body)return;
+// Reiter-Navigation der Einstellungen (optisch wie der Rest: Unterstrich-Tabs in der Akzentfarbe)
+const SETTINGS_TABS=[{id:'appearance',label:'Darstellung'},{id:'graph',label:'Graph'},{id:'usage',label:'Usage'},{id:'system',label:'System'}];
+let _settingsTab='appearance';
+function setSettingsTab(id){_settingsTab=SETTINGS_TABS.some(t=>t.id===id)?id:'appearance';renderSettings();}
+function settingsAppearanceHtml(){
   const th=currentTheme();
   const lay=currentLayout();
   let h='<div class="set-section"><div class="set-label">Layout</div><div class="set-themes">';
@@ -3292,14 +3301,19 @@ async function renderSettings(){
   h+='<div class="set-section"><div class="set-label">Notiz-Schriftgr&ouml;&szlig;e<span class="set-val" id="set-readerfs-val">'+rfs+'px</span></div><input type="range" class="set-range" id="set-readerfs" min="12" max="24" step="0.5" value="'+rfs+'" oninput="onReaderFsInput(this.value)"></div>';
   const pfs=currentPanelFs();
   h+='<div class="set-section"><div class="set-label">Schriftgr&ouml;&szlig;e rechtes Panel (Gliederung)<span class="set-val" id="set-panelfs-val">'+pfs+'px</span></div><input type="range" class="set-range" id="set-panelfs" min="10" max="22" step="0.5" value="'+pfs+'" oninput="onPanelFsInput(this.value)"></div>';
+  return h;
+}
+function settingsGraphHtml(){
   const gd=currentGraphDefault();
-  h+='<div class="set-section"><div class="set-label">Graph beim &Ouml;ffnen einer Notiz</div><select class="set-select" id="set-graph" onchange="setGraphDefault(this.value)"><option value="ego"'+(gd==='ego'?' selected':'')+'>Ego-Graph (Notiz im Fokus)</option><option value="main"'+(gd==='main'?' selected':'')+'>Hauptgraph (gesamtes Vault)</option></select></div>';
+  let h='<div class="set-section"><div class="set-label">Graph beim &Ouml;ffnen einer Notiz</div><select class="set-select" id="set-graph" onchange="setGraphDefault(this.value)"><option value="ego"'+(gd==='ego'?' selected':'')+'>Ego-Graph (Notiz im Fokus)</option><option value="main"'+(gd==='main'?' selected':'')+'>Hauptgraph (gesamtes Vault)</option></select></div>';
   const gg=currentGraphGlow();
   h+='<div class="set-section"><div class="set-label">Graph-Glow<span class="set-val" id="set-glow-val">'+(gg===0?'aus':gg+'%')+'</span></div><input type="range" class="set-range" id="set-glow" min="0" max="100" step="5" value="'+gg+'" oninput="onGraphGlowInput(this.value)"></div>';
   h+='<div class="set-section"><div class="set-label">Hauptthemen-Farben</div><div class="set-folders" id="set-folders"></div></div>';
-  h+='<div class="set-section"><div class="set-label">Vault-Speicherort</div><div class="set-vaultroot"><input type="text" class="set-input" id="set-vaultroot" placeholder="Pfad zum Vaults-Ordner&hellip;"><button class="ft-btn" style="padding:8px 14px" onclick="saveVaultRoot()">Speichern</button></div><div class="set-hint" id="set-vaultroot-hint">Ordner, in dem neue Vaults angelegt werden. Bestehende Vaults behalten ihren Pfad.</div></div>';
+  return h;
+}
+function settingsUsageHtml(){
   const _uc=getUsageCfg();
-  h+='<div class="set-section"><div class="set-label">Claude Usage-Widget</div>';
+  let h='<div class="set-section"><div class="set-label">Claude Usage-Widget</div>';
   h+='<div style="margin-bottom:6px;font-size:10.5px;color:var(--dim)">Anzeige</div>';
   h+='<div class="set-toggle-group">';
   h+='<button class="set-toggle'+(_uc.display==='pct'?' active':'')+'" onclick="setUsageCfg(&quot;display&quot;,&quot;pct&quot;);renderUsageWidget();renderSettings()">Prozent</button>';
@@ -3316,10 +3330,31 @@ async function renderSettings(){
   h+='<div class="set-toggle-group">';
   [1,5,15,30].forEach(function(m){h+='<button class="set-toggle'+(_uc.refreshMin===m?' active':'')+'" onclick="setUsageCfg(&quot;refreshMin&quot;,'+m+');applyUsageInterval();renderSettings();">'+m+'&nbsp;min</button>';});
   h+='</div></div>';
+  return h;
+}
+function settingsSystemHtml(){
+  return '<div class="set-section"><div class="set-label">Vault-Speicherort</div><div class="set-vaultroot"><input type="text" class="set-input" id="set-vaultroot" placeholder="Pfad zum Vaults-Ordner&hellip;"><button class="ft-btn" style="padding:8px 14px" onclick="saveVaultRoot()">Speichern</button></div><div class="set-hint" id="set-vaultroot-hint">Ordner, in dem neue Vaults angelegt werden. Bestehende Vaults behalten ihren Pfad.</div></div>';
+}
+// App-Version (aus package.json, passt sich bei jedem Build automatisch an) einmalig in die Fußzeile laden.
+async function loadVersionInfo(){
+  const el=document.getElementById('set-version');if(!el||el.dataset.loaded)return;
+  try{const r=await api('/api/version');if(r&&r.version){el.textContent='Nexus v'+r.version;el.dataset.loaded='1';}}catch(e){}
+}
+async function renderSettings(){
+  const body=document.getElementById('settings-body');if(!body)return;
+  const tab=_settingsTab;
+  const tabsHost=document.getElementById('settings-tabs');
+  if(tabsHost)tabsHost.innerHTML=SETTINGS_TABS.map(t=>'<button class="set-tab'+(t.id===tab?' active':'')+'" onclick="setSettingsTab(&quot;'+t.id+'&quot;)">'+esc(t.label)+'</button>').join('');
+  let h='';
+  if(tab==='graph')h=settingsGraphHtml();
+  else if(tab==='usage')h=settingsUsageHtml();
+  else if(tab==='system')h=settingsSystemHtml();
+  else h=settingsAppearanceHtml();
   body.innerHTML=h;
-  body.querySelectorAll('[data-set-theme]').forEach(b=>b.addEventListener('click',()=>{setTheme(b.getAttribute('data-set-theme'));renderSettings();}));
-  renderFolderColors();
-  try{const r=await api('/api/settings/vaultsRoot');const inp=document.getElementById('set-vaultroot');if(inp&&!r.error)inp.value=r.vaultsRoot||'';}catch(e){}
+  if(tab==='appearance')body.querySelectorAll('[data-set-theme]').forEach(b=>b.addEventListener('click',()=>{setTheme(b.getAttribute('data-set-theme'));renderSettings();}));
+  if(tab==='graph')renderFolderColors();
+  if(tab==='system'){try{const r=await api('/api/settings/vaultsRoot');const inp=document.getElementById('set-vaultroot');if(inp&&!r.error)inp.value=r.vaultsRoot||'';}catch(e){}}
+  loadVersionInfo();
 }
 function renderFolderColors(){
   const host=document.getElementById('set-folders');if(!host)return;
