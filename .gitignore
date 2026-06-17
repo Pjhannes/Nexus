@@ -27,3 +27,7 @@ setup.ps1
 tmp-trunc.html
 aufgaben Nexus.txt
 *.lnk
+
+# Design-Mockups (HTML-Entwuerfe + Logo-SVGs) – nicht Teil der App, enthalten Demo-Inhalt.
+# Bleiben lokal, raus aus dem Repo (Session 46).
+design-mockups/
