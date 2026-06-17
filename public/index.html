@@ -582,6 +582,13 @@ body.row-resizing{cursor:row-resize;user-select:none}
 /* Rail-Flyout (Variante B) */
 #rail-flyout{position:fixed;width:252px;min-width:200px;max-width:560px;max-height:70vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:10px 8px;z-index:55;display:none}
 #rail-flyout.show{display:block}
+/* Flyout-Scrollbar: nur der Daumen ist sichtbar (kein Hintergrund-Balken), und der Track ist oben/unten
+   eingerückt, damit der Daumen vor den gerundeten Ecken (border-radius:16px) endet statt darüber hinauszulaufen. */
+#rail-flyout::-webkit-scrollbar{width:6px}
+#rail-flyout::-webkit-scrollbar-track{background:transparent;margin:16px 0}
+#rail-flyout::-webkit-scrollbar-thumb{background:var(--sb-thumb);border-radius:3px}
+#rail-flyout::-webkit-scrollbar-thumb:hover{background:var(--sb-thumb-h)}
+#rail-flyout::-webkit-scrollbar-corner{background:transparent}
 /* Breiten-Resizer am rechten Rand des Flyouts (nur sitzungsweise, wird nicht gespeichert) */
 #rail-flyout-rz{position:fixed;width:9px;z-index:56;display:none;cursor:ew-resize}
 #rail-flyout-rz.show{display:block}
@@ -1354,6 +1361,9 @@ let _railFlyoutPath=null, _railFlyoutBtn=null;
 // Harte Obergrenze fuer das Rail-Flyout: knapp UNTER der Tab-Leiste, damit die Tabs nie verdeckt werden.
 // Tab-Leiste ist position:absolute;top:0 in der .col -> ihr Viewport-Unterrand ist die Grenze (Flyout ist position:fixed).
 function railTopLimit(){const tb=document.getElementById('tabbar');const b=tb?tb.getBoundingClientRect().bottom:0;return Math.max(8,b+6);}
+// Harte Untergrenze: das Flyout darf nicht weiter nach unten gehen als die Unterkante des Notizfensters
+// (die mittlere .col mit Tab-Leiste). Fallback auf Fensterhöhe, falls die Spalte (noch) nicht da ist.
+function railBottomLimit(){const tb=document.getElementById('tabbar');const col=tb?tb.parentElement:null;const b=col?col.getBoundingClientRect().bottom:window.innerHeight;return Math.min(window.innerHeight,b);}
 function openRailFlyout(node,btn){
   const fo=document.getElementById('rail-flyout');if(!fo)return;
   if(_railFlyoutPath===node.path){closeRailFlyout();return;}
@@ -1386,8 +1396,9 @@ function openRailFlyout(node,btn){
       const ir=icon.getBoundingClientRect(), rr=row.getBoundingClientRect();
       const iconCenter=ir.top+ir.height/2, rowCenter=rr.top+rr.height/2;
       const curTop=parseFloat(fo.style.top)||fo.getBoundingClientRect().top;
-      const lim=railTopLimit();
+      const lim=railTopLimit(), botLim=railBottomLimit(), foH=fo.offsetHeight;
       let newTop=curTop+(iconCenter-rowCenter), scrollRest=0;
+      newTop=Math.min(newTop,botLim-foH);                   // harte Untergrenze auch beim Aufklappen: Unterkante <= Notizfenster
       if(newTop<lim){scrollRest=lim-newTop;newTop=lim;}      // Tab-Unterkante erreicht -> Rest IM Flyout scrollen
       tween(curTop,newTop,320,v=>{fo.style.top=v+'px';positionFlyoutResizer();});
       if(scrollRest>0.5){
@@ -1401,19 +1412,23 @@ function openRailFlyout(node,btn){
   fo.style.left=(r.right+8)+'px';
   fo.style.top='0px';
   fo.classList.add('show'); // sichtbar -> Höhe messbar
+  // Obergrenze = knapp unter der Tab-Leiste, Untergrenze = Unterkante des Notizfensters (harte Grenze).
+  // Höhe vorab auf den verfügbaren Korridor kappen, damit das Flyout NIE unter das Notizfenster reicht
+  // (überschreibt das statische max-height:70vh aus dem CSS).
+  const topLim=railTopLimit(), botLim=railBottomLimit();
+  fo.style.maxHeight=Math.max(120,botLim-topLim)+'px';
   // Flyout immer direkt neben dem Icon; falls es unten rausragen würde, die Icon-Leiste
   // animiert nach oben scrollen (so weit der Inhalt es hergibt), damit das ganze Fenster passt.
-  const foH=fo.offsetHeight, vh=window.innerHeight, margin=12;
+  const foH=fo.offsetHeight;
   let finalTop=r.top;
   if(side){
-    const need=Math.max(0,(r.top+foH+margin)-vh);
+    const need=Math.max(0,(r.top+foH)-botLim);
     const delta=Math.min(need, Math.max(0,side.scrollHeight-side.clientHeight)-side.scrollTop);
     finalTop=r.top-Math.max(0,delta);
     if(delta>0.5)smoothScrollTop(side,side.scrollTop+delta,360);
   }
   // Wenn die Leiste nicht weit genug scrollen kann (z.B. letztes Thema): Flyout am unteren Rand verankern.
-  // Obergrenze = knapp unter der Tab-Leiste (railTopLimit), damit die Tabs immer sichtbar bleiben.
-  finalTop=Math.max(railTopLimit(),Math.min(finalTop,vh-margin-foH));
+  finalTop=Math.max(topLim,Math.min(finalTop,botLim-foH));
   fo.style.top=finalTop+'px';
   positionFlyoutResizer();
 }
