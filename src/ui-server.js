@@ -74,6 +74,30 @@ function buildTree(root, relBase, ignoreSet, depth = 0) {
   return result;
 }
 
+// Billige Signatur des sichtbaren Baums (gleiche Ignore-Regeln wie buildTree):
+// FNV-1a-Hash ueber alle relativen Pfade + Anzahl. EIN readdir pro Ordner (kein
+// stat pro Datei) -> sehr guenstig, auch bei tausenden Dateien. Aendert sich genau
+// dann, wenn Dateien/Ordner hinzukommen, verschwinden oder umbenannt/verschoben
+// werden (Inhalts-Edits ohne Pfadaenderung lassen den Baum – korrekt – unberuehrt).
+function treeSignature(root, ignoreSet, depth = 0, rel = '', state = { h: 0x811c9dc5 >>> 0, n: 0 }) {
+  if (depth > 8) return state;
+  let entries;
+  try { entries = readdirSync(rel === '' ? root : join(root, rel), { withFileTypes: true }); }
+  catch { return state; }
+  for (const e of entries) {
+    if (ignoreSet.has(e.name) || e.name.startsWith('.')) continue;
+    const r = rel ? rel + '/' + e.name : e.name;
+    state.n++;
+    for (let i = 0; i < r.length; i++) { state.h ^= r.charCodeAt(i); state.h = Math.imul(state.h, 0x01000193) >>> 0; }
+    if (e.isDirectory()) treeSignature(root, ignoreSet, depth + 1, r, state);
+  }
+  return state;
+}
+function treeSigString(root, ignoreSet) {
+  const s = treeSignature(root, ignoreSet);
+  return s.n + ':' + s.h;
+}
+
 app.get('/api/vaults', (_req, res) => {
   res.json(cfg.vaults.map(v => ({ name: v.name, active: v.name === cfg.activeVault })));
 });
@@ -501,6 +525,55 @@ app.get('/api/claude-orgs', async (req, res) => {
     res.json(data);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// ── Live-Updates: Tree-Abgleich -> Server-Sent Events ─────────────────────────
+// Damit neue/geloeschte/umbenannte Dateien und Ordner (aus dem Explorer, von Claude
+// via MCP oder einem anderen Editor) in der App von selbst erscheinen, ohne Neuladen
+// (Strg+R). Statt eines event-basierten Datei-Watchers (chokidar verschluckt unter
+// Windows-Polling Datei-"unlink"-Events unzuverlaessig) wird hier alle paar Sekunden
+// eine billige Baum-Signatur berechnet und nur bei echter Aenderung ein "tree-changed"
+// an alle offenen UI-Tabs gepusht (die dann refreshTree() ausfuehren). Verlaesslich,
+// weil es den IST-Zustand des Dateisystems vergleicht statt auf Events zu vertrauen.
+const sseClients = new Set();
+app.get('/api/events', (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders?.();
+  res.write('retry: 3000\n\n');
+  sseClients.add(res);
+  // Heartbeat haelt die Verbindung durch Idle-Timeouts offen.
+  const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 25_000);
+  req.on('close', () => { clearInterval(ping); sseClients.delete(res); });
+});
+function broadcastEvent(obj) {
+  const payload = `data: ${JSON.stringify(obj)}\n\n`;
+  for (const res of sseClients) { try { res.write(payload); } catch {} }
+}
+
+// Pro Vault: alle 2 s die Signatur pruefen (nur wenn ueberhaupt ein UI-Tab offen ist,
+// sonst gibt es nichts zu aktualisieren -> kein Idle-CPU). Aenderung -> tree-changed.
+const _ignoreSet = new Set(cfg.ignore ?? []);
+const _treeSig = {};
+for (const v of cfg.vaults) {
+  if (!indexers[v.name]) continue;
+  try { _treeSig[v.name] = treeSigString(v.path, _ignoreSet); } catch { _treeSig[v.name] = ''; }
+}
+setInterval(() => {
+  if (sseClients.size === 0) return;
+  for (const v of cfg.vaults) {
+    if (!indexers[v.name]) continue;
+    let sig;
+    try { sig = treeSigString(v.path, _ignoreSet); } catch { continue; }
+    if (sig !== _treeSig[v.name]) {
+      _treeSig[v.name] = sig;
+      broadcastEvent({ type: 'tree-changed', vault: v.name });
+    }
+  }
+}, 2000).unref?.();
 
 // ── Server starten ────────────────────────────────────────────────────────────
 // NEXUS_PORT (von electron/main.js gesetzt) hat Vorrang -> Dev laeuft auf 3001, Prod auf 3000,

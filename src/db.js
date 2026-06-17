@@ -12,6 +12,11 @@ export function openDb(dbPath) {
   mkdirSync(dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode = WAL');
+  // App (ui-server, in-process) und Claude Desktop (MCP, eigener Prozess) oeffnen
+  // dieselbe DB. WAL erlaubt parallele Leser + EINEN Schreiber; ohne busy_timeout
+  // scheitert der zweite gleichzeitige Schreiber sofort mit SQLITE_BUSY. 5 s
+  // Wartezeit laesst beide Live-Watcher konfliktfrei indexieren.
+  db.exec('PRAGMA busy_timeout = 5000');
 
   // Schema-Versionspruefung
   const ver = db.prepare('PRAGMA user_version').get();

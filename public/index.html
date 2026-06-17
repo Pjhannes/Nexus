@@ -1218,6 +1218,25 @@ async function init(){
     const startNote=allMdFiles.find(f=>f.path.split('/').pop().toLowerCase()==='start.md');
     if(startNote) await openFile(startNote.path,{startup:true});
   }
+  startLiveUpdates();
+}
+// Live-Updates: lauscht via Server-Sent Events auf Datei-/Ordneraenderungen im Vault
+// und laedt den Baum inkrementell nach -> neue/geloeschte Dateien und Ordner erscheinen
+// ohne Strg+R. Bewusst nur der Sidebar-Baum (refreshTree); offene Notiz/Editor bleiben unangetastet.
+let _es=null,_liveTimer=null;
+function startLiveUpdates(){
+  if(_es||typeof EventSource==='undefined')return;
+  try{
+    _es=new EventSource('/api/events');
+    _es.onmessage=(ev)=>{
+      let m;try{m=JSON.parse(ev.data);}catch{return;}
+      if(m&&m.type==='tree-changed'&&m.vault===activeVault){
+        clearTimeout(_liveTimer);
+        _liveTimer=setTimeout(()=>{refreshTree().catch(()=>{});},250);
+      }
+    };
+    // onerror: EventSource verbindet dank "retry" automatisch neu -> nichts zu tun.
+  }catch{/* SSE nicht verfuegbar -> manuelles Reindex bleibt als Fallback */}
 }
 async function loadVault(){
   setCrumb(esc(activeVault));
@@ -1236,6 +1255,7 @@ async function refreshTree(){
   vaultTree=await api(`/api/tree?vault=${encodeURIComponent(activeVault)}`);
   buildNoteIndex();
   renderSidebar();
+  refreshRailFlyout(); // offenes Rail-Flyout (Studio-Layout) mit frischen Daten neu rendern
   const total=countFiles(vaultTree);
   document.getElementById('sb-index').textContent=`Index: ${total.toLocaleString('de')} Dateien`;
   const sb2=document.getElementById('folder-list');if(sb2)sb2.scrollTop=scroll;
@@ -1393,12 +1413,11 @@ function railTopLimit(){const tb=document.getElementById('tabbar');const b=tb?tb
 // Harte Untergrenze: das Flyout darf nicht weiter nach unten gehen als die Unterkante des Notizfensters
 // (die mittlere .col mit Tab-Leiste). Fallback auf Fensterhöhe, falls die Spalte (noch) nicht da ist.
 function railBottomLimit(){const tb=document.getElementById('tabbar');const col=tb?tb.parentElement:null;const b=col?col.getBoundingClientRect().bottom:window.innerHeight;return Math.min(window.innerHeight,b);}
-function openRailFlyout(node,btn){
+// Baut nur den INHALT des Flyouts (Kopf + Unterordner-Baum) aus dem Knoten.
+// Herausgeloest, damit refreshTree() ein offenes Flyout mit frischen Daten neu
+// rendern kann (Aufklapp-Zustand bleibt via globalem openFolders erhalten).
+function renderRailFlyoutContent(node){
   const fo=document.getElementById('rail-flyout');if(!fo)return;
-  if(_railFlyoutPath===node.path){closeRailFlyout();return;}
-  _railFlyoutPath=node.path; _railFlyoutBtn=btn;
-  fo.style.width=''; // Breite bei jedem Öffnen auf Standard zurück (Resize wird bewusst NICHT gespeichert)
-  document.querySelectorAll('#folder-list .rail-btn').forEach(x=>x.classList.toggle('active',x.dataset.path===node.path));
   fo.innerHTML='';
   const head=document.createElement('div');head.className='fo-head';
   head.innerHTML=`<span>${esc(node.name)}</span><span class="fo-new">+ Notiz</span>`;
@@ -1436,6 +1455,30 @@ function openRailFlyout(node,btn){
       }
     }));
   });
+}
+// Offenes Flyout nach einem Live-Refresh mit frischen Baumdaten neu rendern.
+// (refreshTree() aktualisiert nur #folder-list/renderRail – das Flyout-DOM bliebe
+// sonst auf dem Stand vom Klick stehen, daher "verschwand" Gelöschtes erst nach
+// Icon-Wechsel.) Position/Breite/Höhe bleiben; nur Scroll-Stand wird erhalten.
+function refreshRailFlyout(){
+  const fo=document.getElementById('rail-flyout');
+  if(!fo||!fo.classList.contains('show')||!_railFlyoutPath)return;
+  const node=vaultTree.find(n=>n.path===_railFlyoutPath);
+  const btn=[...document.querySelectorAll('#folder-list .rail-btn')].find(b=>b.dataset.path===_railFlyoutPath);
+  if(!node||node.type!=='folder'||!btn){closeRailFlyout();return;} // Thema gelöscht -> Flyout schließen
+  _railFlyoutBtn=btn; btn.classList.add('active');
+  const scroll=fo.scrollTop;
+  renderRailFlyoutContent(node);
+  fo.scrollTop=scroll;
+  positionFlyoutResizer();
+}
+function openRailFlyout(node,btn){
+  const fo=document.getElementById('rail-flyout');if(!fo)return;
+  if(_railFlyoutPath===node.path){closeRailFlyout();return;}
+  _railFlyoutPath=node.path; _railFlyoutBtn=btn;
+  fo.style.width=''; // Breite bei jedem Öffnen auf Standard zurück (Resize wird bewusst NICHT gespeichert)
+  document.querySelectorAll('#folder-list .rail-btn').forEach(x=>x.classList.toggle('active',x.dataset.path===node.path));
+  renderRailFlyoutContent(node);
   const r=btn.getBoundingClientRect();
   const side=document.getElementById('side-scroll');
   fo.style.left=(r.right+8)+'px';
