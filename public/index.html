@@ -3333,7 +3333,15 @@ function settingsUsageHtml(){
   return h;
 }
 function settingsSystemHtml(){
-  return '<div class="set-section"><div class="set-label">Vault-Speicherort</div><div class="set-vaultroot"><input type="text" class="set-input" id="set-vaultroot" placeholder="Pfad zum Vaults-Ordner&hellip;"><button class="ft-btn" style="padding:8px 14px" onclick="saveVaultRoot()">Speichern</button></div><div class="set-hint" id="set-vaultroot-hint">Ordner, in dem neue Vaults angelegt werden. Bestehende Vaults behalten ihren Pfad.</div></div>';
+  let h='<div class="set-section"><div class="set-label">Vault-Speicherort</div><div class="set-vaultroot"><input type="text" class="set-input" id="set-vaultroot" placeholder="Pfad zum Vaults-Ordner&hellip;"><button class="ft-btn" style="padding:8px 14px" onclick="saveVaultRoot()">Speichern</button></div><div class="set-hint" id="set-vaultroot-hint">Ordner, in dem neue Vaults angelegt werden. Bestehende Vaults behalten ihren Pfad.</div></div>';
+  // Nur in der Nexus-App (Electron, preload-Bridge) – im reinen Browser ohne nexusAPI ausgeblendet.
+  if(window.nexusAPI&&window.nexusAPI.connectClaude){
+    h+='<div class="set-section"><div class="set-label">Claude Desktop &amp; Einrichtung</div>';
+    h+='<div class="set-vaultroot" style="flex-wrap:wrap;gap:8px"><button class="ft-btn" style="padding:8px 14px" onclick="connectClaudeFromSettings()">Mit Claude Desktop verbinden</button>';
+    h+='<button class="ft-btn" style="padding:8px 14px" onclick="openHelpFromSettings()">Einrichtung &amp; Usage-Key&hellip;</button></div>';
+    h+='<div class="set-hint" id="set-claude-hint">Tr&auml;gt Nexus als MCP-Server in die Claude-Desktop-Konfiguration ein. Danach Claude Desktop komplett beenden und neu &ouml;ffnen.</div></div>';
+  }
+  return h;
 }
 // App-Version (aus package.json, passt sich bei jedem Build automatisch an) einmalig in die Fußzeile laden.
 async function loadVersionInfo(){
@@ -3387,6 +3395,22 @@ async function saveVaultRoot(){
     toast('✓ Vault-Speicherort gespeichert','success');logActivity('#10B981','vaultsRoot → '+esc(p));
     if(hint)hint.textContent=r.note||'Gespeichert. Bitte Nexus neu starten.';
   }catch(ex){toast('Fehler: '+ex.message,'error');}
+}
+async function connectClaudeFromSettings(){
+  const hint=document.getElementById('set-claude-hint');
+  if(!(window.nexusAPI&&window.nexusAPI.connectClaude)){toast('Nur in der Nexus-App verf&uuml;gbar','error');return;}
+  try{
+    const r=await window.nexusAPI.connectClaude();
+    if(r&&r.error){toast('Fehler: '+r.error,'error');if(hint)hint.textContent='⚠ '+r.error;return;}
+    const key=(r&&r.key)||'nexus';
+    toast('✓ Mit Claude Desktop verbunden','success');logActivity('#10B981','Claude Desktop verbunden ('+esc(key)+')');
+    if(hint)hint.textContent='✓ Eingetragen als „'+key+'". Claude Desktop bitte komplett beenden und neu öffnen.'+((r&&r.backedUp)?' Alte Config gesichert (…nexus-backup).':'');
+  }catch(ex){toast('Fehler: '+ex.message,'error');}
+}
+async function openHelpFromSettings(){
+  if(!(window.nexusAPI&&window.nexusAPI.openHelp)){toast('Nur in der Nexus-App verf&uuml;gbar','error');return;}
+  try{const r=await window.nexusAPI.openHelp();if(r&&r.error)toast('Fehler: '+r.error,'error');}
+  catch(ex){toast('Fehler: '+ex.message,'error');}
 }
 
 

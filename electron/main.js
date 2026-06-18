@@ -292,16 +292,45 @@ function openVaultFolder() {
 }
 
 function buildMenu() {
+  const isMac = process.platform === 'darwin';
+  // Die Nexus-Aktionen, die auf JEDER Plattform dauerhaft erreichbar sein muessen.
+  const nexusActions = [
+    { label: 'Mit Claude Desktop verbinden', click: connectClaudeDesktop },
+    { label: 'Einrichtung & Usage-Key…', click: openHelpWindow },
+    { label: 'Vault-Ordner oeffnen', click: openVaultFolder },
+  ];
+
+  // Auf macOS ist das ERSTE Menue zwangsweise das App-Menue (fett, App-Name). Die
+  // Aktionen gehoeren konventionell dort hinein (zwischen "Ueber" und "Beenden");
+  // andernfalls "verschwinden" sie fuer den Nutzer, weil ein zweites "Nexus"-Menue
+  // neben dem fetten App-Menue ungewohnt ist. Auf Windows/Linux bleibt das normale
+  // "Nexus"-Menue mit eigenem Beenden-Eintrag.
+  const appMenu = isMac
+    ? {
+        label: APP_NAME,
+        submenu: [
+          { role: 'about', label: 'Ueber ' + APP_NAME },
+          { type: 'separator' },
+          ...nexusActions,
+          { type: 'separator' },
+          { role: 'hide', label: APP_NAME + ' ausblenden' },
+          { role: 'hideOthers', label: 'Andere ausblenden' },
+          { role: 'unhide', label: 'Alle einblenden' },
+          { type: 'separator' },
+          { role: 'quit', label: 'Beenden' },
+        ],
+      }
+    : {
+        label: 'Nexus',
+        submenu: [
+          ...nexusActions,
+          { type: 'separator' },
+          { role: 'quit', label: 'Beenden' },
+        ],
+      };
+
   const template = [
-    {
-      label: 'Nexus',
-      submenu: [
-        { label: 'Mit Claude Desktop verbinden', click: connectClaudeDesktop },
-        { label: 'Vault-Ordner oeffnen', click: openVaultFolder },
-        { type: 'separator' },
-        { role: 'quit', label: 'Beenden' },
-      ],
-    },
+    appMenu,
     {
       label: 'Ansicht',
       submenu: [
@@ -317,6 +346,7 @@ function buildMenu() {
       ],
     },
     {
+      role: 'help',
       label: 'Hilfe',
       submenu: [
         { label: 'Einrichtung & Usage-Key…', click: openHelpWindow },
@@ -364,6 +394,13 @@ function registerIpc() {
 
   ipcMain.handle('help:connect-claude', () => {
     try { return connectClaudeCore(); }
+    catch (e) { return { error: String(e && e.message ? e.message : e) }; }
+  });
+
+  // Hilfe-/Einrichtungsfenster aus der App-UI (Einstellungen -> System) oeffnen,
+  // damit Usage-Key & Anleitung auch nach dem Wizard erreichbar sind (v. a. macOS).
+  ipcMain.handle('help:open', () => {
+    try { openHelpWindow(); return { ok: true }; }
     catch (e) { return { error: String(e && e.message ? e.message : e) }; }
   });
 

@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('nexusAPI', {
   cancelWizard:     ()     => ipcRenderer.invoke('wizard:cancel'),
   // Hilfe / Einrichtung
   connectClaude:    ()     => ipcRenderer.invoke('help:connect-claude'),
+  openHelp:         ()     => ipcRenderer.invoke('help:open'),
   openExternal:     (url)  => ipcRenderer.invoke('app:open-external', url),
   appVersion:       ()     => ipcRenderer.invoke('app:version'),
 });
