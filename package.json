@@ -1,6 +1,6 @@
 {
   "name": "nexus",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Nexus – persoenliche Wissensdatenbank (MCP-Server + Web-UI)",
   "author": "Nexus",
   "type": "module",
