@@ -22,6 +22,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { createServer } from 'net';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, appendFileSync } from 'fs';
+import { setupAutoUpdate } from './updater.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const APP_ROOT   = join(__dir, '..');
@@ -144,6 +145,12 @@ function createWindow() {
   });
   mainWindow.loadURL(`http://localhost:${PORT}`);
   mainWindow.on('closed', () => { mainWindow = null; });
+}
+
+// Auto-Update-Prüfung kurz nach dem Start anstossen (Fenster zuerst laden lassen).
+// Greift nur in der gepackten App; Logik + Plattform-Fallunterscheidung steckt in updater.js.
+function scheduleUpdateCheck() {
+  setTimeout(() => { setupAutoUpdate(mainWindow, log); }, 3000);
 }
 
 // ── Erster-Start-Assistent ─────────────────────────────────────────────────────
@@ -381,7 +388,7 @@ function registerIpc() {
       const guide  = !!opts.showGuide;
       const w = wizardWin;
 
-      if (launch) { await startUIServer(); buildMenu(); createWindow(); }
+      if (launch) { await startUIServer(); buildMenu(); createWindow(); scheduleUpdateCheck(); }
       if (guide)  { try { await startUIServer(); } catch (e) { log('Server fuer Hilfe-Fenster:', e.message); } openHelpWindow(); }
       if (w && !w.isDestroyed()) w.close();
       if (!launch && !guide) app.quit();
@@ -438,6 +445,7 @@ if (gotSingleLock) app.whenReady().then(async () => {
       await startUIServer();
       buildMenu();
       createWindow();
+      scheduleUpdateCheck();
     }
   } catch (err) {
     log('Start fehlgeschlagen:', err && err.message);
