@@ -5,21 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nexus – Einrichtung</title>
 <style>
+  /* Studio-Dunkel + Amber – passend zur Nexus-Studio-„Bernstein"-Variante */
   :root{
-    --bg:#07090f; --panel:#10141f; --panel2:#161b29; --border:#222a3d;
-    --text:#e6e9f2; --dim:#8a93a8; --accent:#22d3ee; --accent2:#8b8cf0;
+    --bg:#161514; --panel:#211f1e; --panel2:#2a2724; --border:#36312a;
+    --text:#ece6da; --dim:#a99d8a; --accent:#EAB308; --accent2:#F59E0B;
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
   body{
-    background:radial-gradient(120% 120% at 50% 0%, #111626 0%, var(--bg) 60%);
+    background:radial-gradient(120% 120% at 50% 0%, #221f1a 0%, var(--bg) 60%);
     color:var(--text); font:14px/1.5 "Segoe UI",system-ui,sans-serif;
     display:flex; flex-direction:column; height:100vh; overflow:hidden;
     user-select:none; -webkit-user-select:none;
   }
   .wrap{flex:1; display:flex; flex-direction:column; padding:34px 40px 22px}
   .logo{display:flex; align-items:center; gap:12px; margin-bottom:6px}
-  .logo svg{filter:drop-shadow(0 0 10px rgba(34,211,238,.45))}
+  .logo svg{filter:drop-shadow(0 0 10px rgba(234,179,8,.5))}
   .logo h1{font-size:22px; margin:0; letter-spacing:.5px; font-weight:600}
   .step-dots{display:flex; gap:7px; margin-left:auto}
   .step-dots i{width:8px;height:8px;border-radius:50%;background:var(--border);transition:.2s}
@@ -41,11 +42,11 @@
     background:var(--panel2);border:1px solid var(--border);color:var(--text);
     border-radius:9px;padding:11px 16px;font:14px/1 "Segoe UI",sans-serif;cursor:pointer;transition:.15s;
   }
-  button:hover{border-color:var(--accent);background:#1b2233}
-  button.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;color:#06121a;font-weight:600}
+  button:hover{border-color:var(--accent);background:#322d27}
+  button.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;color:#221701;font-weight:700}
   button.primary:hover{filter:brightness(1.08)}
   .opt{display:flex;align-items:flex-start;gap:11px;padding:13px 14px;margin-top:11px;background:var(--panel);border:1px solid var(--border);border-radius:10px;cursor:pointer}
-  .opt:hover{border-color:#33405c}
+  .opt:hover{border-color:#4a4136}
   .opt input{margin-top:2px;width:17px;height:17px;accent-color:var(--accent)}
   .opt .t{font-weight:500}
   .opt .d{color:var(--dim);font-size:12.5px;margin-top:2px}
@@ -60,10 +61,10 @@
 <div class="wrap">
   <div class="logo">
     <svg width="34" height="34" viewBox="0 0 100 100">
-      <circle cx="50" cy="50" r="40" fill="none" stroke="#22d3ee" stroke-opacity=".18" stroke-width="1.5"/>
-      <polygon points="50,16 84,50 50,84 16,50" fill="none" stroke="#67e8f9" stroke-width="4"/>
-      <polygon points="50,30 70,50 50,70 30,50" fill="none" stroke="#8b8cf0" stroke-width="3.5"/>
-      <rect x="42" y="42" width="16" height="16" transform="rotate(45 50 50)" fill="#22d3ee"/>
+      <circle cx="50" cy="50" r="40" fill="none" stroke="#EAB308" stroke-opacity=".18" stroke-width="1.5"/>
+      <polygon points="50,16 84,50 50,84 16,50" fill="none" stroke="#F5D26B" stroke-width="4"/>
+      <polygon points="50,30 70,50 50,70 30,50" fill="none" stroke="#F59E0B" stroke-width="3.5"/>
+      <rect x="42" y="42" width="16" height="16" transform="rotate(45 50 50)" fill="#EAB308"/>
     </svg>
     <h1>Nexus</h1>
     <div class="step-dots"><i id="d0" class="on"></i><i id="d1"></i><i id="d2"></i></div>

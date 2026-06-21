@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus Update</title>
+<style>
+  /* Studio-Dunkel + Amber – passend zur Nexus-Studio-„Bernstein"-Variante */
+  :root{
+    --bg:#161514; --panel:#211f1e; --panel2:#2a2724; --border:#36312a;
+    --text:#ece6da; --dim:#a99d8a; --accent:#EAB308; --accent2:#F59E0B;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(130% 130% at 50% 0%, #221f1a 0%, var(--bg) 62%);
+    color:var(--text); font:14px/1.5 "Segoe UI",system-ui,sans-serif;
+    height:100vh; overflow:hidden; user-select:none; -webkit-user-select:none;
+    display:flex; flex-direction:column;
+    border:1px solid var(--border); border-radius:12px;
+  }
+  .bar{ -webkit-app-region:drag; height:14px; flex:0 0 auto }
+  .wrap{ flex:1; display:flex; flex-direction:column; padding:6px 26px 22px }
+  .head{ display:flex; align-items:center; gap:12px; margin-bottom:10px }
+  .head svg{ filter:drop-shadow(0 0 9px rgba(234,179,8,.5)) }
+  .head .ttl{ font-size:17px; font-weight:600; letter-spacing:.3px }
+  .msg{ font-size:14.5px; font-weight:600; margin:2px 0 6px }
+  .detail{ color:var(--dim); font-size:13px; white-space:pre-line }
+  .spacer{ flex:1; min-height:10px }
+
+  /* Fortschritt */
+  .prog-label{ color:var(--dim); font-size:13px; margin-bottom:8px; display:flex; justify-content:space-between }
+  .track{ height:9px; background:var(--panel); border:1px solid var(--border); border-radius:99px; overflow:hidden }
+  .fill{ height:100%; width:0%; border-radius:99px;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    box-shadow:0 0 12px rgba(234,179,8,.5); transition:width .2s ease }
+
+  .nav{ display:flex; gap:10px; justify-content:flex-end; margin-top:18px }
+  button{
+    background:var(--panel2); border:1px solid var(--border); color:var(--text);
+    border-radius:9px; padding:10px 16px; font:14px/1 "Segoe UI",sans-serif; cursor:pointer; transition:.15s;
+  }
+  button:hover{ border-color:var(--accent); background:#322d27 }
+  button.primary{ background:linear-gradient(135deg,var(--accent),var(--accent2)); border:none; color:#221701; font-weight:700 }
+  button.primary:hover{ filter:brightness(1.07) }
+</style>
+</head>
+<body>
+  <div class="bar"></div>
+  <div class="wrap">
+    <div class="head">
+      <svg width="30" height="30" viewBox="0 0 100 100" aria-hidden="true">
+        <circle cx="50" cy="50" r="40" fill="none" stroke="#EAB308" stroke-opacity=".18" stroke-width="1.5"/>
+        <polygon points="50,16 84,50 50,84 16,50" fill="none" stroke="#F5D26B" stroke-width="4"/>
+        <polygon points="50,30 70,50 50,70 30,50" fill="none" stroke="#F59E0B" stroke-width="3.5"/>
+        <rect x="42" y="42" width="16" height="16" transform="rotate(45 50 50)" fill="#EAB308"/>
+      </svg>
+      <div class="ttl" id="ttl">Nexus Update</div>
+    </div>
+
+    <!-- Prompt-Ansicht -->
+    <div id="promptView">
+      <div class="msg" id="msg"></div>
+      <div class="detail" id="detail"></div>
+    </div>
+
+    <!-- Fortschritts-Ansicht -->
+    <div id="progressView" style="display:none">
+      <div class="prog-label"><span id="progLabel">Wird heruntergeladen…</span><span id="progPct">0%</span></div>
+      <div class="track"><div class="fill" id="progFill"></div></div>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="nav" id="nav"></div>
+  </div>
+
+<script>
+  const api = window.nexusAPI;
+  const $ = (id) => document.getElementById(id);
+  let cancelIndex = -1;
+
+  function showPrompt(d){
+    $('progressView').style.display = 'none';
+    $('promptView').style.display = '';
+    $('ttl').textContent = d.title || 'Nexus Update';
+    $('msg').textContent = d.message || '';
+    $('detail').textContent = d.detail || '';
+    const nav = $('nav');
+    nav.innerHTML = '';
+    const buttons = d.buttons || ['OK'];
+    cancelIndex = buttons.length - 1;       // letzter Button = Abbrechen (Esc)
+    buttons.forEach((label, i) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      if (i === 0) b.className = 'primary';   // erster Button = Primaeraktion (Amber)
+      b.onclick = () => api.updateAction(i);
+      nav.appendChild(b);
+    });
+  }
+
+  function showProgress(d){
+    $('promptView').style.display = 'none';
+    $('progressView').style.display = '';
+    $('nav').innerHTML = '';
+    cancelIndex = -1;
+    $('ttl').textContent = 'Update wird geladen';
+    $('progLabel').textContent = d.label || 'Wird heruntergeladen…';
+    const pct = Math.round(d.percent || 0);
+    $('progPct').textContent = pct + '%';
+    $('progFill').style.width = pct + '%';
+  }
+
+  api.onUpdateView((d) => {
+    if (d.view === 'progress') showProgress(d);
+    else showPrompt(d);
+  });
+
+  // Esc = Abbrechen (entspricht dem letzten Button)
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && cancelIndex >= 0) api.updateAction(cancelIndex);
+  });
+</script>
+</body>
+</html>

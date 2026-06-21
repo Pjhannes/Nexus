@@ -17,4 +17,7 @@ contextBridge.exposeInMainWorld('nexusAPI', {
   openHelp:         ()     => ipcRenderer.invoke('help:open'),
   openExternal:     (url)  => ipcRenderer.invoke('app:open-external', url),
   appVersion:       ()     => ipcRenderer.invoke('app:version'),
+  // Auto-Update-Fenster (update.html): Main steuert die Ansicht, Renderer meldet den Klick zurueck.
+  onUpdateView:     (cb)   => ipcRenderer.on('update:view', (_e, data) => cb(data)),
+  updateAction:     (index)=> ipcRenderer.send('update:action', index),
 });

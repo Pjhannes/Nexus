@@ -8,9 +8,14 @@
 //     oeffnen bei einer neueren Version die Download-Seite im Browser. Echtes
 //     Auto-Install ginge nur mit Apple-Signierung/Notarisierung (bewusst out of scope).
 //
+// Die Dialoge sind ein EIGENES, gestyltes Fenster (update.html, Studio-Dunkel + Amber)
+// statt der nativen OS-Dialoge. Faellt auf den System-Dialog zurueck, falls das
+// Fenster nicht erstellbar ist.
+//
 // Quelle ist das OEFFENTLICHE Repo Pjhannes/Nexus  ->  kein Token auf den Ziel-PCs.
 
 import { app, dialog, shell } from 'electron';
+import { createUpdateWindow } from './update-window.js';
 
 const REPO = 'Pjhannes/Nexus';
 const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
@@ -20,7 +25,7 @@ const API_LATEST = `https://api.github.com/repos/${REPO}/releases/latest`;
 function parseVersion(v) {
   return String(v || '').replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
 }
-// Ist remote echt neuer als local? (nur Major.Minor.Patch, reicht fuer unseren Tag-Schema)
+// Ist remote echt neuer als local? (nur Major.Minor.Patch, reicht fuer unser Tag-Schema)
 function isNewer(remote, local) {
   const a = parseVersion(remote);
   const b = parseVersion(local);
@@ -32,7 +37,34 @@ function isNewer(remote, local) {
   return false;
 }
 
-// macOS: schlanke Prüfung gegen die oeffentliche API, dann Link auf die Download-Seite.
+// Controller fuer das gestylte Update-Fenster, mit Fallback auf den nativen Dialog.
+function makeController(parent, log) {
+  try {
+    return createUpdateWindow(parent);
+  } catch (e) {
+    log('Update-Fenster nicht erstellbar -> System-Dialog:', e && e.message);
+    return nativeController(parent);
+  }
+}
+// Minimaler Ersatz mit derselben API, falls kein eigenes Fenster moeglich ist.
+function nativeController(parent) {
+  const p = () => (parent && !parent.isDestroyed() ? parent : null);
+  let alive = true;
+  return {
+    async prompt(o) {
+      const r = await dialog.showMessageBox(p(), {
+        type: 'info', title: o.title, message: o.message, detail: o.detail,
+        buttons: o.buttons, defaultId: 0, cancelId: (o.buttons || []).length - 1,
+      });
+      return r.response;
+    },
+    progress() {},
+    close() { alive = false; },
+    isAlive() { return alive; },
+  };
+}
+
+// macOS: schlanke Pruefung gegen die oeffentliche API, dann Link auf die Download-Seite.
 async function checkMac(win, log) {
   let data;
   try {
@@ -48,22 +80,21 @@ async function checkMac(win, log) {
   const tag = data && data.tag_name;
   if (!tag || !isNewer(tag, app.getVersion())) { log('Update-Check (mac): aktuell'); return; }
 
-  const r = await dialog.showMessageBox(win && !win.isDestroyed() ? win : null, {
-    type: 'info',
+  const c = makeController(win, log);
+  const idx = await c.prompt({
     title: 'Update verfügbar',
-    message: `Eine neue Version von Nexus ist verfügbar (${tag}).`,
+    message: `Version ${tag} ist verfügbar.`,
     detail:
       `Installiert: ${app.getVersion()}.\n\n` +
       'Lade die neue Version von der Download-Seite und installiere sie über die alte – ' +
       'deine Konfiguration, der Index und der Vault bleiben dabei erhalten.',
     buttons: ['Download-Seite öffnen', 'Später'],
-    defaultId: 0,
-    cancelId: 1,
   });
-  if (r.response === 0) shell.openExternal(RELEASES_PAGE);
+  c.close();
+  if (idx === 0) shell.openExternal(RELEASES_PAGE);
 }
 
-// Windows: voll via electron-updater.
+// Windows: voll via electron-updater. Ein Fenster begleitet Hinweis -> Fortschritt -> Installation.
 async function checkWin(win, log) {
   const mod = await import('electron-updater');
   // electron-updater ist CommonJS -> Named-Export liegt je nach Interop auf default oder direkt.
@@ -79,40 +110,48 @@ async function checkWin(win, log) {
     debug: () => {},
   };
 
-  const parent = () => (win && !win.isDestroyed() ? win : null);
+  let ui = null;
+  const ensureUi = () => { if (!ui || !ui.isAlive()) ui = makeController(win, log); return ui; };
 
   autoUpdater.on('update-available', async (info) => {
-    const r = await dialog.showMessageBox(parent(), {
-      type: 'info',
+    const c = ensureUi();
+    const idx = await c.prompt({
       title: 'Update verfügbar',
-      message: `Eine neue Version von Nexus ist verfügbar (${info && info.version}).`,
+      message: `Version ${info && info.version} ist verfügbar.`,
       detail: `Installiert: ${app.getVersion()}.\n\nJetzt herunterladen?`,
       buttons: ['Herunterladen', 'Später'],
-      defaultId: 0,
-      cancelId: 1,
     });
-    if (r.response === 0) {
+    if (idx === 0) {
+      c.progress(0, 'Wird heruntergeladen…');
       try { await autoUpdater.downloadUpdate(); }
-      catch (e) { log('downloadUpdate fehlgeschlagen:', e && e.message); }
+      catch (e) { log('downloadUpdate fehlgeschlagen:', e && e.message); c.close(); ui = null; }
+    } else {
+      c.close(); ui = null;
     }
   });
 
+  autoUpdater.on('download-progress', (p) => {
+    if (ui && ui.isAlive()) ui.progress(Math.round((p && p.percent) || 0), 'Wird heruntergeladen…');
+  });
+
   autoUpdater.on('update-downloaded', async (info) => {
-    const r = await dialog.showMessageBox(parent(), {
-      type: 'info',
+    const c = ensureUi();
+    const idx = await c.prompt({
       title: 'Update bereit',
       message: `Nexus ${info && info.version} wurde heruntergeladen.`,
       detail: 'Jetzt installieren und neu starten? Deine Daten bleiben erhalten.',
       buttons: ['Installieren & neu starten', 'Später'],
-      defaultId: 0,
-      cancelId: 1,
     });
+    c.close(); ui = null;
     // Beim Beenden wird ohnehin installiert (autoInstallOnAppQuit). Auf Wunsch sofort:
-    if (r.response === 0) setImmediate(() => autoUpdater.quitAndInstall());
+    if (idx === 0) setImmediate(() => autoUpdater.quitAndInstall());
   });
 
   autoUpdater.on('update-not-available', () => log('updater: keine neue Version'));
-  autoUpdater.on('error', (err) => log('updater error:', err && err.message));
+  autoUpdater.on('error', (err) => {
+    log('updater error:', err && err.message);
+    if (ui) { ui.close(); ui = null; }
+  });
 
   try { await autoUpdater.checkForUpdates(); }
   catch (e) { log('checkForUpdates fehlgeschlagen:', e && e.message); }
