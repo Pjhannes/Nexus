@@ -19,9 +19,11 @@ export function createUpdateWindow(parent) {
   const useParent = parent && !parent.isDestroyed();
   const win = new BrowserWindow({
     width: 460,
-    height: 250,
+    height: 270,
     parent: useParent ? parent : undefined,
-    modal: useParent,
+    // Nicht modal: das Fenster schwebt ueber der App, blockiert sie aber NICHT
+    // (sonst waere die App waehrend des ~100-MB-Downloads eingefroren).
+    modal: false,
     resizable: false,
     minimizable: false,
     maximizable: false,
