@@ -161,7 +161,7 @@ function createWizard() {
     title: APP_NAME + ' – Einrichtung',
     icon: winIcon(),
     resizable: false,
-    backgroundColor: '#07090f',
+    backgroundColor: '#161514',
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dir, 'preload.cjs'),
