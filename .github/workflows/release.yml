@@ -55,10 +55,16 @@ jobs:
           echo "Setze package.json-Version auf $VERSION (Tag: $GITHUB_REF_NAME)"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
+      # Bei einem Tag-Push: electron-builder laedt die Installer + die Auto-Update-
+      # Metadaten (latest.yml / latest-mac.yml) + .blockmap direkt an einen GitHub-
+      # Release. electron-builder legt den Release als DRAFT an -> du gibst ihn manuell
+      # frei (Kontroll-Gate). Erst nach dem Freigeben sehen installierte Apps das Update.
+      # Bei workflow_dispatch (kein Tag) wird nur gebaut, nicht veröffentlicht.
       - name: Build (electron-builder)
-        run: npx electron-builder ${{ matrix.args }} --publish never
+        run: npx electron-builder ${{ matrix.args }} --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false   # nicht versehentlich signieren (unsigniert gewollt)
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # eingebauter Token; contents:write ist oben gesetzt
 
       - name: Artefakte hochladen
         uses: actions/upload-artifact@v4
@@ -70,22 +76,4 @@ jobs:
             dist/*.dmg
             dist/*.zip
             dist/*.blockmap
-
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Artefakte einsammeln
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Draft-Release mit Installern anlegen
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true            # Du gibst den Release manuell frei
-          generate_release_notes: true
-          files: artifacts/**/*
+            dist/*.yml

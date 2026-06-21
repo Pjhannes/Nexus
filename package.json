@@ -23,6 +23,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "chokidar": "^4.0.0",
+    "electron-updater": "^6.3.0",
     "express": "^4.19.0",
     "multer": "^1.4.5-lts.1",
     "yaml": "^2.4.0",
@@ -43,6 +44,13 @@
     "appId": "com.nexusapp.nexus",
     "productName": "Nexus",
     "copyright": "© 2026 Nexus",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Pjhannes",
+        "repo": "Nexus"
+      }
+    ],
     "directories": {
       "output": "dist",
       "buildResources": "build"
