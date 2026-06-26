@@ -2,7 +2,7 @@ name: Build Nexus (Windows + macOS)
 
 # Baut die verteilbaren Installer auf den passenden Betriebssystemen.
 # - Windows-Installer (NSIS + Portable) auf einem Windows-Runner
-# - macOS-DMG (arm64 + x64) + ZIP auf einem macOS-Runner  <-- KEIN eigener Mac noetig
+# - macOS-DMG (arm64 + x64) auf einem macOS-Runner  <-- KEIN eigener Mac noetig
 #
 # Ausloeser:
 #   - Tag pushen (z. B.  git tag v0.4.0 && git push --tags )  -> baut + haengt an einen (Draft-)Release
@@ -74,6 +74,5 @@ jobs:
           path: |
             dist/*.exe
             dist/*.dmg
-            dist/*.zip
             dist/*.blockmap
             dist/*.yml

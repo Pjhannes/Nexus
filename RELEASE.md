@@ -56,7 +56,7 @@ git push --tags          # Tag vX.Y.Z pushen  -> startet den Build
 ```
 
 → Actions baut **Windows + macOS** parallel und legt einen **Draft-Release** mit allen
-Dateien an (`Nexus-X.Y.Z-arm64.dmg`, `Nexus-X.Y.Z-x64.dmg`, `*.zip`, Windows-Installer).
+Dateien an (`Nexus-X.Y.Z-arm64.dmg`, `Nexus-X.Y.Z-x64.dmg`, Windows-Installer).
 Draft im GitHub-Release-Tab prüfen → „Publish".
 
 Ohne Tag: im Actions-Tab **„Run workflow"** → baut nur Artefakte (zum Testen).
@@ -77,21 +77,34 @@ Ohne Tag: im Actions-Tab **„Run workflow"** → baut nur Artefakte (zum Testen
 
 ## 4. macOS-Erststart (unsigniert)
 
-Ohne Apple-Zertifikat blockt Gatekeeper den ersten Start. Einmalig:
+Ohne Apple-Zertifikat blockt Gatekeeper den ersten Start. Die App ist dabei **nicht**
+„beschädigt" – das ist nur die Gatekeeper-Ablehnung einer nicht notarisierten App, die per
+Browser geladen wurde (sie trägt das `com.apple.quarantine`-Flag). Vorgehen:
 
-- **Rechtsklick** auf `Nexus.app` → **Öffnen** → im Dialog **Öffnen** bestätigen, **oder**
-- Terminal: `xattr -dr com.apple.quarantine /Applications/Nexus.app`
+1. DMG öffnen und `Nexus.app` **einzeln** per Drag nach `Programme`/`/Applications` ziehen.
+   (Ein *einzelnes* Verschieben deaktiviert „App Translocation" dauerhaft – nicht mehrere
+   Objekte gleichzeitig ziehen.)
+2. Quarantäne-Flag entfernen – **der zuverlässigste Weg auf aktuellem macOS**, im Terminal:
+   ```
+   xattr -dr com.apple.quarantine /Applications/Nexus.app
+   ```
 
-Danach startet die App normal. (Verschwindet vollständig, sobald ein Apple-Developer-Zertifikat
-hinterlegt wird – siehe Abschnitt 6.)
+> **macOS 15 „Sequoia" und neuer:** Apple hat den früheren **Rechtsklick → Öffnen**-Trick für
+> nicht notarisierte Apps entfernt – er funktioniert nicht mehr zuverlässig. Alternativ zum
+> Terminal: App einmal starten (wird blockiert), dann **Systemeinstellungen → Datenschutz &
+> Sicherheit → „Trotzdem öffnen"** (Admin-Passwort, pro App einmalig).
+
+Der Workaround entfällt **vollständig erst** mit Apple-Developer-Zertifikat + Notarisierung
+(siehe Abschnitt 6) – das Containerformat (DMG/ZIP) ändert daran nichts.
 
 ---
 
 ## 5. Was steckt drin / Härtung
 
 - Quellcode liegt in `app.asar` (kein loses Editieren im Programmordner).
-- Electron-Fuses (`scripts/afterPack.cjs`): `RunAsNode` aus, `NODE_OPTIONS`/`--inspect` aus,
-  Cookie-Verschlüsselung an, **`OnlyLoadAppFromAsar` an** (ignoriert untergeschobene Dateien).
+- Electron-Fuses (`scripts/afterPack.cjs`): **`RunAsNode` an** (zwingend für den MCP-Server,
+  der via `ELECTRON_RUN_AS_NODE` als reiner Node-Prozess startet), `NODE_OPTIONS`/`--inspect`
+  aus, Cookie-Verschlüsselung an, **`OnlyLoadAppFromAsar` an** (ignoriert untergeschobene Dateien).
 - Keine persönlichen Daten im gebündelten Code; keine sichtbaren Electron-Hinweise
   (Fenster/Taskleiste/`Nexus.exe`/About = „Nexus").
 
