@@ -1,6 +1,6 @@
 {
   "name": "nexus",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "description": "Nexus – persoenliche Wissensdatenbank (MCP-Server + Web-UI)",
   "author": "Nexus",
   "type": "module",
@@ -100,7 +100,7 @@
     "mac": {
       "target": [
         {
-          "target": "zip",
+          "target": "dmg",
           "arch": [
             "arm64",
             "x64"
