@@ -70,7 +70,7 @@ body.col-resizing{cursor:col-resize;user-select:none}
 .tnav{width:22px;height:22px;line-height:20px;text-align:center;border-radius:6px;border:none;background:transparent;color:var(--dim);cursor:pointer;font-size:16px;padding:0}
 .tnav:hover{background:rgba(255,255,255,.08);color:var(--text)}
 .tnav.off{opacity:.28;pointer-events:none}
-.folder-row.drop-target,.tree-file.drop-target,.tab.drop-target{outline:1px dashed var(--accent,#7C8CFF);outline-offset:-1px;background:var(--accent-12)}
+.folder-row.drop-target,.tree-file.drop-target,.tab.drop-target,.fo-head.drop-target,.rail-folder.drop-target{outline:1px dashed var(--accent,#7C8CFF);outline-offset:-1px;background:var(--accent-12)}
 #folder-list.drop-root{box-shadow:inset 0 0 0 1px var(--accent-30)}
 
 /* Sidebar */
@@ -118,6 +118,28 @@ body.col-resizing{cursor:col-resize;user-select:none}
    per (normaler, duenner) Scrollbar von buendig-links bis buendig-rechts schieben kann und nie ins Leere scrollt.
    Notiz >= Fenster -> Raender 0 (max(0px,..)) -> normaler Overflow-Scroll wie gehabt. */
 .note-content{padding:16px 46px 90px;width:var(--note-w,min(1000px,100%));max-width:none;margin-inline:max(0px,100% - var(--note-w,min(1000px,100%)))}
+/* ── Lesemodus (Vollbild-Fokus auf die aktuelle Notiz) ───────────────────────── */
+#read-toggle{-webkit-app-region:no-drag;background:var(--panel2);border:1px solid var(--border);color:var(--dim);border-radius:99px;padding:5px 13px;font-size:12.5px;cursor:pointer;transition:.18s;white-space:nowrap;flex-shrink:0}
+#read-toggle:hover{border-color:var(--accent);color:var(--text);box-shadow:0 0 18px var(--accent-20)}
+.app.reading #read-toggle{background:var(--accent-14);border-color:var(--accent);color:var(--text)}
+/* Chrom ausblenden, Mitte auf volle Fensterbreite, Schrift +2px. !important schlaegt die
+   layout-spezifischen Regeln (classic/softdark) unabhaengig von der Quellreihenfolge. */
+.app.reading{grid-template-rows:44px 1fr 0 !important}
+/* EIN 1fr-Track: die ausgeblendeten Geschwister (display:none) sind keine Grid-Items mehr, sonst
+   wuerde die Mittel-Spalte per Auto-Platzierung im ersten (0px-)Track landen -> 0 Breite, kein Text. */
+.app.reading .main{grid-template-columns:minmax(0,1fr) !important}
+.app.reading .main>.col:nth-child(3){grid-column:1 / -1 !important;min-width:0 !important}
+.app.reading .side,.app.reading .resizer,.app.reading .right-panel,.app.reading #tabbar,.app.reading .statusbar,.app.reading #note-edit-fab,.app.reading #rz-center,.app.reading #note-pane2{display:none !important}
+.app.reading #note-area{flex:1 1 auto !important;padding-top:18px !important;scroll-padding-top:18px !important}
+.app.reading .note-content{width:100% !important;max-width:none !important;margin-inline:0 !important;padding:24px clamp(28px,8vw,160px) 120px !important}
+.app.reading .md-body{font-size:calc(var(--reader-fs,14.5px) + 2px) !important}
+.app.reading h1.note-title{font-size:29px}
+/* Softdark reserviert in der Mittel-Spalte Platz fuer das schwebende rechte Panel; im Lesemodus
+   ist es ausgeblendet -> Padding zuruecksetzen, sonst bliebe rechts eine ~380px-Luecke (nicht volle Breite). */
+.app.reading[data-layout="softdark"] .main>.col:nth-child(3){padding-right:0 !important;border-radius:0 !important}
+/* Studio-Ordner-Flyout + dessen Resizer liegen ausserhalb von .app -> per :has() ausblenden,
+   damit das Ordnerfenster im Lesemodus nicht stehen bleibt (Sicherheitsnetz zum JS-closeRailFlyout). */
+body:has(.app.reading) #rail-flyout,body:has(.app.reading) #rail-flyout-rz{display:none !important}
 .md-body{font-family:var(--reader-font)}
 .note-meta{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
 .chip{font-size:11px;padding:3px 10px;border-radius:99px;border:1px solid var(--border);color:var(--dim);background:var(--panel)}
@@ -342,11 +364,15 @@ table.dataview-table tr:hover td{background:var(--accent-08)}
 #note-pane2 .np2-body .pdf-frame{height:100%}
 #note-pane2 .np2-pre{white-space:pre-wrap;word-break:break-word;font-family:Consolas,monospace;font-size:12px;line-height:1.6;color:#cdd6e8;padding:16px 18px}
 .graph-wrap{flex:1;position:relative;background:rgba(5,7,13,.55);min-height:0}
+/* Verschwimmende Grenze ueber der Legende: Graph blendet nach unten in den Panel-Hintergrund aus,
+   damit keine Knoten hinter der Legende durchscheinen (v. a. im kurzen Split-Graph). z-index 1 =
+   ueber dem Canvas, aber unter Legende(2)/Tip(8)/Settings(10)/Filter(11). */
+.graph-wrap::after{content:"";position:absolute;left:0;right:0;bottom:0;height:72px;pointer-events:none;z-index:1;background:linear-gradient(to top,var(--graph-fade,#080a11) 0%,color-mix(in srgb,var(--graph-fade,#080a11) 65%,transparent) 42%,transparent 100%)}
 .graph-head{display:contents}
 canvas{display:block;width:100%;height:100%}
 .graph-label{position:absolute;top:12px;left:14px;font-size:10px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;pointer-events:none}
 .graph-mode{position:absolute;top:9px;right:12px;font-size:10px;color:var(--accent);background:var(--accent-10);border:1px solid var(--accent-30);border-radius:99px;padding:2px 10px;pointer-events:none}
-.graph-legend{position:absolute;bottom:10px;left:14px;display:flex;gap:8px;flex-wrap:wrap;font-size:10.5px;color:var(--dim);pointer-events:none;max-width:88%}
+.graph-legend{position:absolute;bottom:10px;left:14px;display:flex;gap:8px;flex-wrap:wrap;font-size:10.5px;color:var(--dim);pointer-events:none;max-width:88%;z-index:2}
 .graph-legend i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:3px;vertical-align:middle}
 .graph-tip{position:absolute;pointer-events:none;background:var(--pop);border:1px solid var(--border);border-radius:7px;padding:4px 9px;font-size:11.5px;color:var(--text);display:none;z-index:8;white-space:nowrap;box-shadow:0 6px 20px rgba(0,0,0,.6)}
 #graph-canvas{cursor:grab}
@@ -486,7 +512,7 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 .ed-edit-btn:hover{background:var(--accent-20)}
 /* Bearbeiten-Button fixiert: ganz rechts, auf gleicher Hoehe wie die Tabs (im Tab-Band, --tab-h).
    Liegt als Overlay in der .col (wie die .tabbar), bleibt also beim Scrollen oben rechts. Optik unveraendert. */
-#note-edit-fab{position:absolute;top:calc(var(--tab-h)/2);right:28px;transform:translateY(-50%);z-index:21;margin:0;transition:background-color .15s,border-color .15s}
+#note-edit-fab{position:absolute;top:calc(var(--tab-h)/2);right:28px;transform:translateY(-50%);z-index:21;margin:0;transition:background-color .15s,border-color .15s;backdrop-filter:blur(8px) saturate(1.3);-webkit-backdrop-filter:blur(8px) saturate(1.3)}
 /* Studio: rechtes Panel schwebt ueber der .col -> Button links davon halten */
 .app[data-layout="softdark"] #note-edit-fab{right:calc(var(--col-r,360px) + 38px)}
 .ovl-msg{padding:18px;font-size:13.5px;line-height:1.5;white-space:pre-line;color:var(--text)}
@@ -706,7 +732,7 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
 .app[data-layout="softdark"] #rz-r::after{inset:10px auto 10px 0;left:auto;right:0;width:3px;border-radius:2px}
 .app[data-layout="softdark"] #rz-r:hover::after,.app[data-layout="softdark"] #rz-r.drag::after{background:var(--accent)}
 .app[data-layout="softdark"] #right-toggle{background:transparent}
-.app[data-layout="softdark"] .graph-wrap{background:transparent;display:flex;flex-direction:column}
+.app[data-layout="softdark"] .graph-wrap{background:transparent;display:flex;flex-direction:column;--graph-fade:var(--panel)}
 .app[data-layout="softdark"] .right-panel[data-rmode="outline"] .graph-wrap{display:none}
 .app[data-layout="softdark"] .graph-head{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);flex:0 0 auto;position:relative;z-index:9}
 .app[data-layout="softdark"] .graph-label{position:static;flex:0 0 auto}
@@ -722,7 +748,7 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
 .app[data-layout="softdark"] ::-webkit-scrollbar-track{background:transparent}
 .app[data-layout="softdark"] ::-webkit-scrollbar-thumb{background:var(--border)}
 .app[data-layout="softdark"] ::-webkit-scrollbar-thumb:hover{background:var(--dim)}
-.app[data-layout="softdark"] .folder-row.drop-target,.app[data-layout="softdark"] .tree-file.drop-target,.app[data-layout="softdark"] .tab.drop-target{background:var(--amber-soft)}
+.app[data-layout="softdark"] .folder-row.drop-target,.app[data-layout="softdark"] .tree-file.drop-target,.app[data-layout="softdark"] .tab.drop-target,.app[data-layout="softdark"] .fo-head.drop-target,.app[data-layout="softdark"] .rail-folder.drop-target{background:var(--amber-soft)}
 .app[data-layout="softdark"] .folder-row.active{background:linear-gradient(90deg,var(--amber-soft),transparent)}
 .app[data-layout="softdark"] .tree-file.selected{background:var(--amber-soft)}
 .app[data-layout="softdark"] #vault-sel-drop{background:var(--panel);border-color:var(--border)}
@@ -760,6 +786,7 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
   <div class="titlebar">
     <div class="logo">&#9670; NEXUS</div>
     <div class="crumb" id="crumb">&mdash;</div>
+    <button id="read-toggle" title="Lesemodus – Vollbild-Fokus (Esc beendet)" style="display:none" onclick="toggleReading()">&#128214; Lesen</button>
     <div class="search-btn" onclick="openPalette()">&#8981; &nbsp;Suchen oder Befehl&hellip; <kbd>Ctrl K</kbd></div>
   </div>
 
@@ -916,7 +943,7 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
 <script>
 // ───────── State ─────────
 let activeVault=null, vaultTree=[], selectedPath=null, currentFolder='';
-let ctxTarget=null, dragCounter=0, palSel=0, palItems=[], _movingPath=null, _draggingTabId=null, _draggingTabEl=null;
+let ctxTarget=null, palSel=0, palItems=[], _movingPath=null, _draggingTabId=null, _draggingTabEl=null;
 let noteIndex={};            // lowercased name/path -> real path
 let allMdFiles=[];           // flat list of md file nodes
 let _curHeadings=[], _curNotePath=null, _scrollSpyFn=null;
@@ -1360,11 +1387,13 @@ function renderRail(){
   for(const node of orderedTopItems()){
     const b=document.createElement('div');b.className='rail-btn';b.dataset.path=node.path;b.draggable=true;
     if(node.type==='folder'){
+      b.classList.add('rail-folder'); // R15: Datei-Drop-Ziel (Thema/Hauptordner) + Overlay-Erkennung
       const col=folderColor(node.name);const cnt=countFiles(node.children??[]);
       b.title=node.name+' · '+cnt.toLocaleString('de')+' Dateien  (zum Sortieren ziehen)';
       b.innerHTML=`<span>${folderIcon(node.name)}</span>`+(col?`<span class="dot" style="background:${col}"></span>`:'');
       b.addEventListener('click',e=>{e.stopPropagation();openRailFlyout(node,b);});
       b.addEventListener('contextmenu',e=>showCtx(e,node.path,'folder'));
+      attachFileDrop(b,node.path); // Datei direkt auf das Themen-Icon ziehen -> Upload in dieses Thema
     }else{
       b.classList.add('rail-file');
       b.title=node.name+'  (zum Sortieren ziehen)';
@@ -1428,6 +1457,7 @@ function renderRailFlyoutContent(node){
   const head=document.createElement('div');head.className='fo-head';
   head.innerHTML=`<span>${esc(node.name)}</span><span class="fo-new">+ Notiz</span>`;
   head.querySelector('.fo-new').addEventListener('click',e=>{e.stopPropagation();ctxNewNote(node.path);});
+  attachFileDrop(head,node.path); // R15: Datei-Drop auf den Flyout-Kopf -> Upload in das Thema (Hauptordner)
   fo.appendChild(head);
   for(const child of (node.children??[])){
     if(child.type==='folder')fo.appendChild(makeFolderEl(child,0));
@@ -1572,7 +1602,7 @@ function makeFolderEl(node,depth){
   row.addEventListener('dragend',()=>{_movingPath=null;clearDropHL();});
   row.addEventListener('dragover',e=>{
     // R15: externer Datei-Drop (vom Betriebssystem) -> dieser Ordner ist das Upload-Ziel.
-    if(e.dataTransfer.types.includes('Files')){e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='copy';row.classList.add('drop-target');return;}
+    if(e.dataTransfer.types.includes('Files')){e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='copy';row.classList.add('drop-target');setDropOverlay(false);return;}
     if(!_movingPath||_movingPath===node.path)return;e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='move';row.classList.add('drop-target');
   });
   row.addEventListener('dragleave',()=>row.classList.remove('drop-target'));
@@ -1582,7 +1612,7 @@ function makeFolderEl(node,depth){
     if(e.dataTransfer.files&&e.dataTransfer.files.length){
       e.preventDefault();e.stopPropagation();
       row.classList.remove('drop-target');
-      dragCounter=0;document.getElementById('drop-overlay').classList.remove('active');
+      setDropOverlay(false);
       uploadFiles(e.dataTransfer.files,node.path);
       return;
     }
@@ -2516,8 +2546,14 @@ function fitGraphView(){
   const ns=graph.nodes;if(!ns.length)return;
   let a=1e9,b=-1e9,c=1e9,d=-1e9;for(const n of ns){if(n.x<a)a=n.x;if(n.x>b)b=n.x;if(n.y<c)c=n.y;if(n.y>d)d=n.y;}
   const w=Math.max(b-a,1),h=Math.max(d-c,1);
-  const k=Math.min(4,Math.max(0.05,Math.min(graph.W/w,graph.H/h)*0.72));
-  graph.view.k=k;graph.view.x=graph.W/2-(a+b)/2*k;graph.view.y=graph.H/2-(c+d)/2*k;
+  // Unteren Streifen fuer die Legende reservieren -> Graph wird im Bereich DARUEBER zentriert
+  // (nicht hinter der Legende, v. a. im kurzen Split-Graph). graph.W/H sind Device-Pixel -> *dpr.
+  const dpr=window.devicePixelRatio||1;
+  const leg=document.getElementById('graph-legend');
+  const inset=(leg&&leg.offsetParent)?(leg.offsetHeight+14)*dpr:0;
+  const availH=Math.max(1,graph.H-inset);
+  const k=Math.min(4,Math.max(0.05,Math.min(graph.W/w,availH/h)*0.72));
+  graph.view.k=k;graph.view.x=graph.W/2-(a+b)/2*k;graph.view.y=availH/2-(c+d)/2*k;
 }
 function refitGraph(){
   const cv=graph.cv;if(!cv)return;
@@ -2812,7 +2848,7 @@ function renderPalItems(){
   document.getElementById('pal-results').innerHTML=html;
 }
 function onPalKey(e){
-  if(e.key==='Escape'){closePalette();return;}
+  if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closePalette();return;}
   if(e.key==='ArrowDown'){palSel=Math.min(palSel+1,palItems.length-1);renderPalItems();e.preventDefault();}
   if(e.key==='ArrowUp'){palSel=Math.max(palSel-1,0);renderPalItems();e.preventDefault();}
   if(e.key==='Enter'&&palItems[palSel])palItems[palSel].fn();
@@ -2930,15 +2966,47 @@ document.addEventListener('click',e=>{closeCtx();if(!document.getElementById('co
 // Hinweis: Das Rail-Flyout bleibt bewusst offen (kein Schließen bei Klick außerhalb).
 // Es schließt nur über dasselbe Rail-Icon (Toggle in openRailFlyout), ein anderes Icon
 // (öffnet dort neu) oder Esc. Beim Layout-/Vault-Wechsel + Drag wird es explizit geschlossen.
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeCtx();cpClose();iconClose();closeRailFlyout();closePalette();closeVaultModal();pickerCancel();_confirmCancel();closeSettings();closeUsagePopover();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(document.querySelector('.app')?.classList.contains('reading')&&!document.querySelector('.overlay.show')){e.preventDefault();exitReading();return;}closeCtx();cpClose();iconClose();closeRailFlyout();closePalette();closeVaultModal();pickerCancel();_confirmCancel();closeSettings();closeUsagePopover();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
 
 // ═════════════════════ DRAG & DROP / UPLOAD ═════════════════════
-document.addEventListener('dragenter',e=>{if(e.dataTransfer.types.includes('Files')){dragCounter++;document.getElementById('drop-overlay').classList.add('active');}});
-document.addEventListener('dragleave',()=>{if(--dragCounter<=0){dragCounter=0;document.getElementById('drop-overlay').classList.remove('active');}});
-document.addEventListener('dragover',e=>e.preventDefault());
-document.addEventListener('drop',async e=>{dragCounter=0;document.getElementById('drop-overlay').classList.remove('active');e.preventDefault();if(e.dataTransfer.files.length)await uploadFiles(e.dataTransfer.files,currentFolder);});
+// R15: Das Vollbild-Overlay nur zeigen, wenn der Cursor NICHT ueber einer praezisen Datei-Drop-Zone
+// (Ordnerzeile / Flyout-Kopf / Themen-Icon) ist. Sonst faerbt sich das ganze Notizfeld als Ziel,
+// obwohl bereits ein konkreter Ordner anvisiert ist. Gesteuert ueber dragover (feuert kontinuierlich)
+// statt ueber einen dragenter/leave-Zaehler -> kein Flackern, immer konsistent zum echten Ziel.
+function fileDropZone(e){return (e.target&&e.target.closest)?e.target.closest('.folder-row,.fo-head,.rail-folder'):null;}
+function setDropOverlay(on){document.getElementById('drop-overlay').classList.toggle('active',!!on);}
+document.addEventListener('dragover',e=>{
+  e.preventDefault();
+  if(!e.dataTransfer.types.includes('Files'))return;
+  setDropOverlay(!fileDropZone(e));
+});
+document.addEventListener('dragleave',e=>{if(e.relatedTarget===null)setDropOverlay(false);}); // Drag hat das Fenster verlassen
+document.addEventListener('drop',async e=>{
+  setDropOverlay(false);
+  e.preventDefault();
+  // Ein Drop auf eine praezise Zone hat dort bereits stopPropagation gemacht und kommt hier nicht an.
+  // Hier landet nur ein Drop NEBEN jeder Zone -> Upload in den aktuell gewaehlten Ordner.
+  if(e.dataTransfer.files.length)await uploadFiles(e.dataTransfer.files,currentFolder);
+});
 function triggerUpload(){document.getElementById('file-input').click();}
 function uploadToFolder(p){currentFolder=p;triggerUpload();}
+// R15: macht ein beliebiges Element zur externen Datei-Drop-Zone (Upload nach targetPath).
+// Genutzt fuer den Flyout-Kopf (Thema/Hauptordner) und die Themen-Icons im Rail. Ordnerzeilen
+// im Baum bringen ihre eigene kombinierte Move+Upload-Logik mit (makeFolderEl).
+function attachFileDrop(el,targetPath){
+  el.addEventListener('dragover',e=>{
+    if(!e.dataTransfer.types.includes('Files'))return;
+    e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='copy';el.classList.add('drop-target');setDropOverlay(false);
+  });
+  el.addEventListener('dragleave',e=>{if(!el.contains(e.relatedTarget))el.classList.remove('drop-target');});
+  el.addEventListener('drop',e=>{
+    if(!(e.dataTransfer.files&&e.dataTransfer.files.length))return;
+    e.preventDefault();e.stopPropagation();
+    el.classList.remove('drop-target');
+    setDropOverlay(false);
+    uploadFiles(e.dataTransfer.files,targetPath);
+  });
+}
 async function uploadFiles(fileList,targetPath){
   if(!fileList?.length)return;
   const bar=document.getElementById('upload-bar');bar.style.width='20%';
@@ -3244,8 +3312,46 @@ function onNoteWheel(e){
   else area.scrollBy({left:e.deltaX*unit,behavior:'instant'});
 }
 // Bearbeiten-Button (Overlay im Tab-Band): nur in der Markdown-Leseansicht sichtbar.
-function showEditFab(path){const f=document.getElementById('note-edit-fab');if(!f)return;f.style.display='inline-block';f.onclick=()=>openEditor(path);}
-function hideEditFab(){const f=document.getElementById('note-edit-fab');if(f)f.style.display='none';}
+function showEditFab(path){const f=document.getElementById('note-edit-fab');if(!f)return;f.style.display='inline-block';f.onclick=()=>openEditor(path);const rt=document.getElementById('read-toggle');if(rt)rt.style.display='inline-block';updateReadToggle();}
+function hideEditFab(){const f=document.getElementById('note-edit-fab');if(f)f.style.display='none';const rt=document.getElementById('read-toggle');if(rt)rt.style.display='none';}
+
+// ── Lesemodus: Vollbild-Fokus auf die aktuelle Notiz ──────────────────────────
+// withScrollAnchor haelt die Leseposition ueber den Layoutwechsel: Anker = erstes Element im
+// .md-body, dessen Unterkante noch im Viewport liegt; nach dem Umschalten wird genau dieses
+// (unveraenderte) Element wieder an dieselbe Viewport-Stelle gescrollt. Fallback: scrollTop.
+function withScrollAnchor(mutate){
+  const area=document.getElementById('note-area');
+  if(!area){mutate();return;}
+  const aTop=area.getBoundingClientRect().top;
+  let anchorEl=null,anchorOff=0;
+  const body=area.querySelector('.md-body');
+  if(body){for(const el of body.children){const r=el.getBoundingClientRect();if(r.bottom>aTop+4){anchorEl=el;anchorOff=r.top-aTop;break;}}}
+  const prevTop=area.scrollTop;
+  mutate();
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    const a=document.getElementById('note-area');if(!a)return;
+    if(anchorEl&&anchorEl.isConnected)a.scrollTop+=(anchorEl.getBoundingClientRect().top-a.getBoundingClientRect().top)-anchorOff;
+    else a.scrollTop=prevTop;
+  }));
+}
+function updateReadToggle(){
+  const rt=document.getElementById('read-toggle');if(!rt)return;
+  const on=document.querySelector('.app')?.classList.contains('reading');
+  rt.innerHTML=on?'&#128214; Lesemodus verlassen':'&#128214; Lesen';
+  rt.title=on?'Lesemodus verlassen (Esc)':'Lesemodus – Vollbild-Fokus (Esc beendet)';
+}
+function enterReading(){
+  const app=document.querySelector('.app');
+  if(!app||app.classList.contains('reading')||!_curNotePath)return;   // nur mit offener Notiz
+  closeRailFlyout();   // Studio-Ordner-Flyout (liegt ausserhalb von .app) beim Eintritt schliessen
+  withScrollAnchor(()=>{app.classList.add('reading');updateReadToggle();});
+}
+function exitReading(){
+  const app=document.querySelector('.app');
+  if(!app||!app.classList.contains('reading'))return;
+  withScrollAnchor(()=>{app.classList.remove('reading');updateReadToggle();});
+}
+function toggleReading(){const app=document.querySelector('.app');if(!app)return;app.classList.contains('reading')?exitReading():enterReading();}
 function currentGraphDefault(){return localStorage.getItem('nexus.graphDefault')||'ego';}
 function setGraphDefault(v){localStorage.setItem('nexus.graphDefault',(v==='main')?'main':'ego');}
 // Graph-Glow (beide Layouts): 0..100 (%), 0 = aus
