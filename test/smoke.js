@@ -1,6 +1,6 @@
 // test/smoke.js – Smoke-Test für Parser, Indexer und Tool-Aufrufe
 // Läuft in der Sandbox: node test/smoke.js (aus D:\Nexus)
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
+import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
 import { parseNote } from '../src/parse.js';
 import { buildIndexer } from '../src/indexer.js';
@@ -218,6 +218,46 @@ const p3 = tools.patch({
 assert('patch: unbekannter old_str gibt error', !!p3.error);
 assert('patch: missed enthält old_str',         p3.missed?.some(m => m.includes('EXISTIERT_NICHT')));
 
+// ═════════════════════════════════════════════════════════════════════════════
+console.log(B('\n── 3a. R14: Schreib-Integrität (keine stille Trunkierung) ────'));
+// ═════════════════════════════════════════════════════════════════════════════
+// Große, emoji-/umlautreiche Notiz schreiben -> Byte-Gleichheit auf der Platte.
+// (Emojis/Umlaute zählen mehrere UTF-8-Bytes – deckt das "früher gekappt"-Symptom ab.)
+let bigContent = '# Große Notiz 🎓\n\n';
+for (let i = 0; i < 1500; i++) {
+  bigContent += `## Abschnitt ${i} 🔧✅ – Ümläute & Sönderzeichen\nZeile mit Inhalt Nummer ${i}, lorem ipsum dolor sit amet.\n\n`;
+}
+const expectedBigBytes = Buffer.byteLength(bigContent, 'utf8');
+assert('R14: Test-Notiz ist > 50 KB', expectedBigBytes > 50_000, `${expectedBigBytes} Bytes`);
+
+const wBig = tools.writeNote({ path: 'R14-Big.md', content: bigContent, create: true });
+assert('R14: writeNote ok=true', wBig.ok === true, JSON.stringify(wBig).slice(0, 120));
+assert('R14: writeNote meldet geschriebene Bytes', wBig.bytes === expectedBigBytes, `bytes=${wBig.bytes}`);
+const bigOnDisk = readFileSync(join(vault, 'R14-Big.md'), 'utf8');
+const bigDiskBytes = statSync(join(vault, 'R14-Big.md')).size;
+assert('R14: Datei byte-gleich auf Platte', bigDiskBytes === expectedBigBytes, `disk=${bigDiskBytes}`);
+assert('R14: Inhalt vollständig (letzter Abschnitt da)', bigOnDisk.includes('Abschnitt 1499'));
+assert('R14: keine NUL-Bytes (kein Padding)', !bigOnDisk.includes(String.fromCharCode(0)));
+
+// append_to_section auf die große Notiz -> bestehender Inhalt bleibt erhalten + neuer Text dran
+const aBig = tools.appendToSection({ path: 'R14-Big.md', section: 'Abschnitt 7 ', text: 'R14-ANGEHÄNGT 🚀' });
+assert('R14: append ok=true', aBig.ok === true, JSON.stringify(aBig).slice(0, 120));
+const afterAppend = readFileSync(join(vault, 'R14-Big.md'), 'utf8');
+assert('R14: append erhält Original (Abschnitt 1499 noch da)', afterAppend.includes('Abschnitt 1499'));
+assert('R14: append fügt neuen Text ein', afterAppend.includes('R14-ANGEHÄNGT'));
+assert('R14: append wird nie kürzer als Original', Buffer.byteLength(afterAppend, 'utf8') >= expectedBigBytes);
+
+// patch auf die große Notiz -> Längen-Invariante hält, Rest bleibt erhalten
+const beforePatchLen = readFileSync(join(vault, 'R14-Big.md'), 'utf8').length;
+const pBig = tools.patch({ path: 'R14-Big.md', patches: [{ old_str: 'Abschnitt 0 ', new_str: 'Abschnitt NULL ' }] });
+assert('R14: patch ok=true', pBig.ok === true, JSON.stringify(pBig).slice(0, 120));
+const afterPatch = readFileSync(join(vault, 'R14-Big.md'), 'utf8');
+assert('R14: patch erhält Original (Abschnitt 1499 noch da)', afterPatch.includes('Abschnitt 1499'));
+assert('R14: patch Längen-Invariante (+3 Zeichen)', afterPatch.length === beforePatchLen + 3, `${afterPatch.length} vs ${beforePatchLen + 3}`);
+
+// Aufräumen: R14-Big.md wieder entfernen, damit der DB-Stand für den deleteFile-Test stimmt.
+tools.delete({ path: 'R14-Big.md' });
+
 // deleteFile (für File-Watcher)
 const delPath = join(vault, 'Uni', 'Strömungslehre.md');
 indexer.deleteFile(delPath);
@@ -258,7 +298,12 @@ console.log('         -d \'{"vault":"knowledge-base"}\'');
 // ═════════════════════════════════════════════════════════════════════════════
 
 // ── Aufräumen ─────────────────────────────────────────────────────────────────
-rmSync(tmp, { recursive: true, force: true });
+// Unter Windows hält das offene SQLite-WAL-Handle die DB-Datei kurz fest -> rmSync
+// kann mit EPERM/EBUSY scheitern. maxRetries/retryDelay fängt das ab; schlägt es
+// trotzdem fehl, ist das nur ein Teardown-Artefakt (Temp-Ordner) und darf den
+// Testlauf NICHT rot färben (alle Asserts sind dann bereits gelaufen).
+try { rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }); }
+catch (e) { console.log(B(`  (Hinweis: Temp-Ordner nicht entfernt – ${e.code || e.message})`)); }
 
 // ── Ergebnis ──────────────────────────────────────────────────────────────────
 const failStr = failed > 0 ? '  ' + R(failed + ' fehlgeschlagen') : '';

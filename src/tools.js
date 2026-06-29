@@ -1,5 +1,5 @@
 // src/tools.js – MCP-Tool-Implementierungen (node:sqlite, positionale Parameter)
-import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, existsSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, dirname, resolve, sep, relative } from 'path';
 import { transaction } from './db.js';
 import { runVaultCheck, renderReport, REPORT_REL } from './vault-check.js';
@@ -117,17 +117,29 @@ export function makeTools(indexer, vaultPath) {
     const fullPath = join(vaultPath, path);
     if (!stmts.findNote.get(path) && !create)
       return { error: 'Notiz existiert nicht (create=false): ' + path };
+    if (typeof content !== 'string')
+      return { error: 'content fehlt oder ist kein String' };
+    // R14: Erwartete Byte-Laenge VOR dem Schreiben festhalten (UTF-8, nicht Zeichenzahl –
+    // Emojis/Umlaute zaehlen mehrere Bytes). Dient als harte Assertion gegen stille Trunkierung.
+    const expectedBytes = Buffer.byteLength(content, 'utf8');
     try {
       mkdirSync(dirname(fullPath), { recursive: true });
       writeFileSync(fullPath, content, 'utf8');
+      // R14: Laengen-Assertion. Wird beim Schreiben/Transport Inhalt abgeschnitten
+      // (fixe Puffergroesse, Platte voll, kaputter Stream), faellt das hier sofort auf –
+      // das Tool meldet einen ECHTEN Fehler statt stillem ok:true (kein Datenverlust mehr).
+      const actualBytes = statSync(fullPath).size;
+      if (actualBytes !== expectedBytes)
+        return { error: `Schreib-Trunkierung erkannt: nur ${actualBytes} von ${expectedBytes} Bytes geschrieben (${path}). Datei NICHT als ok gemeldet – bitte erneut schreiben.` };
     } catch (e) { return { error: e.message }; }
     indexer.indexFile(fullPath);
-    return { ok: true, path };
+    return { ok: true, path, bytes: expectedBytes };
   }
 
   function appendToSection({ path, section, text }) {
     const { content, error } = readNote({ path });
     if (error) return { error };
+    const originalBytes = Buffer.byteLength(content, 'utf8');
     const lines = content.split('\n');
     const note = stmts.findNote.get(path);
     let insertAt = lines.length;
@@ -141,7 +153,13 @@ export function makeTools(indexer, vaultPath) {
       }
     }
     lines.splice(insertAt, 0, '', text);
-    return writeNote({ path, content: lines.join('\n') });
+    const merged = lines.join('\n');
+    // R14: append fuegt nur ein – das Ergebnis darf NIE kuerzer als das Original sein.
+    // Waere es kuerzer, deutet das auf eine Trunkierung beim Lesen/Zusammenbauen hin
+    // (bestehende grosse Notiz wuerde sonst beim Rueckschreiben gekappt -> Datenverlust).
+    if (Buffer.byteLength(merged, 'utf8') < originalBytes)
+      return { error: 'append_to_section abgebrochen: Ergebnis kuerzer als Original – moeglicher Datenverlust, nichts geschrieben.' };
+    return writeNote({ path, content: merged });
   }
 
   function backlinks({ path }) {
@@ -217,18 +235,27 @@ export function makeTools(indexer, vaultPath) {
     if (error) return { error };
     let cur = content;
     let applied = 0;
+    let expectedDelta = 0;   // R14: summierte Laengenaenderung aller angewandten Patches
     const missed = [];
     for (const p of patches) {
       if (typeof p.old_str !== 'string') { missed.push('<kein old_str>'); continue; }
       if (cur.includes(p.old_str)) {
         // replace() ersetzt nur erste Fundstelle (gewuenscht – analog zu Edit-Tool)
-        cur = cur.replace(p.old_str, p.new_str ?? '');
+        const repl = p.new_str ?? '';
+        cur = cur.replace(p.old_str, repl);
+        expectedDelta += repl.length - p.old_str.length;
         applied++;
       } else {
         missed.push(p.old_str.slice(0, 60));
       }
     }
     if (applied === 0) return { error: 'Kein Patch anwendbar', missed };
+    // R14: exakte Laengen-Invariante. Jede Erste-Fundstelle-Ersetzung aendert die Laenge
+    // um genau (new_str.length - old_str.length). Stimmt das Resultat nicht mit
+    // (Original + Summe der Deltas) ueberein, ist etwas anderes passiert (z. B. eine
+    // Trunkierung) – dann NICHT schreiben, sondern echten Fehler melden.
+    if (cur.length !== content.length + expectedDelta)
+      return { error: 'patch abgebrochen: Laengen-Invariante verletzt (moegliche Trunkierung) – nichts geschrieben.', applied, missed: missed.length ? missed : undefined };
     const result = writeNote({ path, content: cur });
     return { ...result, applied, missed: missed.length ? missed : undefined };
   }

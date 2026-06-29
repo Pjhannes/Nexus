@@ -1570,9 +1570,24 @@ function makeFolderEl(node,depth){
   row.draggable=true;
   row.addEventListener('dragstart',e=>{_movingPath=node.path;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',node.path);e.stopPropagation();});
   row.addEventListener('dragend',()=>{_movingPath=null;clearDropHL();});
-  row.addEventListener('dragover',e=>{if(!_movingPath||_movingPath===node.path)return;e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='move';row.classList.add('drop-target');});
+  row.addEventListener('dragover',e=>{
+    // R15: externer Datei-Drop (vom Betriebssystem) -> dieser Ordner ist das Upload-Ziel.
+    if(e.dataTransfer.types.includes('Files')){e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='copy';row.classList.add('drop-target');return;}
+    if(!_movingPath||_movingPath===node.path)return;e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='move';row.classList.add('drop-target');
+  });
   row.addEventListener('dragleave',()=>row.classList.remove('drop-target'));
-  row.addEventListener('drop',e=>{if(!_movingPath)return;e.preventDefault();e.stopPropagation();const src=_movingPath;_movingPath=null;row.classList.remove('drop-target');moveInto(src,node.path);});
+  row.addEventListener('drop',e=>{
+    // R15: Datei direkt in DIESEN Ordner hochladen (node.path als targetPath). stopPropagation
+    // verhindert, dass der globale Drop-Handler dieselbe Datei zusaetzlich in currentFolder ablegt.
+    if(e.dataTransfer.files&&e.dataTransfer.files.length){
+      e.preventDefault();e.stopPropagation();
+      row.classList.remove('drop-target');
+      dragCounter=0;document.getElementById('drop-overlay').classList.remove('active');
+      uploadFiles(e.dataTransfer.files,node.path);
+      return;
+    }
+    if(!_movingPath)return;e.preventDefault();e.stopPropagation();const src=_movingPath;_movingPath=null;row.classList.remove('drop-target');moveInto(src,node.path);
+  });
   return wrap;
 }
 function makeFileEl(node,indent){
@@ -2327,7 +2342,19 @@ async function mountPdfViewer(host,fname,path,opts={}){
   if(!lib){renderExternalFallback(host,fname,path,'PDF-Viewer (PDF.js) konnte nicht geladen werden.');return;}
   let doc;
   try{ doc=await lib.getDocument(fileUrl(path)).promise; }
-  catch(e){ if(scroll.isConnected)renderExternalFallback(host,fname,path,'PDF konnte nicht geladen werden ('+esc(e.message||e)+').'); return; }
+  catch(e1){
+    // R16: Fallback, falls das URL-/Range-Laden scheitert (u. a. auf macOS beobachtet):
+    // PDF komplett per fetch() holen und als ArrayBuffer an PDF.js geben. Greift NUR im
+    // Fehlerfall – der schnelle URL-Pfad (Lazy-Range) bleibt unveraendert das Erste.
+    try{
+      if(!scroll.isConnected)return;
+      const buf=await fetch(fileUrl(path)).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.arrayBuffer();});
+      doc=await lib.getDocument({data:new Uint8Array(buf)}).promise;
+    }catch(e2){
+      if(scroll.isConnected)renderExternalFallback(host,fname,path,'PDF konnte nicht geladen werden ('+esc((e2&&e2.message)||e1.message||e1)+').');
+      return;
+    }
+  }
   if(!scroll.isConnected){try{doc.destroy();}catch(e){}return;}
 
   const N=doc.numPages;

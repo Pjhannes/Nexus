@@ -4,7 +4,7 @@ import multer from 'multer';
 import { readdirSync, statSync, mkdirSync, renameSync, existsSync, writeFileSync, rmSync, unlinkSync } from 'fs';
 import { join, extname, basename, dirname, relative, resolve, sep } from 'path';
 import { fileURLToPath } from 'url';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { tmpdir } from 'os';
 import { readFileSync } from 'fs';
 import { buildIndexer } from './indexer.js';
@@ -274,6 +274,31 @@ app.post('/api/upload', upload.array('files'), (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Python/markitdown-Interpreter robust aufloesen (R16) ───────────────────────
+// Frueher hart 'python'. Auf macOS gibt es seit 12.3 KEIN 'python' mehr (nur
+// 'python3') -> spawn schlug fehl -> Office-/Word-Vorschau blieb leer, nur
+// "extern oeffnen" ging. Wir probieren plattformabhaengig mehrere Kandidaten und
+// pruefen, ob markitdown dort wirklich installiert ist. Erfolg wird gecacht; ist
+// markitdown (noch) nirgends da, wird beim naechsten Aufruf erneut gesucht (so wirkt
+// ein spaeteres "pip install markitdown" ohne App-Neustart).
+let _pyCmd = null;
+function resolvePythonCmd() {
+  if (_pyCmd) return _pyCmd;
+  // Reihenfolge bewusst: Windows zuerst der offizielle Launcher 'py' – das blanke
+  // 'python' ist auf Windows oft der Store-Alias-Stub, der haengt/den Store oeffnet
+  // (hier real als ETIMEDOUT beobachtet). macOS/Linux: 'python3' (kein 'python' seit macOS 12.3).
+  const candidates = process.platform === 'win32'
+    ? ['py', 'python', 'python3']
+    : ['python3', 'python'];
+  for (const cmd of candidates) {
+    try {
+      const r = spawnSync(cmd, ['-m', 'markitdown', '--help'], { windowsHide: true, timeout: 8000 });
+      if (r.status === 0) { _pyCmd = cmd; return _pyCmd; }
+    } catch { /* naechster Kandidat */ }
+  }
+  return null;
+}
+
 // ── Markitdown Konvertierung ──────────────────────────────────────────────────
 app.post('/api/convert/markitdown', (req, res) => {
   const { filePath, vault: vaultName } = req.body;
@@ -286,11 +311,13 @@ app.post('/api/convert/markitdown', (req, res) => {
   if (!existsSync(fullPath)) return res.status(404).json({ error: 'Datei nicht gefunden' });
 
   const outPath = fullPath.replace(/\.[^.]+$/, '.md');
+  const py = resolvePythonCmd();
+  if (!py) return res.status(500).json({ error: 'markitdown nicht verfuegbar – bitte "pip install markitdown" (Python 3) ausfuehren.' });
   // KEIN shell:true -> Node quotet die Argumente selbst, sodass Vault-Pfade mit
   // Leerzeichen (z. B. "5. Semester") korrekt als EIN Argument ankommen. Mit
   // shell:true zerteilt cmd.exe den Pfad am Leerzeichen -> markitdown bekommt
   // den Rest als "unrecognized arguments" (Exit-Code 2).
-  const proc = spawn('python', ['-m', 'markitdown', fullPath, '-o', outPath], { windowsHide: true });
+  const proc = spawn(py, ['-m', 'markitdown', fullPath, '-o', outPath], { windowsHide: true });
 
   let stderr = '', replied = false;
   const reply = (status, body) => { if (replied) return; replied = true; res.status(status).json(body); };
@@ -478,10 +505,12 @@ app.post('/api/preview/office', (req, res) => {
     try { if (existsSync(tmpOut)) unlinkSync(tmpOut); } catch {}
     res.status(status).json(body);
   };
+  const py = resolvePythonCmd();
+  if (!py) return finish(500, { error: 'markitdown nicht verfuegbar – bitte "pip install markitdown" (Python 3) ausfuehren.' });
   // KEIN shell:true -> Node quotet die Argumente selbst, sodass Vault-Pfade mit
-  // Leerzeichen (z. B. "Nexus Vaults") korrekt ankommen. CreateProcess findet
-  // 'python' -> 'python.exe' auch ohne Shell.
-  const proc = spawn('python', ['-m', 'markitdown', full, '-o', tmpOut], { windowsHide: true });
+  // Leerzeichen (z. B. "Nexus Vaults") korrekt ankommen. Interpreter via
+  // resolvePythonCmd() (macOS hat nur 'python3', nicht 'python') – R16.
+  const proc = spawn(py, ['-m', 'markitdown', full, '-o', tmpOut], { windowsHide: true });
   const timer = setTimeout(() => { try { proc.kill(); } catch {} finish(504, { error: 'Zeitueberschreitung bei der Konvertierung' }); }, 25_000);
   let stderr = '';
   proc.stderr.on('data', d => stderr += d.toString());
