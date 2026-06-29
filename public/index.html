@@ -1062,12 +1062,13 @@ async function renderTab(t){
   // via Link/Baum läuft NICHT über renderTab) bleibt es bei oben.
   const e=(Array.isArray(t.hist)&&t.hi>=0)?t.hist[t.hi]:null;
   _navScrollTarget=(e&&typeof e.scroll==='number')?e.scroll:0;
+  _navPdfState=(e&&e.pdf&&typeof e.pdf==='object')?e.pdf:null;
   try{
     if(t.mode==='file')await openFile(t.path);
     else if(t.mode==='editor')await openEditor(t.path);
     else if(t.mode==='folder')openFolderView(t.path);
     else showEmptyTab();
-  }finally{_silentRender=false;_navScrollTarget=null;}
+  }finally{_silentRender=false;_navScrollTarget=null;_navPdfState=null;}
 }
 async function newTab(){
   if(!(await maybeLeaveEditor()))return;
@@ -1875,6 +1876,7 @@ async function openFile(path,opts){
   if(!_isMdView)area.scrollTo({top:0,behavior:'instant'});
   _curHeadings=[]; _curNotePath=path; renderOutline();
   hideEditFab();
+  area._pdfGetState=null;   // Getter der vorherigen (evtl. PDF-)Ansicht entfernen; mountPdfViewer setzt ihn neu
   try{
     if(ext==='.md'||ext==='.markdown'||ext===''){
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
@@ -2345,7 +2347,7 @@ function renderHtmlView(area,fname,raw,path){
   sb.onclick=()=>{frame.style.display='none';pre.style.display='block';sb.classList.add('on');vb.classList.remove('on');};
 }
 function renderImageView(area,fname,path){area.innerHTML=`<div class="file-toolbar"><span class="ft-name">🖼 ${esc(fname)}</span></div><div class="img-view"><img src="${fileUrl(path)}" alt="${esc(fname)}"></div>`;}
-function renderPdfView(area,fname,path){ mountPdfViewer(area,fname,path,{}); }
+function renderPdfView(area,fname,path){ mountPdfViewer(area,fname,path,{restore:(_navPdfState&&typeof _navPdfState==='object')?_navPdfState:null}); }
 // Voll in Nexus integrierter PDF-Viewer (PDF.js): eigene Toolbar in Akzentfarben,
 // dunkler Seitenhintergrund, Nexus-Scrollbars, Lazy-Rendering pro Seite (IntersectionObserver).
 async function mountPdfViewer(host,fname,path,opts={}){
@@ -2450,7 +2452,7 @@ async function mountPdfViewer(host,fname,path,opts={}){
     if(document.activeElement!==pageInp)pageInp.value=cur;
   }
   function gotoPage(i){i=Math.max(1,Math.min(N,i|0));const el=pageEls[i-1];if(!el)return;const sr=scroll.getBoundingClientRect(),er=el.getBoundingClientRect();scroll.scrollTo({top:scroll.scrollTop+(er.top-sr.top)-10,behavior:'instant'});}
-  function applyZoom(){layout();pageEls.forEach(el=>el._rk=null);reRenderVisible();}
+  function applyZoom(){layout();pageEls.forEach(el=>el._rk=null);reRenderVisible();if(host._pdfPersist)host._pdfPersist();}
 
   const io=new IntersectionObserver(ents=>{
     if(!scroll.isConnected){cleanup();return;}
@@ -2483,7 +2485,33 @@ async function mountPdfViewer(host,fname,path,opts={}){
   function cleanup(){try{io.disconnect();}catch(e){}try{ro.disconnect();}catch(e){}scroll.removeEventListener('scroll',onScroll);scroll.removeEventListener('wheel',onWheel);try{doc.destroy();}catch(e){}}
   host._pdfCleanup=cleanup;
 
-  requestAnimationFrame(()=>{layout();reRenderVisible();updateCurrent();});
+  // Positions-/Zoom-Wiederherstellung pro Tab (nur Hauptansicht, nicht der kompakte Split-Viewer):
+  // - host._pdfGetState() liefert dem Tab-System den aktuellen Stand (Scroll-Y + mode/scale).
+  // - persistState() schreibt ihn debounced in den aktiven History-Eintrag (auch fuer Neustart/Restore).
+  if(!compact){
+    host._pdfGetState=()=>scroll.isConnected?{y:scroll.scrollTop,mode,scale}:null;
+    let _pstTimer=0;
+    const persistState=()=>{clearTimeout(_pstTimer);_pstTimer=setTimeout(()=>{
+      const t=tabs[activeTab];
+      if(t&&t.mode==='file'&&t.path===path&&Array.isArray(t.hist)&&t.hi>=0&&scroll.isConnected){
+        const e=t.hist[t.hi];if(e){e.pdf={y:scroll.scrollTop,mode,scale};saveTabs();}
+      }
+    },250);};
+    scroll.addEventListener('scroll',persistState);
+    host._pdfPersist=persistState;   // applyZoom() ruft das nach Zoom-Aenderung auf
+  }
+
+  const _restore=opts.restore;
+  requestAnimationFrame(()=>{
+    if(_restore){
+      if(_restore.mode==='fit'||_restore.mode==='manual')mode=_restore.mode;
+      if(mode==='manual'&&_restore.scale>0)scale=_restore.scale;
+    }
+    layout();reRenderVisible();updateCurrent();
+    if(_restore&&typeof _restore.y==='number'&&_restore.y>0){
+      scroll.scrollTop=_restore.y;reRenderVisible();updateCurrent();
+    }
+  });
 }
 // Native Audio-/Video-Wiedergabe (Content-Type wird jetzt korrekt gesetzt).
 function renderMediaView(area,fname,path,kind){
@@ -3266,7 +3294,7 @@ function bumpNoteW(deltaY){let base=currentNoteW();if(!base){const el=document.q
 // aenderungen. Default 0.5 = mittig (bisheriges Verhalten beim allerersten Oeffnen).
 let _noteXTimer=null, _noteXLast=-1;
 // ─── Vertikaler Scroll-Stand pro History-Eintrag (Zurückkehren zu einer Notiz behält die Stelle) ───
-let _navScrollTarget=null, _noteYTimer=null;
+let _navScrollTarget=null, _navPdfState=null, _noteYTimer=null;
 // Scroll-Stand der aktuell gelesenen Notiz debounced in ihren History-Eintrag merken.
 function saveNoteScroll(area){
   if(area.__restoreActive)return;                     // während eines laufenden Restores nicht zurückschreiben
@@ -3281,8 +3309,14 @@ function saveNoteScroll(area){
 function flushNoteScroll(){
   if(_noteYTimer){clearTimeout(_noteYTimer);_noteYTimer=null;}
   const area=document.getElementById('note-area');
-  if(!area||!area.querySelector('#backlinks')||area.__restoreActive)return;
+  if(!area)return;
   const t=tabs[activeTab];
+  // PDF: internen Scroll-Stand + Zoom (mode/scale) in den aktuellen History-Eintrag merken,
+  // damit beim Tab-Wechsel/Zurück-Vor genau Seite UND Zoom wiederhergestellt werden.
+  if(typeof area._pdfGetState==='function'&&t&&t.mode==='file'&&Array.isArray(t.hist)&&t.hi>=0){
+    const st=area._pdfGetState();if(st){const e=t.hist[t.hi];if(e)e.pdf=st;}
+  }
+  if(!area.querySelector('#backlinks')||area.__restoreActive)return;
   if(t&&t.mode==='file'&&Array.isArray(t.hist)&&t.hi>=0){const e=t.hist[t.hi];if(e)e.scroll=area.scrollTop;}
 }
 // Beim Öffnen/Zurückkehren den Ziel-Scroll-Stand setzen. Re-Apply nur nötig, wenn Dataview-Blöcke
