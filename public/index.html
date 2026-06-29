@@ -2264,7 +2264,7 @@ document.addEventListener('keydown',e=>{
 },true);
 
 // ── Mermaid + Math (lazy CDN, Fallback = Quelltext) ──
-let _mermaidLoaded=null,_katexLoaded=null,_pdfjsLoaded=null;
+let _mermaidLoaded=null,_katexLoaded=null,_pdfjsLoaded=null,_mammothLoaded=null;
 // PDF.js LOKAL eingebunden (public/vendor/pdfjs) -> offline-tauglich in Electron, kein CDN.
 function loadPdfJs(){
   if(_pdfjsLoaded!==null)return _pdfjsLoaded;
@@ -2276,6 +2276,19 @@ function loadPdfJs(){
     document.head.appendChild(s);
   });
   return _pdfjsLoaded;
+}
+// mammoth LOKAL eingebunden (public/vendor/mammoth) -> docx-Vorschau ohne Python/markitdown, offline-tauglich.
+function loadMammoth(){
+  if(_mammothLoaded!==null)return _mammothLoaded;
+  _mammothLoaded=new Promise(res=>{
+    if(window.mammoth)return res(window.mammoth);
+    const s=document.createElement('script');
+    s.src='/vendor/mammoth/mammoth.browser.min.js';
+    s.onload=()=>res(window.mammoth||null);
+    s.onerror=()=>res(null);
+    document.head.appendChild(s);
+  });
+  return _mammothLoaded;
 }
 function loadMermaid(){if(_mermaidLoaded!==null)return _mermaidLoaded;_mermaidLoaded=new Promise(res=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';s.onload=()=>{try{window.mermaid.initialize({startOnLoad:false,theme:'dark'});res(window.mermaid);}catch(e){res(null);}};s.onerror=()=>res(null);document.head.appendChild(s);});return _mermaidLoaded;}
 function renderMermaid(area){const blocks=area.querySelectorAll('.mermaid-block[data-mermaid]');if(!blocks.length)return;loadMermaid().then(m=>{if(!m)return;blocks.forEach(async(b,i)=>{try{const {svg}=await m.render('mmd'+Date.now()+'_'+i,b.getAttribute('data-mermaid'));b.innerHTML=svg;}catch(e){}});});}
@@ -2500,6 +2513,21 @@ async function renderOfficeView(area,fname,path){
   area.innerHTML=`<div class="file-toolbar"><span class="ft-name">${fileIcon(ext)} ${esc(fname)}</span><span class="ft-spacer"></span><button class="ft-btn" id="of-open">${openLabel}</button></div><div class="note-content" id="of-body"><div class="placeholder" style="padding-top:60px"><span class="big">⏳</span>Vorschau wird erstellt…</div></div>`;
   const openBtn=area.querySelector('#of-open'); if(openBtn)openBtn.onclick=()=>openExternalFile(path);
   const body=area.querySelector('#of-body');
+  // .docx: reiner JS-Konverter (mammoth, lokal gebundelt) -> KEIN Python/markitdown noetig,
+  // laeuft offline auf jedem Mac/Windows. Bei Fehlschlag faellt es unten auf markitdown/extern zurueck.
+  if(ext==='.docx'){
+    try{
+      const mm=await loadMammoth();
+      if(mm){
+        const buf=await fetch(fileUrl(path)).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.arrayBuffer();});
+        const out=await mm.convertToHtml({arrayBuffer:buf});
+        if(selectedPath!==path)return;
+        body.innerHTML=`<div class="of-banner">Vorschau aus <b>${esc(fname)}</b> – Formatierung kann abweichen. Zum Bearbeiten in ${app} öffnen.</div><h1 class="note-title">${esc(fname.replace(/\.[^.]+$/,''))}</h1><div class="md-body">${sanitizeRawHtml(out.value||'')}</div>`;
+        body.querySelectorAll('a[href^="http"]').forEach(a=>{a.target='_blank';a.rel='noopener';});
+        return;
+      }
+    }catch(e){ /* mammoth fehlgeschlagen -> markitdown/extern als Fallback unten */ }
+  }
   try{
     const r=await fetch('/api/preview/office',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,path,filePath:path})});
     const j=await r.json().catch(()=>({}));
