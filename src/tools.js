@@ -1,5 +1,5 @@
 // src/tools.js – MCP-Tool-Implementierungen (node:sqlite, positionale Parameter)
-import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, existsSync, readdirSync, statSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, existsSync, readdirSync } from 'fs';
 import { join, dirname, resolve, sep, relative } from 'path';
 import { transaction } from './db.js';
 import { runVaultCheck, renderReport, REPORT_REL } from './vault-check.js';
@@ -119,18 +119,26 @@ export function makeTools(indexer, vaultPath) {
       return { error: 'Notiz existiert nicht (create=false): ' + path };
     if (typeof content !== 'string')
       return { error: 'content fehlt oder ist kein String' };
-    // R14: Erwartete Byte-Laenge VOR dem Schreiben festhalten (UTF-8, nicht Zeichenzahl –
-    // Emojis/Umlaute zaehlen mehrere Bytes). Dient als harte Assertion gegen stille Trunkierung.
+    // R14+: Schreib-Integritaet per VOLLEM Read-Back (nicht nur Byte-Laenge).
+    // Eine reine Laengen-Pruefung faengt die EIGENTLICHE Fehlerklasse NICHT, die in
+    // STATUS.md/scripts/safe-edit.mjs dokumentiert ist: Read-Modify-Write ueber den
+    // divergierenden Windows<->Linux-Mount kappt am Puffer-Boundary (~5 KB), padded mit
+    // NUL gleicher Laenge oder schreibt eine stale Fassung zurueck – alles teils
+    // laengengleich und damit fuer statSync unsichtbar. Deshalb wie safe-edit.mjs:
+    // atomar schreiben (tmp + rename) und den GANZEN Inhalt frisch von Platte gegen das
+    // Soll vergleichen. Weicht der Read-Back ab, ist es ein ECHTER Fehler – kein stilles
+    // ok:true, kein Datenverlust.
     const expectedBytes = Buffer.byteLength(content, 'utf8');
     try {
       mkdirSync(dirname(fullPath), { recursive: true });
-      writeFileSync(fullPath, content, 'utf8');
-      // R14: Laengen-Assertion. Wird beim Schreiben/Transport Inhalt abgeschnitten
-      // (fixe Puffergroesse, Platte voll, kaputter Stream), faellt das hier sofort auf –
-      // das Tool meldet einen ECHTEN Fehler statt stillem ok:true (kein Datenverlust mehr).
-      const actualBytes = statSync(fullPath).size;
-      if (actualBytes !== expectedBytes)
-        return { error: `Schreib-Trunkierung erkannt: nur ${actualBytes} von ${expectedBytes} Bytes geschrieben (${path}). Datei NICHT als ok gemeldet – bitte erneut schreiben.` };
+      const tmp = fullPath + '.nexustmp';
+      writeFileSync(tmp, content, 'utf8');
+      renameSync(tmp, fullPath); // Windows: MoveFileEx-Semantik -> ueberschreibt Ziel atomar
+      const back = readFileSync(fullPath, 'utf8');
+      if (back !== content) {
+        const actualBytes = Buffer.byteLength(back, 'utf8');
+        return { error: `Schreib-Integritaet verletzt: Read-Back stimmt nicht mit dem gewollten Inhalt ueberein (${actualBytes} statt ${expectedBytes} Bytes, ${path}). Moegliche Trunkierung/NUL-Padding/Mount-Korruption – Datei NICHT als ok gemeldet, bitte erneut schreiben.` };
+      }
     } catch (e) { return { error: e.message }; }
     indexer.indexFile(fullPath);
     return { ok: true, path, bytes: expectedBytes };

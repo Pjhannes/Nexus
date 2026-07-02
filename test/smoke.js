@@ -238,6 +238,11 @@ const bigDiskBytes = statSync(join(vault, 'R14-Big.md')).size;
 assert('R14: Datei byte-gleich auf Platte', bigDiskBytes === expectedBigBytes, `disk=${bigDiskBytes}`);
 assert('R14: Inhalt vollständig (letzter Abschnitt da)', bigOnDisk.includes('Abschnitt 1499'));
 assert('R14: keine NUL-Bytes (kein Padding)', !bigOnDisk.includes(String.fromCharCode(0)));
+// R14+: writeNote schreibt atomar (tmp + rename) und prüft per VOLLEM Read-Back gegen das
+// Soll – nicht nur Byte-Länge (fängt NUL-Padding/Stale-Write-Back gleicher Länge über den
+// Mount). Hier: kein .nexustmp-Sidecar bleibt zurück, Read-Back stimmt exakt.
+assert('R14+: kein .nexustmp-Sidecar bleibt liegen', !existsSync(join(vault, 'R14-Big.md.nexustmp')));
+assert('R14+: Read-Back exakt gleich dem Soll', bigOnDisk === bigContent);
 
 // append_to_section auf die große Notiz -> bestehender Inhalt bleibt erhalten + neuer Text dran
 const aBig = tools.appendToSection({ path: 'R14-Big.md', section: 'Abschnitt 7 ', text: 'R14-ANGEHÄNGT 🚀' });
