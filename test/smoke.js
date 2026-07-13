@@ -5,6 +5,7 @@ import { join } from 'path';
 import { parseNote } from '../src/parse.js';
 import { buildIndexer } from '../src/indexer.js';
 import { makeTools } from '../src/tools.js';
+import { makeVaultRegistry } from '../src/vault-registry.js';
 
 // ── Farben ────────────────────────────────────────────────────────────────────
 const G = s => `\x1b[32m${s}\x1b[0m`;
@@ -238,6 +239,11 @@ const bigDiskBytes = statSync(join(vault, 'R14-Big.md')).size;
 assert('R14: Datei byte-gleich auf Platte', bigDiskBytes === expectedBigBytes, `disk=${bigDiskBytes}`);
 assert('R14: Inhalt vollständig (letzter Abschnitt da)', bigOnDisk.includes('Abschnitt 1499'));
 assert('R14: keine NUL-Bytes (kein Padding)', !bigOnDisk.includes(String.fromCharCode(0)));
+// R14+: writeNote schreibt atomar (tmp + rename) und prüft per VOLLEM Read-Back gegen das
+// Soll – nicht nur Byte-Länge (fängt NUL-Padding/Stale-Write-Back gleicher Länge über den
+// Mount). Hier: kein .nexustmp-Sidecar bleibt zurück, Read-Back stimmt exakt.
+assert('R14+: kein .nexustmp-Sidecar bleibt liegen', !existsSync(join(vault, 'R14-Big.md.nexustmp')));
+assert('R14+: Read-Back exakt gleich dem Soll', bigOnDisk === bigContent);
 
 // append_to_section auf die große Notiz -> bestehender Inhalt bleibt erhalten + neuer Text dran
 const aBig = tools.appendToSection({ path: 'R14-Big.md', section: 'Abschnitt 7 ', text: 'R14-ANGEHÄNGT 🚀' });
@@ -296,6 +302,66 @@ console.log('   Test: curl -s -X POST http://localhost:3000/api/reindex \\');
 console.log('         -H "Content-Type: application/json" \\');
 console.log('         -d \'{"vault":"knowledge-base"}\'');
 // ═════════════════════════════════════════════════════════════════════════════
+
+// ═════════════════════════════════════════════════════════════════════════════
+console.log(B('\n── 5. vault-registry (Multi-Vault + Live-Config) ────────'));
+// ═════════════════════════════════════════════════════════════════════════════
+const regDir = join(tmp, 'registry');
+const vA = join(regDir, 'vault-a'), vB = join(regDir, 'vault-b'), vC = join(regDir, 'vault-c');
+mkdirSync(vA, { recursive: true });
+mkdirSync(vB, { recursive: true });
+writeFileSync(join(vA, 'A-Notiz.md'), '# A-Notiz\nInhalt Alpha\n');
+writeFileSync(join(vB, 'B-Notiz.md'), '# B-Notiz\nInhalt Beta\n');
+
+const regCfgPath = join(regDir, 'nexus.config.json');
+const writeCfg = c => writeFileSync(regCfgPath, JSON.stringify(c, null, 2));
+const vaultA = { name: 'a', path: vA, dbPath: join(regDir, 'a.db') };
+const vaultB = { name: 'b', path: vB, dbPath: join(regDir, 'b.db') };
+const vaultC = { name: 'c', path: vC, dbPath: join(regDir, 'c.db') };
+writeCfg({ activeVault: 'a', vaults: [vaultA, vaultB], ignore: [] });
+
+const registry = makeVaultRegistry({
+  configPath:    regCfgPath,
+  loadConfig:    () => JSON.parse(readFileSync(regCfgPath, 'utf8')),
+  resolveDbPath: v => v.dbPath,
+  buildIndexer,
+  makeTools,
+});
+
+assert('registry: beide Vaults registriert',   registry.size() === 2);
+assert('registry: Default = activeVault (a)',  registry.get().vault.name === 'a');
+assert('registry: get("b") liefert Vault b',   registry.get('b').vault.name === 'b');
+assert('registry: liest im richtigen Vault',   !!registry.get('b').tools.readNote({ path: 'B-Notiz.md' }).content?.includes('Beta'));
+assert('registry: Vaults sind isoliert',       !!registry.get('a').tools.readNote({ path: 'B-Notiz.md' }).error);
+let unknownErr = '';
+try { registry.get('gibtsnicht'); } catch (e) { unknownErr = e.message; }
+assert('registry: unbekannter Vault -> Fehler mit Liste', unknownErr.includes('Vault nicht gefunden') && unknownErr.includes('a, b'));
+
+// Hot-Add: Vault c entsteht auf Platte + in der Config, während die Registry läuft
+mkdirSync(vC, { recursive: true });
+writeFileSync(join(vC, 'C-Notiz.md'), '# C-Notiz\nInhalt Gamma\n');
+writeCfg({ activeVault: 'a', vaults: [vaultA, vaultB, vaultC], ignore: [] });
+assert('registry: neuer Vault ohne Neustart erreichbar', !!registry.get('c').tools.readNote({ path: 'C-Notiz.md' }).content?.includes('Gamma'));
+assert('registry: size nach Hot-Add = 3', registry.size() === 3);
+
+// list(): Namen, active-Flag, Notiz-Zähler
+const rl = registry.list();
+assert('registry: list() kennt alle drei',   rl.vaults.map(v => v.name).sort().join(',') === 'a,b,c');
+assert('registry: list() markiert aktiven',  rl.vaults.find(v => v.name === 'a')?.active === true && rl.activeVault === 'a');
+assert('registry: list() zählt Notizen',     rl.vaults.find(v => v.name === 'c')?.notes === 1);
+
+// Hot-Remove: b verschwindet aus der Config -> abgemeldet
+writeCfg({ activeVault: 'a', vaults: [vaultA, vaultC], ignore: [] });
+let removedErr = '';
+try { registry.get('b'); } catch (e) { removedErr = e.message; }
+assert('registry: entfernter Vault abgemeldet', removedErr.includes('Vault nicht gefunden') && registry.size() === 2);
+
+// activeVault-Wechsel in der App -> Default folgt live. _touch ändert die Dateigröße,
+// damit der Test nicht von der mtime-Auflösung des Dateisystems abhängt (die echte
+// App schreibt nie zweimal in derselben Millisekunde).
+writeCfg({ activeVault: 'c', vaults: [vaultA, vaultC], ignore: [], _touch: 'aktiv-wechsel' });
+assert('registry: Default folgt activeVault-Wechsel', registry.get().vault.name === 'c');
+registry.close(); // DB-Handles freigeben, damit das Aufräumen unten durchläuft
 
 // ── Aufräumen ─────────────────────────────────────────────────────────────────
 // Unter Windows hält das offene SQLite-WAL-Handle die DB-Datei kurz fest -> rmSync
