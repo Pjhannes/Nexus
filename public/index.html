@@ -2644,20 +2644,40 @@ function pptxRels(zip,part){
 // Ein <a:p> -> {text,lvl,sz}. Die Runs eines Absatzes MUESSEN verbunden werden: PowerPoint
 // zerlegt Text in mehrere <a:r> (real: "Claude + dein\n" + "zweites Gehirn" = ein Titel).
 // Farbe aus einem Fill-/Ref-Element: srgbClr direkt, schemeClr ueber clrMap des Masters + Theme.
+// Die Modifier MUESSEN mitgerechnet werden: alpha steckt 177x im echten Workshop-Deck (der grosse
+// dunkle Blob ist eine halbtransparente Ellipse - ohne alpha wird er knallig statt dezent),
+// lumMod 13x im GV-Deck. shade/tint sind mitgenommen, weil sie im selben Element stehen koennen.
 function pptxColor(el,clr){
   if(!el)return null;
-  const s=el.getElementsByTagNameNS(PPTX_NS_A,'srgbClr')[0];
-  if(s)return '#'+s.getAttribute('val');
-  const c=el.getElementsByTagNameNS(PPTX_NS_A,'schemeClr')[0];
-  if(c){const v=clr[c.getAttribute('val')];if(v)return '#'+v;}
-  return null;
+  let hex=null,node=el.getElementsByTagNameNS(PPTX_NS_A,'srgbClr')[0];
+  if(node)hex=node.getAttribute('val');
+  else{node=el.getElementsByTagNameNS(PPTX_NS_A,'schemeClr')[0];if(node)hex=clr[node.getAttribute('val')]||null;}
+  if(!hex||!/^[0-9A-Fa-f]{6}$/.test(hex))return null;
+  let r=parseInt(hex.slice(0,2),16)/255,g=parseInt(hex.slice(2,4),16)/255,b=parseInt(hex.slice(4,6),16)/255,a=1;
+  const v=n=>{const e=node.getElementsByTagNameNS(PPTX_NS_A,n)[0];return e?(+e.getAttribute('val'))/100000:null;};
+  const al=v('alpha'); if(al!==null)a=al;
+  const sh=v('shade'); if(sh!==null){r*=sh;g*=sh;b*=sh;}
+  const ti=v('tint'); if(ti!==null){r=r*ti+(1-ti);g=g*ti+(1-ti);b=b*ti+(1-ti);}
+  const lm=v('lumMod'),lo=v('lumOff');
+  if(lm!==null||lo!==null){                       // lumMod/lumOff wirken auf die HSL-Luminanz
+    const mx=Math.max(r,g,b),mn=Math.min(r,g,b);let h=0,s=0,l=(mx+mn)/2;
+    if(mx!==mn){const d=mx-mn;s=l>.5?d/(2-mx-mn):d/(mx+mn);
+      h=(mx===r?((g-b)/d+(g<b?6:0)):mx===g?((b-r)/d+2):((r-g)/d+4))/6;}
+    l=Math.max(0,Math.min(1,l*(lm===null?1:lm)+(lo===null?0:lo)));
+    if(s===0)r=g=b=l;
+    else{const hu=(p,q,t)=>{if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<.5)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;};
+      const q=l<.5?l*(1+s):l+s-l*s,p=2*l-q;r=hu(p,q,h+1/3);g=hu(p,q,h);b=hu(p,q,h-1/3);}
+  }
+  const c=x=>Math.max(0,Math.min(255,Math.round(x*255)));
+  return a>=1?'rgb('+c(r)+','+c(g)+','+c(b)+')':'rgba('+c(r)+','+c(g)+','+c(b)+','+(+a.toFixed(3))+')';
 }
 // Relative Luminanz (WCAG) -> Auto-Kontrast fuer Text OHNE eigene Farbe. Real noetig: im GV-Deck
 // hat <a:rPr sz="3200" b="1"> gar keine Farbe und erbt Schwarz; das Workshop-Deck setzt explizit
 // Weiss auf #140F24. Ohne diese Regel waere eins von beiden unsichtbar.
-function pptxLum(hex){
-  const n=parseInt(hex.slice(1),16),f=c=>{c/=255;return c<=.03928?c/12.92:Math.pow((c+.055)/1.055,2.4);};
-  return .2126*f(n>>16&255)+.7152*f(n>>8&255)+.0722*f(n&255);
+function pptxLum(c){
+  const m=(c||'').match(/[\d.]+/g); if(!m||m.length<3)return 1;
+  const f=x=>{x=+x/255;return x<=.03928?x/12.92:Math.pow((x+.055)/1.055,2.4);};
+  return .2126*f(m[0])+.7152*f(m[1])+.0722*f(m[2]);
 }
 // Ziel einer Beziehung (Layout des Slides, Master des Layouts, Theme des Masters).
 function pptxRelTarget(zip,part,re){
@@ -2689,7 +2709,7 @@ function pptxBgColor(zip,parts,clr){
     const bg=d.getElementsByTagNameNS(PPTX_NS_P,'bg')[0]; if(!bg)continue;
     const c=pptxColor(bg,clr); if(c)return c;
   }
-  return '#ffffff';
+  return 'rgb(255,255,255)';
 }
 // a:xfrm -> Position/Groesse in EMU (+ Kindraum bei Gruppen).
 function pptxXfrm(el){
@@ -2702,26 +2722,43 @@ function pptxXfrm(el){
   if(ce)r.chExt={cx:+ce.getAttribute('cx'),cy:+ce.getAttribute('cy')};
   return r;
 }
-// Ein <a:p> -> Text + Auszeichnung. Runs eines Absatzes MUESSEN verbunden werden: PowerPoint
-// zerlegt Text in mehrere <a:r> (real: "Claude + dein\n" + "zweites Gehirn" = ein Titel).
+// Form-Geometrie: real genutzt sind ellipse (172x) und roundRect (10x) – ohne sie wird aus jedem
+// Kreis/jeder Pille ein Kasten. adj = Eckenradius als Anteil der KUERZEREN Seite (Default 16667).
+function pptxGeom(el){
+  const pg=el.getElementsByTagNameNS(PPTX_NS_A,'prstGeom')[0];
+  if(!pg)return {prst:'',adj:0};
+  const prst=pg.getAttribute('prst')||'';
+  let adj=0;
+  if(prst==='roundRect'){
+    const gd=pg.getElementsByTagNameNS(PPTX_NS_A,'gd')[0];
+    const m=gd&&(gd.getAttribute('fmla')||'').match(/val\s+(-?\d+)/);
+    adj=m?+m[1]/100000:0.16667;
+  }
+  return {prst,adj};
+}
+// Ein <a:p> -> Absatz MIT seinen Runs. Die Runs einzeln zu behalten ist noetig, weil ein Absatz
+// mehrere Farben tragen kann (real 22x im Workshop-Deck: "Tipp:" orange, der Rest weiss) – die
+// Farbe des ersten Runs auf den ganzen Absatz zu ziehen war sichtbar falsch.
 function pptxPara(p,clr){
-  let txt='',sz=0,col=null,b=false,it=false,lvl=0,algn='';
+  const runs=[]; let lvl=0,algn='',sz=0;
   for(const el of p.children){
     const ln=el.localName;
     if(ln==='r'||ln==='fld'){
-      const t=el.getElementsByTagNameNS(PPTX_NS_A,'t')[0];
-      if(t)txt+=t.textContent||'';
+      const t=el.getElementsByTagNameNS(PPTX_NS_A,'t')[0],txt=t?(t.textContent||''):'';
+      if(!txt)continue;
       const pr=el.getElementsByTagNameNS(PPTX_NS_A,'rPr')[0];
+      let col=null,b=false,i=false,rsz=0;
       if(pr){
-        const s=+(pr.getAttribute('sz')||0); if(s>sz)sz=s;
-        if(pr.getAttribute('b')==='1')b=true;
-        if(pr.getAttribute('i')==='1')it=true;
-        if(!col)for(const c of pr.children)if(c.localName==='solidFill'){col=pptxColor(c,clr);break;}
+        rsz=+(pr.getAttribute('sz')||0);
+        b=pr.getAttribute('b')==='1'; i=pr.getAttribute('i')==='1';
+        for(const c of pr.children)if(c.localName==='solidFill'){col=pptxColor(c,clr);break;}
       }
-    }else if(ln==='br')txt+='\n';
+      if(rsz>sz)sz=rsz;
+      runs.push({t:txt,col,b,i,sz:rsz});
+    }else if(ln==='br')runs.push({br:true,t:''});
     else if(ln==='pPr'){lvl=+(el.getAttribute('lvl')||0)||0;algn=el.getAttribute('algn')||'';}
   }
-  return {text:txt.replace(/\r/g,'').trim(),lvl:Math.max(0,Math.min(8,lvl)),sz,col,b,i:it,algn};
+  return {text:runs.map(r=>r.t).join('').replace(/\r/g,'').trim(),runs,lvl:Math.max(0,Math.min(8,lvl)),sz,algn};
 }
 // spTree in Dokumentreihenfolge. Gruppen: Kind-Koordinaten liegen im Kindraum (chOff/chExt) und
 // muessen in den Folienraum gerechnet werden – keins der echten Decks nutzt Gruppen, PowerPoint
@@ -2754,7 +2791,7 @@ function pptxSlide(zip,slidePath,ctx){
   for(const {el,tf} of pptxShapes(tree,[],null)){
     const geo=pptxXfrm(el); if(!geo)continue;      // ohne Koordinaten nicht platzierbar
     const g=tf?tf(geo):geo;
-    const box={l:g.x/ctx.cx*100,t:g.y/ctx.cy*100,w:g.cx/ctx.cx*100,h:g.cy/ctx.cy*100,rot:g.rot||0};
+    const box=Object.assign({l:g.x/ctx.cx*100,t:g.y/ctx.cy*100,w:g.cx/ctx.cx*100,h:g.cy/ctx.cy*100,rot:g.rot||0},pptxGeom(el));
     if(el.localName==='pic'){
       const blip=el.getElementsByTagNameNS(PPTX_NS_A,'blip')[0];
       const rid=blip&&blip.getAttributeNS(PPTX_NS_R,'embed');   // r:link = externes Bild -> ignorieren
@@ -2795,29 +2832,42 @@ function pptxParse(zip){
   // immer genau einen Master; faellt er weg, bleiben nur explizite srgbClr-Farben uebrig).
   const l0=pptxRelTarget(zip,paths[0],/slideLayout\d*\.xml$/);
   const ctx={cx,cy,clr:pptxThemeClr(zip,l0?pptxRelTarget(zip,l0,/slideMaster\d*\.xml$/):'')};
-  return {cx,cy,ar:cx/cy,slides:paths.map(p=>pptxSlide(zip,p,ctx)||{bg:'#ffffff',tx:'#1a1a1a',items:[]})};
+  return {cx,cy,ar:cx/cy,slides:paths.map(p=>pptxSlide(zip,p,ctx)||{bg:'rgb(255,255,255)',tx:'#1a1a1a',items:[]})};
 }
 // Blob-URLs pro Media-Datei (nicht pro Vorkommen: ein Logo auf 66 Folien = eine URL).
 // Die Liste haengt am #note-area und wird beim naechsten Datei-Oeffnen widerrufen.
 function pptxRender(deck,zip,area){
   const urls=[],cache={},ALGN={ctr:'center',r:'right',l:'left',just:'justify'};
   const blobUrl=m=>cache[m.path]||(cache[m.path]=(u=>(urls.push(u),u))(URL.createObjectURL(new Blob([zip[m.path]],{type:m.mime}))));
-  const pos=o=>'left:'+o.l.toFixed(3)+'%;top:'+o.t.toFixed(3)+'%;width:'+o.w.toFixed(3)+'%;height:'+o.h.toFixed(3)+'%'+(o.rot?';transform:rotate('+(o.rot/60000).toFixed(2)+'deg)':'');
+  const cqw=sz=>(sz*12700/deck.cx).toFixed(3)+'cqw';
+  const stil=o=>{
+    let s='left:'+o.l.toFixed(3)+'%;top:'+o.t.toFixed(3)+'%;width:'+o.w.toFixed(3)+'%;height:'+o.h.toFixed(3)+'%';
+    if(o.rot)s+=';transform:rotate('+(o.rot/60000).toFixed(2)+'deg)';
+    // Radius in cqw statt %: border-radius:% rechnet pro Achse und macht aus dem Kreis eine Ellipse.
+    if(o.prst==='ellipse')s+=';border-radius:50%';
+    else if(o.prst==='roundRect'&&o.adj>0)s+=';border-radius:'+(o.adj*Math.min(o.w,o.h*deck.cy/deck.cx)).toFixed(3)+'cqw';
+    return s;
+  };
   const cards=deck.slides.map((s,i)=>{
     const inner=s.items.map(o=>{
-      if(o.typ==='img')return '<img class="pptx-img" style="'+pos(o)+'" src="'+blobUrl(o)+'" alt="" loading="lazy">';
+      if(o.typ==='img')return '<img class="pptx-img" style="'+stil(o)+'" src="'+blobUrl(o)+'" alt="" loading="lazy">';
       const ps=o.paras.map(p=>{
-        // sz ist in 1/100 pt; Folienbreite in pt = cx/12700. Anteil an der Kartenbreite in cqw
-        // -> Schrift skaliert automatisch mit Zoom und Fensterbreite.
-        const st=['font-size:'+((p.sz||1800)*12700/deck.cx).toFixed(3)+'cqw'];
-        if(p.col)st.push('color:'+p.col);
-        if(p.b)st.push('font-weight:700');
-        if(p.i)st.push('font-style:italic');
+        const st=['font-size:'+cqw(p.sz||1800)];
         if(p.algn&&ALGN[p.algn])st.push('text-align:'+ALGN[p.algn]);
         if(p.lvl)st.push('padding-left:'+(p.lvl*1.4)+'em');
-        return '<p class="pptx-tx" style="'+st.join(';')+'">'+esc(p.text)+'</p>';
+        // Runs einzeln: ein Absatz kann mehrere Farben/Auszeichnungen tragen.
+        const txt=p.runs.map(r=>{
+          if(r.br)return '<br>';
+          const rs=[];
+          if(r.col)rs.push('color:'+r.col);
+          if(r.b)rs.push('font-weight:700');
+          if(r.i)rs.push('font-style:italic');
+          if(r.sz&&r.sz!==p.sz)rs.push('font-size:'+cqw(r.sz));
+          return rs.length?'<span style="'+rs.join(';')+'">'+esc(r.t)+'</span>':esc(r.t);
+        }).join('');
+        return '<p class="pptx-tx" style="'+st.join(';')+'">'+txt+'</p>';
       }).join('');
-      return '<div class="pptx-sh an-'+o.anchor+'" style="'+pos(o)+(o.fill?';background:'+o.fill:'')+'">'+ps+'</div>';
+      return '<div class="pptx-sh an-'+o.anchor+'" style="'+stil(o)+(o.fill?';background:'+o.fill:'')+'">'+ps+'</div>';
     }).join('');
     return '<section class="pptx-slide" style="background:'+s.bg+';color:'+s.tx+'">'+inner+'<span class="pptx-num">'+(i+1)+'</span></section>';
   }).join('');
@@ -2845,14 +2895,28 @@ function mountOfficeView(area,fname,ext,path,openLabel,inner){
   const ob=area.querySelector('#of-open'); if(ob)ob.onclick=()=>openExternalFile(path);
   const sc=area.querySelector('#pptxv-scroll');
   if(sc)sc.addEventListener('wheel',e=>{e.stopPropagation();onNoteWheel(e);},{passive:false});
-  return area.querySelector('#of-body');
+  // Scroll-Stand pro Tab: exakt der Mechanismus des PDF-Viewers wiederverwendet – flushNoteScroll()
+  // fragt area._pdfGetState() ab und legt das Ergebnis im History-Eintrag ab, beim Oeffnen liegt es
+  // in _navPdfState. Der Wert muss JETZT synchron gelesen werden: openFile ruft renderOfficeView
+  // ohne await auf und der History-Aufrufer setzt _navPdfState danach auf null.
+  const rest=(_navPdfState&&typeof _navPdfState==='object')?_navPdfState:null;
+  if(sc)area._pdfGetState=()=>sc.isConnected?{x:sc.scrollLeft,y:sc.scrollTop}:null;
+  return {body:area.querySelector('#of-body'),restore(){
+    // Erst nach dem Befuellen aufrufen: vorher hat der Container keine Hoehe zum Scrollen.
+    // BEWUSST synchron statt requestAnimationFrame: das Setzen von scrollTop erzwingt selbst ein
+    // Layout, rAF bringt hier nichts – feuert aber in einem versteckten/gedrosselten Tab NIE
+    // (Technische-Tipps 35). Mit rAF war der Stand dort nie wiederherstellbar.
+    if(!sc||!rest||!sc.isConnected)return;
+    if(typeof rest.y==='number')sc.scrollTop=rest.y;
+    if(typeof rest.x==='number')sc.scrollLeft=rest.x;
+  }};
 }
 // Office-Viewer: versucht eine markitdown-Vorschau (so viel wie moeglich in Nexus),
 // faellt sonst auf ein Popup "In Word/Excel oeffnen?" + Extern-Button zurueck.
 async function renderOfficeView(area,fname,path){
   const ext=extOf(path), app=friendlyApp(ext);
   const openLabel=app==='dem Standardprogramm'?'📂 Extern öffnen':'📂 In '+app+' öffnen';
-  const body=mountOfficeView(area,fname,ext,path,openLabel,'<div class="placeholder" style="padding-top:60px"><span class="big">⏳</span>Vorschau wird erstellt…</div>');
+  const of=mountOfficeView(area,fname,ext,path,openLabel,'<div class="placeholder" style="padding-top:60px"><span class="big">⏳</span>Vorschau wird erstellt…</div>'),body=of.body;
   // .docx: reiner JS-Konverter (mammoth, lokal gebundelt) -> KEIN Python/markitdown noetig,
   // laeuft offline auf jedem Mac/Windows. Bei Fehlschlag faellt es unten auf markitdown/extern zurueck.
   if(ext==='.docx'){
@@ -2864,6 +2928,7 @@ async function renderOfficeView(area,fname,path){
         if(selectedPath!==path)return;
         body.innerHTML=`<div class="of-banner">Vorschau aus <b>${esc(fname)}</b> – Formatierung kann abweichen. Zum Bearbeiten in ${app} öffnen.</div><h1 class="note-title">${esc(fname.replace(/\.[^.]+$/,''))}</h1><div class="md-body">${sanitizeRawHtml(out.value||'')}</div>`;
         body.querySelectorAll('a[href^="http"]').forEach(a=>{a.target='_blank';a.rel='noopener';});
+        of.restore();
         return;
       }
     }catch(e){ /* mammoth fehlgeschlagen -> markitdown/extern als Fallback unten */ }
@@ -2885,6 +2950,7 @@ async function renderOfficeView(area,fname,path){
           const n=deck.slides.length;
           body.innerHTML='<div class="of-banner">Vorschau aus <b>'+esc(fname)+'</b> – '+n+' Folie'+(n===1?'':'n')+', Formatierung kann abweichen. Zum Bearbeiten in '+app+' öffnen.</div>'
             +'<h1 class="note-title">'+esc(fname.replace(/\.[^.]+$/,''))+'</h1>'+pptxRender(deck,zip,area);
+          of.restore();
           return;
         }
       }
@@ -2900,6 +2966,7 @@ async function renderOfficeView(area,fname,path){
     body.innerHTML=`<div class="of-banner">Vorschau aus <b>${esc(fname)}</b> – Formatierung kann abweichen. Zum Bearbeiten in ${app} öffnen.</div><h1 class="note-title">${esc(fname.replace(/\.[^.]+$/,''))}</h1><div class="md-body">${res.html}</div>`;
     renderMermaid(body);renderMath(body);
     body.querySelectorAll('a[href^="http"]').forEach(a=>{a.target='_blank';a.rel='noopener';});
+    of.restore();
   }catch(e){
     if(selectedPath!==path)return;
     renderExternalFallback(area,fname,path,'Diese Datei kann in Nexus nicht angezeigt werden ('+esc(e.message)+').');
