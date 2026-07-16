@@ -2830,14 +2830,29 @@ function revokePptxBlobs(el){
   for(const u of el._pptxBlobs){try{URL.revokeObjectURL(u);}catch(e){}}
   el._pptxBlobs=null;
 }
+// Eigener, deckender Viewport fuer JEDE Datei-Vorschau – Aufbau und Klassen direkt vom
+// PDF-Viewer (.pdfv, Z. 289) uebernommen: Inhalt clippt an der Leiste, statt hinter das Tab-Band
+// zu scrollen. Das Durchscheinen bleibt bewusst echten Notizen vorbehalten (#note-area hat dafuer
+// padding-top:var(--tab-h) + sticky Leiste mit backdrop-blur).
+// Die Notiz-Mechanik wird nicht dupliziert: der Inhalt sitzt in einer .note-content (also
+// --note-w-Breite + margin-inline-Formel) und der Scroll-Container bekommt onNoteWheel
+// -> Achsen-Lock, Strg+Rad-Zoom und seitliches Schieben sind identisch zur Notiz.
+// stopPropagation wie beim PDF (Z. 2529): sonst laeuft die Geste zusaetzlich in den
+// #note-area-Handler, der hier gar nichts mehr zu scrollen hat.
+function mountOfficeView(area,fname,ext,path,openLabel,inner){
+  area.innerHTML='<div class="pptxv"><div class="file-toolbar pdfv-bar"><span class="ft-name">'+fileIcon(ext)+' '+esc(fname)+'</span><span class="ft-spacer"></span><button class="ft-btn" id="of-open">'+openLabel+'</button></div>'
+    +'<div class="pdfv-scroll" id="pptxv-scroll"><div class="note-content" id="of-body">'+inner+'</div></div></div>';
+  const ob=area.querySelector('#of-open'); if(ob)ob.onclick=()=>openExternalFile(path);
+  const sc=area.querySelector('#pptxv-scroll');
+  if(sc)sc.addEventListener('wheel',e=>{e.stopPropagation();onNoteWheel(e);},{passive:false});
+  return area.querySelector('#of-body');
+}
 // Office-Viewer: versucht eine markitdown-Vorschau (so viel wie moeglich in Nexus),
 // faellt sonst auf ein Popup "In Word/Excel oeffnen?" + Extern-Button zurueck.
 async function renderOfficeView(area,fname,path){
   const ext=extOf(path), app=friendlyApp(ext);
   const openLabel=app==='dem Standardprogramm'?'📂 Extern öffnen':'📂 In '+app+' öffnen';
-  area.innerHTML=`<div class="file-toolbar"><span class="ft-name">${fileIcon(ext)} ${esc(fname)}</span><span class="ft-spacer"></span><button class="ft-btn" id="of-open">${openLabel}</button></div><div class="note-content" id="of-body"><div class="placeholder" style="padding-top:60px"><span class="big">⏳</span>Vorschau wird erstellt…</div></div>`;
-  const openBtn=area.querySelector('#of-open'); if(openBtn)openBtn.onclick=()=>openExternalFile(path);
-  const body=area.querySelector('#of-body');
+  const body=mountOfficeView(area,fname,ext,path,openLabel,'<div class="placeholder" style="padding-top:60px"><span class="big">⏳</span>Vorschau wird erstellt…</div>');
   // .docx: reiner JS-Konverter (mammoth, lokal gebundelt) -> KEIN Python/markitdown noetig,
   // laeuft offline auf jedem Mac/Windows. Bei Fehlschlag faellt es unten auf markitdown/extern zurueck.
   if(ext==='.docx'){
@@ -2867,20 +2882,9 @@ async function renderOfficeView(area,fname,path){
           // Guard NACH dem Parsen, aber VOR den Blob-URLs: bei Tab-Wechsel waehrend der
           // Konvertierung entstehen so gar keine URLs, die niemand mehr widerrufen koennte.
           if(selectedPath!==path)return;
-          const n=deck.slides.length,html=pptxRender(deck,zip,area);
-          // Eigener Viewport (.pptxv) statt #of-body: sonst scrollen die Folien hinter das
-          // Tab-Band, wie es nur fuer Notizen gewollt ist. Aufbau exakt wie beim PDF-Viewer.
-          area.innerHTML='<div class="pptxv"><div class="file-toolbar pdfv-bar"><span class="ft-name">'+fileIcon(ext)+' '+esc(fname)+'</span><span class="ft-spacer"></span><button class="ft-btn" id="of-open">'+openLabel+'</button></div>'
-            +'<div class="pdfv-scroll" id="pptxv-scroll"><div class="note-content">'
-            +'<div class="of-banner">Vorschau aus <b>'+esc(fname)+'</b> – '+n+' Folie'+(n===1?'':'n')+', Formatierung kann abweichen. Zum Bearbeiten in '+app+' öffnen.</div>'
-            +'<h1 class="note-title">'+esc(fname.replace(/\.[^.]+$/,''))+'</h1>'+html+'</div></div></div>';
-          const ob=area.querySelector('#of-open'); if(ob)ob.onclick=()=>openExternalFile(path);
-          // .note-content + onNoteWheel auf dem eigenen Scroll-Container -> Achsen-Lock,
-          // Strg+Rad-Zoom (--note-w) und seitliches Schieben bleiben identisch zur Notiz.
-          // stopPropagation wie beim PDF (Z. 2529), sonst laeuft die Geste zusaetzlich in den
-          // #note-area-Handler, der hier gar nicht mehr scrollen kann.
-          const sc=area.querySelector('#pptxv-scroll');
-          if(sc)sc.addEventListener('wheel',e=>{e.stopPropagation();onNoteWheel(e);},{passive:false});
+          const n=deck.slides.length;
+          body.innerHTML='<div class="of-banner">Vorschau aus <b>'+esc(fname)+'</b> – '+n+' Folie'+(n===1?'':'n')+', Formatierung kann abweichen. Zum Bearbeiten in '+app+' öffnen.</div>'
+            +'<h1 class="note-title">'+esc(fname.replace(/\.[^.]+$/,''))+'</h1>'+pptxRender(deck,zip,area);
           return;
         }
       }
