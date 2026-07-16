@@ -342,6 +342,22 @@ table.dataview-table tr:hover td{background:var(--accent-08)}
 .rc-path{font-size:11px;color:var(--dim);display:flex;align-items:center;gap:5px;margin-bottom:6px;flex-wrap:wrap}
 .rc-snip{font-size:12.5px;line-height:1.55;color:color-mix(in srgb,var(--text) 74%,transparent)}
 .rc-snip b{background:var(--accent-14);color:var(--accent-tx);border-radius:3px;padding:0 3px;font-weight:600}
+/* R23: Suchtreffer-Highlight in der Notiz – Akzent-Pill mit Glow-Puls (dieselbe Licht-Sprache wie
+   Such-Button/Lese-Toggle), bewusst NICHT die blaue Standard-Selektion. Nur background/box-shadow/color
+   animieren – kein transform an Inline-Text, sonst zittert die Zeile. Hoehere Spezifitaet als
+   `.md-body mark` (die gelben Notiz-Marker) -> die bleiben unberuehrt. */
+.md-body mark.search-hit{background:var(--accent-12);color:inherit;border-radius:4px;padding:0 3px;box-shadow:none;animation:hit-in .25s ease}
+.md-body mark.search-hit.primary{background:var(--accent-20);color:var(--accent-tx);box-shadow:0 0 0 1px var(--accent-30),0 0 16px var(--accent-20);animation:hit-in .25s ease,hit-pulse .7s ease-in-out .25s 2}
+.md-body mark.search-hit.fade{background:transparent;color:inherit;box-shadow:none;animation:none;transition:background .6s ease,box-shadow .6s ease,color .6s ease}
+/* BEWUSST ohne animation-fill-mode: den Ruhezustand tragen schon die Regeln oben. Laeuft die Animation
+   nicht (gedrosselter/versteckter Tab, reduced-motion), bleibt die Pille damit sichtbar statt im
+   from-Zustand = transparent einzufrieren. Mit `both` waere das Highlight dort unsichtbar gewesen. */
+@keyframes hit-in{from{background:transparent;color:inherit;box-shadow:none}}
+@keyframes hit-pulse{0%,100%{box-shadow:0 0 0 1px var(--accent-30),0 0 16px var(--accent-20)}50%{box-shadow:0 0 0 1px var(--accent-30),0 0 26px var(--accent-30)}}
+/* Fundstelle steckt in einem gerenderten Widget (Mermaid-SVG/KaTeX) -> Text nicht wrappbar: Ring um den Block */
+.search-hit-block{outline:1px solid var(--accent-30);outline-offset:3px;box-shadow:0 0 18px var(--accent-20);transition:outline-color .6s ease,box-shadow .6s ease}
+.search-hit-block.fade{outline-color:transparent;box-shadow:none}
+@media (prefers-reduced-motion:reduce){.md-body mark.search-hit,.md-body mark.search-hit.primary{animation:none}}
 .cr-sep{opacity:.55}
 
 /* Right panel */
@@ -1880,11 +1896,13 @@ async function openFile(path,opts){
   _curHeadings=[]; _curNotePath=path; renderOutline();
   hideEditFab();
   area._pdfGetState=null;   // Getter der vorherigen (evtl. PDF-)Ansicht entfernen; mountPdfViewer setzt ihn neu
+  clearSearchHit(area);     // R23: Highlight + Timer + Listener der vorherigen Notiz abraeumen
   try{
     if(ext==='.md'||ext==='.markdown'||ext===''){
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
       renderMarkdownView(area,fname,raw,path);
       applyNoteScroll(area,typeof _navScrollTarget==='number'?_navScrollTarget:0);
+      queueSearchHit(area,opts&&opts.searchHit);   // R23: aus der Suche geoeffnet -> Fundstelle anspringen + markieren
       logActivity(folderColor(path.split('/')[0]||''),'read_note → <b>'+esc(fname)+'</b>','open');
     } else if(ext==='.html'||ext==='.htm'){
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
@@ -2877,9 +2895,13 @@ async function doSearch(q){
   setCrumb(esc(activeVault)+' / <b>Suche: '+esc(q)+'</b>');
   if(!results.length){area.innerHTML='<div class="placeholder"><span class="big">🔍</span>Keine Ergebnisse für „'+esc(q)+'"</div>';logActivity('#7ec8e3','search → 0 Treffer');return;}
   const head=`<div class="search-head"><span class="sh-count">${results.length} Ergebnisse für</span><span class="sh-q">🔍 ${esc(q)}</span></div>`;
-  const list=results.map(r=>`<div class="result-card" data-path="${esc(r.path)}"><div class="rc-title">${fileIcon(pathExt(r.path))} ${esc(r.title||r.path.split('/').pop())}</div><div class="rc-path">${crumbHtml(r.path)}</div>${r.snippet?`<div class="rc-snip">${snip(r.snippet)}</div>`:''}</div>`).join('');
+  const list=results.map((r,i)=>`<div class="result-card" data-path="${esc(r.path)}" data-idx="${i}"><div class="rc-title">${fileIcon(pathExt(r.path))} ${esc(r.title||r.path.split('/').pop())}</div><div class="rc-path">${crumbHtml(r.path)}</div>${r.snippet?`<div class="rc-snip">${snip(r.snippet)}</div>`:''}</div>`).join('');
   area.innerHTML=head+`<div class="search-list">${list}</div>`;
-  area.querySelectorAll('.result-card').forEach(it=>it.addEventListener('click',()=>openFile(it.dataset.path)));
+  // R23: Treffer-Kontext mitgeben (Query + ROHES Snippet mit **-Markern) -> Notiz oeffnet an der Fundstelle.
+  area.querySelectorAll('.result-card').forEach(it=>it.addEventListener('click',()=>{
+    const r=results[+it.dataset.idx]||{};
+    openFile(it.dataset.path,{searchHit:{q:q,snippet:r.snippet}});
+  }));
   logActivity('#7ec8e3',`search → ${results.length} Treffer`);
 }
 
@@ -2888,9 +2910,10 @@ let palDebounce;
 function openPalette(){document.getElementById('pal-overlay').classList.add('show');const inp=document.getElementById('pal-input');inp.value='';inp.focus();showPalDefault();}
 function closePalette(){document.getElementById('pal-overlay').classList.remove('show');}
 function palTint(col){return `background:color-mix(in srgb,${col} 20%,transparent);color:${col}`;}
-function noteItem(path,title){
+function noteItem(path,title,hit){
   const col=folderColor(path.split('/')[0])||'var(--accent)';
-  return {group:'Notizen',icon:bareIcon(fileIcon(pathExt(path))),tile:palTint(col),label:title||path.split('/').pop().replace('.md',''),crumb:crumbHtml(path),fn:()=>{closePalette();openFile(path);}};
+  // hit (R23) kommt nur aus der Such-Liste der Palette; die Default-Liste (ohne Query) oeffnet wie bisher oben.
+  return {group:'Notizen',icon:bareIcon(fileIcon(pathExt(path))),tile:palTint(col),label:title||path.split('/').pop().replace('.md',''),crumb:crumbHtml(path),fn:()=>{closePalette();openFile(path,hit?{searchHit:hit}:undefined);}};
 }
 function showPalDefault(){
   palItems=[];
@@ -2906,7 +2929,7 @@ async function onPalInput(){
   palDebounce=setTimeout(async()=>{
     const res=await api(`/api/search?vault=${encodeURIComponent(activeVault)}&q=${encodeURIComponent(q)}&limit=12`);
     palItems=[{group:'',icon:'🔍',tile:palTint('var(--accent)'),label:`Alle Ergebnisse für „${q}"`,sub:'Volltextsuche im Vault öffnen',hint:'↵',fn:()=>{closePalette();doSearch(q);}}];
-    for(const r of res)palItems.push(noteItem(r.path,r.title));
+    for(const r of res)palItems.push(noteItem(r.path,r.title,{q:q,snippet:r.snippet}));   // R23: gleiche Geste wie die Ergebnis-Karte -> gleicher Sprung
     palSel=0;renderPalItems();
   },180);
 }
@@ -3352,13 +3375,193 @@ function applyNoteScroll(area,top){
 // Nach dem Nachladen aller Dataview-Blöcke (Höhe jetzt final) den Ziel-Scroll-Stand erneut anwenden.
 function afterDataviewLoaded(area){
   clearTimeout(area.__dvRevealTimer);
-  if(!area.__restoreActive){area.classList.remove('dv-restoring');return;}
+  if(!area.__restoreActive){area.classList.remove('dv-restoring');runSearchHit(area);return;}
   // Höhe jetzt final: gemerkten Scroll-Stand setzen und im SELBEN Frame wieder einblenden (kein Flackern).
   requestAnimationFrame(()=>{
     if(area.__restoreActive){area.scrollTo({top:area.__restoreTop,behavior:'instant'});area.__restoreActive=false;}
     area.classList.remove('dv-restoring');
+    runSearchHit(area);   // R23: ein wartender Suchtreffer gewinnt ueber den gemerkten Scroll-Stand
   });
 }
+// ═════════════════════ R23: SUCHTREFFER ANSPRINGEN & MARKIEREN ═════════════════════
+// Klick auf ein Suchergebnis (Karte in doSearch ODER Ctrl-K-Palette) oeffnet die Notiz an der
+// Fundstelle. Die Treffer-Woerter liefert der Server schon mit: FTS5 snippet(notes_fts,2,'**','**',…)
+// (src/tools.js) markiert sie mit **…** -> kein Server-Umbau noetig. Gesucht wird in einer FLACHEN
+// Textfassung der gerenderten Leseansicht (NIE per Regex ueber innerHTML), markiert wird durch
+// Wrappen der Textknoten in <mark>. Das Highlight raeumt sich selbst wieder weg und der DOM ist
+// danach exakt wie vorher (Textknoten normalisiert) – wichtig fuer Checkbox-Toggle & Co.
+const HIT_SECONDARY_MAX=60;   // dezente Zweit-Markierungen pro Notiz (Bremse fuer lange Notizen)
+const HIT_OCC_MAX=600;        // harte Obergrenze gefundener Vorkommen -> frueher Abbruch
+const HIT_LIFETIME=3500;      // ms bis sich das Highlight selbst wegraeumt
+const HIT_FADE=650;           // muss zur .fade-Transition (.6s) im CSS passen
+const HIT_CTX=40;             // +/- Zeichen Umgebung fuers Snippet-Scoring
+let _hitState=null;           // {area,marks,block,tFade,tGone,onUser} der aktiven Markierung
+
+// Treffer-Woerter bestimmen. buildFtsQuery (src/tools.js) haengt an JEDES Query-Wort ein '*' ->
+// ein echter Treffer beginnt immer mit einem Query-Wort. Damit fallen **fett**-Marker aus dem
+// Roh-Markdown raus, die snippet() faelschlich mitliefert (indexiert wird die Rohdatei).
+function hitTokens(hit){
+  const qw=(hit.q||'').toLowerCase().match(/[\p{L}\p{N}]+/gu)||[];
+  const out=[];
+  const add=t=>{t=(t||'').trim().toLowerCase();if(t.length>=2&&out.indexOf(t)<0)out.push(t);};
+  const re=/\*\*([^*\r\n]+)\*\*/g;
+  let m;
+  while((m=re.exec(hit.snippet||''))){
+    const t=m[1].toLowerCase();
+    if(!qw.length||qw.some(w=>t.startsWith(w)))add(t);
+  }
+  if(!out.length)for(const w of qw)add(w);   // kein/leeres Snippet -> Query-Woerter direkt (erste Fundstelle gewinnt)
+  return out;
+}
+function hitSnippetText(hit){return (hit.snippet||'').split('**').join('').split('…').join(' ').toLowerCase();}
+
+// Flache Textfassung der Leseansicht + Ruecklandkarte auf die Textknoten.
+// Uebersprungen werden gerenderte Widgets (Mermaid/KaTeX/Dataview) und Embeds (fremder Notiz-Text).
+// Nach jedem Knoten ein '\n': verhindert Phantom-Treffer ueber zwei Textknoten hinweg.
+function hitFlatten(body){
+  const skip=n=>{
+    for(let p=n.parentElement;p&&p!==body.parentElement;p=p.parentElement){
+      const c=p.classList;
+      if(c&&(c.contains('mermaid-block')||c.contains('dataview-block')||c.contains('math-inline')||c.contains('math-block')||c.contains('transclude')))return true;
+    }
+    return false;
+  };
+  const w=document.createTreeWalker(body,NodeFilter.SHOW_TEXT,{acceptNode:n=>(n.nodeValue&&!skip(n))?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT});
+  const nodes=[],starts=[];
+  let text='';
+  for(let n;(n=w.nextNode());){nodes.push(n);starts.push(text.length);text+=n.nodeValue+'\n';}
+  return {text:text.toLowerCase(),nodes:nodes,starts:starts};
+}
+// Alle Vorkommen aller Tokens, aufsteigend sortiert; Ueberlappungen (z. B. 'arbeit' + 'arbeitsweise') verschmolzen.
+function hitFind(flat,tokens){
+  const occ=[];
+  for(const t of tokens){
+    let i=flat.text.indexOf(t);
+    while(i>=0&&occ.length<HIT_OCC_MAX){occ.push({s:i,e:i+t.length});i=flat.text.indexOf(t,i+t.length);}
+  }
+  occ.sort((a,b)=>a.s-b.s||b.e-a.e);
+  const out=[];
+  for(const o of occ){
+    const last=out[out.length-1];
+    if(last&&o.s<last.e){if(o.e>last.e)last.e=o.e;}
+    else out.push(o);
+  }
+  return out;
+}
+// Snippet-naechste Fundstelle = Primaertreffer: Umgebung jedes Kandidaten gegen den entmarkierten
+// Snippet-Text scoren (gemeinsame Woerter). Ohne Snippet gewinnt die erste Fundstelle.
+function hitPickPrimary(flat,occ,hit){
+  const words=[...new Set(hitSnippetText(hit).match(/[\p{L}\p{N}]{3,}/gu)||[])];
+  if(!words.length||occ.length<2)return 0;
+  let best=0,bestScore=-1;
+  for(let i=0;i<occ.length;i++){
+    const ctx=flat.text.slice(Math.max(0,occ[i].s-HIT_CTX),occ[i].e+HIT_CTX);
+    let sc=0;
+    for(const w of words)if(ctx.indexOf(w)>=0)sc++;
+    if(sc>bestScore){bestScore=sc;best=i;}
+  }
+  return best;
+}
+// Globalen Text-Offset -> Index des Textknotens (binaere Suche in den aufsteigenden Startpositionen).
+function hitNodeAt(flat,pos){
+  let lo=0,hi=flat.starts.length-1,r=-1;
+  while(lo<=hi){const mid=(lo+hi)>>1;if(flat.starts[mid]<=pos){r=mid;lo=mid+1;}else hi=mid-1;}
+  return r;
+}
+// Textknoten aufsplitten und den Treffer in <mark> wickeln (kein innerHTML-Umbau!).
+function hitWrap(flat,o,cls){
+  const idx=hitNodeAt(flat,o.s);
+  if(idx<0)return null;
+  const node=flat.nodes[idx],s=o.s-flat.starts[idx],e=o.e-flat.starts[idx];
+  if(!node.parentNode||e>node.nodeValue.length)return null;   // Treffer ueber die Knotengrenze -> auslassen
+  const target=s>0?node.splitText(s):node;
+  if(e-s<target.nodeValue.length)target.splitText(e-s);
+  const mark=document.createElement('mark');
+  mark.className=cls;
+  target.parentNode.insertBefore(mark,target);
+  mark.appendChild(target);
+  return mark;
+}
+
+// Suchklick-Kontext einplanen. Ohne Dataview-Bloecke sofort anspringen; mit Bloecken erst, wenn deren
+// Hoehe final ist (afterDataviewLoaded) – sonst zielt der Sprung auf eine noch wachsende Seite.
+function queueSearchHit(area,hit){
+  if(!hit)return;
+  area.__pendingHit=hit;
+  if(!area.querySelector('.dataview-block[data-dvquery]'))runSearchHit(area);
+}
+function runSearchHit(area){
+  const hit=area.__pendingHit;
+  area.__pendingHit=null;
+  if(!hit)return;
+  const body=area.querySelector('.md-body');
+  if(!body)return;
+  const tokens=hitTokens(hit);
+  if(!tokens.length)return;
+  const flat=hitFlatten(body);
+  const occ=hitFind(flat,tokens);
+  if(!occ.length){hitBlockFallback(area,body,tokens);return;}
+  const pi=hitPickPrimary(flat,occ,hit),primaryOcc=occ[pi];
+  // Von HINTEN nach vorn wrappen: splitText veraendert nur den Rest des Knotens, die Offsets weiter vorn bleiben gueltig.
+  const chosen=[primaryOcc].concat(occ.filter((o,i)=>i!==pi).slice(0,HIT_SECONDARY_MAX)).sort((a,b)=>b.s-a.s);
+  const marks=[];
+  let primary=null;
+  for(const o of chosen){
+    const m=hitWrap(flat,o,o===primaryOcc?'search-hit primary':'search-hit');
+    if(!m)continue;
+    marks.push(m);
+    if(o===primaryOcc)primary=m;
+  }
+  if(!primary){clearSearchHit(area);return;}
+  primary.scrollIntoView({block:'center',behavior:'smooth'});   // scroll-padding-top der .note-area haelt ihn unter den Tabs frei
+  armSearchHit(area,marks,null);
+}
+// Fundstelle steckt in einem gerenderten Widget (Mermaid-SVG/KaTeX): Text ist nicht wrappbar ->
+// im Quelltext des Blocks nachsehen und den Block selbst als Ring markieren.
+// Findet auch das nichts (Treffer nur im Titel/Dateinamen/Frontmatter), oeffnet die Notiz still oben.
+function hitBlockFallback(area,body,tokens){
+  for(const b of body.querySelectorAll('[data-mermaid],[data-tex]')){
+    const src=(b.getAttribute('data-mermaid')||b.getAttribute('data-tex')||'').toLowerCase();
+    if(!tokens.some(t=>src.indexOf(t)>=0))continue;
+    const box=b.closest('.mermaid-block,.math-block')||b;
+    box.classList.add('search-hit-block');
+    box.scrollIntoView({block:'center',behavior:'smooth'});
+    armSearchHit(area,[],box);
+    return;
+  }
+}
+// Selbst-Aufraeumen: nach HIT_LIFETIME ODER bei der ersten eigenen Geste ausblenden, dann entfernen.
+function armSearchHit(area,marks,block){
+  const st={area:area,marks:marks,block:block,tFade:0,tGone:0};
+  const fade=()=>{
+    hitUserOff(st);
+    clearTimeout(st.tFade);
+    st.marks.forEach(m=>m.classList.add('fade'));
+    if(st.block)st.block.classList.add('fade');
+    st.tGone=setTimeout(()=>{if(_hitState===st)clearSearchHit(area);},HIT_FADE);
+  };
+  st.onUser=fade;
+  ['wheel','pointerdown','keydown'].forEach(ev=>window.addEventListener(ev,st.onUser,true));
+  st.tFade=setTimeout(fade,HIT_LIFETIME);
+  _hitState=st;
+}
+function hitUserOff(st){['wheel','pointerdown','keydown'].forEach(ev=>window.removeEventListener(ev,st.onUser,true));}
+// Markierung entfernen und Textknoten wieder zusammenfuehren -> DOM exakt wie vor dem Markieren.
+function clearSearchHit(area){
+  const st=_hitState;
+  if(st){hitUserOff(st);clearTimeout(st.tFade);clearTimeout(st.tGone);_hitState=null;}
+  if(!area)return;
+  area.__pendingHit=null;
+  area.querySelectorAll('mark.search-hit').forEach(m=>{
+    const p=m.parentNode;
+    if(!p)return;
+    while(m.firstChild)p.insertBefore(m.firstChild,m);
+    p.removeChild(m);
+    p.normalize();
+  });
+  area.querySelectorAll('.search-hit-block').forEach(b=>b.classList.remove('search-hit-block','fade'));
+}
+
 function currentNoteXFrac(){const v=parseFloat(localStorage.getItem('nexus.noteXFrac'));return (v>=0&&v<=1)?v:0.5;}
 function saveNoteXFrac(area){const max=area.scrollWidth-area.clientWidth;if(max>1)localStorage.setItem('nexus.noteXFrac',String(Math.min(1,Math.max(0,area.scrollLeft/max))));}
 function applyNoteX(area){const max=area.scrollWidth-area.clientWidth;area.scrollTo({left:max>0?currentNoteXFrac()*max:0,behavior:'instant'});_noteXLast=area.scrollLeft;}
@@ -3398,6 +3601,7 @@ function smartAxisScroll(el,e){
 }
 function onNoteWheel(e){
   e.currentTarget.__restoreActive=false;e.currentTarget.classList.remove('dv-restoring');  // eigene Scroll-Geste bricht ein laufendes Restore ab (und blendet sofort ein)
+  e.currentTarget.__pendingHit=null;   // R23: ... und bricht auch einen wartenden Suchtreffer-Sprung ab – wer selbst scrollt, gewinnt
   if(e.ctrlKey){e.preventDefault();bumpNoteW(e.deltaY);return;}   // Zoom (Pinch/Strg) unveraendert
   smartAxisScroll(e.currentTarget,e);
 }
