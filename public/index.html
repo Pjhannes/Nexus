@@ -320,6 +320,24 @@ table.dataview-table tr:hover td{background:var(--accent-08)}
 .ext-fallback .ef-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 /* Hinweisbanner ueber einer Office-Vorschau */
 .of-banner{font-size:12px;color:var(--dim);background:var(--accent-12);border:1px solid var(--accent-30);border-radius:8px;padding:8px 12px;margin-bottom:16px}
+/* R21b: PPTX-Vorschau – eine Karte pro Folie im .pdf-page-Look. Gerendert wird in .note-content
+   im #note-area, damit Achsen-Lock, Strg+Rad-Zoom und seitliches Schieben der Notiz-Mechanik
+   gratis mitkommen (kein zweiter Scroll-Container, kein neuer Wheel-Handler). */
+.pptx-deck{display:flex;flex-direction:column;gap:18px;margin-top:4px}
+.pptx-slide{position:relative;background:#fff;color:#1a1a1a;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.35);padding:26px 30px 30px;overflow:hidden}
+/* Float-Spacer statt aspect-ratio: erzwingt die echte Folien-Proportion (aus p:sldSz) als
+   MINDEST-Hoehe, laesst die Karte aber mit dem Inhalt wachsen. aspect-ratio wuerde den
+   Inhalt stattdessen ueberlaufen lassen. */
+.pptx-slide::before{content:'';float:left;width:0;padding-bottom:var(--pptx-arpad,56.25%)}
+.pptx-slide::after{content:'';display:block;clear:both}
+.pptx-title{font-size:19px;font-weight:700;line-height:1.28;color:#111;margin:0 0 12px;white-space:pre-wrap}
+.pptx-p{font-size:13px;line-height:1.5;color:#333;margin:0 0 7px;white-space:pre-wrap}
+.pptx-p.b{position:relative;padding-left:14px}
+.pptx-p.b::before{content:'\2022';position:absolute;left:2px;color:#8a8f94}
+.pptx-media{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;clear:both}
+.pptx-media img{max-width:100%;max-height:190px;object-fit:contain;border-radius:4px;background:#f3f4f6}
+.pptx-num{position:absolute;right:12px;bottom:9px;font-size:10.5px;color:#9aa0a6;letter-spacing:.04em}
+.pptx-empty{font-size:12.5px;color:#9aa0a6;font-style:italic}
 
 /* Backlinks */
 .backlinks{margin-top:34px;border-top:1px solid var(--border);padding-top:16px}
@@ -1897,6 +1915,7 @@ async function openFile(path,opts){
   hideEditFab();
   area._pdfGetState=null;   // Getter der vorherigen (evtl. PDF-)Ansicht entfernen; mountPdfViewer setzt ihn neu
   clearSearchHit(area);     // R23: Highlight + Timer + Listener der vorherigen Notiz abraeumen
+  revokePptxBlobs(area);    // R21b: Blob-URLs der vorherigen PPTX-Vorschau freigeben
   try{
     if(ext==='.md'||ext==='.markdown'||ext===''){
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
@@ -2287,7 +2306,7 @@ document.addEventListener('keydown',e=>{
 },true);
 
 // ── Mermaid + Math (lazy CDN, Fallback = Quelltext) ──
-let _mermaidLoaded=null,_katexLoaded=null,_pdfjsLoaded=null,_mammothLoaded=null;
+let _mermaidLoaded=null,_katexLoaded=null,_pdfjsLoaded=null,_mammothLoaded=null,_fflateLoaded=null;
 // PDF.js LOKAL eingebunden (public/vendor/pdfjs) -> offline-tauglich in Electron, kein CDN.
 function loadPdfJs(){
   if(_pdfjsLoaded!==null)return _pdfjsLoaded;
@@ -2312,6 +2331,21 @@ function loadMammoth(){
     document.head.appendChild(s);
   });
   return _mammothLoaded;
+}
+// fflate LOKAL eingebunden (public/vendor/fflate) -> PPTX-Folienvorschau ohne Python/markitdown,
+// offline-tauglich (Workshop-USB / Mac mit System-Python 3.9). Muster wie loadPdfJs/loadMammoth:
+// lazy, gecachte Promise, null bei Ladefehler -> Aufrufer faellt auf die alte Kette zurueck.
+function loadFflate(){
+  if(_fflateLoaded!==null)return _fflateLoaded;
+  _fflateLoaded=new Promise(res=>{
+    if(window.fflate)return res(window.fflate);
+    const s=document.createElement('script');
+    s.src='/vendor/fflate/fflate.min.js';
+    s.onload=()=>res(window.fflate||null);
+    s.onerror=()=>res(null);
+    document.head.appendChild(s);
+  });
+  return _fflateLoaded;
 }
 function loadMermaid(){if(_mermaidLoaded!==null)return _mermaidLoaded;_mermaidLoaded=new Promise(res=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';s.onload=()=>{try{window.mermaid.initialize({startOnLoad:false,theme:'dark'});res(window.mermaid);}catch(e){res(null);}};s.onerror=()=>res(null);document.head.appendChild(s);});return _mermaidLoaded;}
 function renderMermaid(area){const blocks=area.querySelectorAll('.mermaid-block[data-mermaid]');if(!blocks.length)return;loadMermaid().then(m=>{if(!m)return;blocks.forEach(async(b,i)=>{try{const {svg}=await m.render('mmd'+Date.now()+'_'+i,b.getAttribute('data-mermaid'));b.innerHTML=svg;}catch(e){}});});}
@@ -2568,6 +2602,157 @@ function renderExternalFallback(area,fname,path,note){
       <button class="ef-btn" id="ef-open">${label}</button></div>`;
   const b=area.querySelector('#ef-open'); if(b)b.onclick=()=>openExternalFile(path);
 }
+// ── PPTX-Vorschau (R21b) ────────────────────────────────────────────────────────────────────
+// PPTX ist ZIP+XML: fflate entpackt, der eingebaute DOMParser liest das XML. Laeuft damit
+// komplett clientseitig/offline – kein Python, kein markitdown, kein CDN.
+const PPTX_NS_A='http://schemas.openxmlformats.org/drawingml/2006/main';
+const PPTX_NS_P='http://schemas.openxmlformats.org/presentationml/2006/main';
+const PPTX_NS_R='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const PPTX_NS_REL='http://schemas.openxmlformats.org/package/2006/relationships';
+// Nur browser-darstellbare Bitmaps. emf/wmf/emz/wmz sind Windows-Vektorformate, die KEIN Browser
+// rendert (stecken real im GV-Deck) -> ueberspringen statt ein kaputtes <img> zu zeigen.
+const PPTX_MIME={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',bmp:'image/bmp',webp:'image/webp',svg:'image/svg+xml'};
+
+function pptxDoc(zip,name){
+  const f=zip[name]; if(!f)return null;
+  try{
+    const d=new DOMParser().parseFromString(window.fflate.strFromU8(f),'application/xml');
+    return d.getElementsByTagName('parsererror').length?null:d;
+  }catch(e){return null;}
+}
+// ZIP-Pfad aufloesen: rels-Targets sind relativ ('slides/slide1.xml', '../media/image1.png').
+function pptxPath(baseDir,target){
+  if(!target)return '';
+  if(target.charAt(0)==='/')return target.replace(/^\/+/,'');
+  const parts=baseDir?baseDir.split('/').filter(Boolean):[];
+  for(const seg of target.split('/')){
+    if(!seg||seg==='.')continue;
+    if(seg==='..')parts.pop(); else parts.push(seg);
+  }
+  return parts.join('/');
+}
+// _rels einer Part-Datei -> {rId: Target}
+function pptxRels(zip,part){
+  const i=part.lastIndexOf('/');
+  const d=pptxDoc(zip,part.slice(0,i)+'/_rels/'+part.slice(i+1)+'.rels');
+  const map={}; if(!d)return map;
+  const els=d.getElementsByTagNameNS(PPTX_NS_REL,'Relationship');
+  for(let k=0;k<els.length;k++)map[els[k].getAttribute('Id')]=els[k].getAttribute('Target');
+  return map;
+}
+// Ein <a:p> -> {text,lvl,sz}. Die Runs eines Absatzes MUESSEN verbunden werden: PowerPoint
+// zerlegt Text in mehrere <a:r> (real: "Claude + dein\n" + "zweites Gehirn" = ein Titel).
+function pptxPara(p){
+  let txt='',sz=0,lvl=0;
+  const kids=p.children;
+  for(let i=0;i<kids.length;i++){
+    const el=kids[i],ln=el.localName;
+    if(ln==='r'||ln==='fld'){
+      const t=el.getElementsByTagNameNS(PPTX_NS_A,'t')[0];
+      if(t)txt+=t.textContent||'';
+      const pr=el.getElementsByTagNameNS(PPTX_NS_A,'rPr')[0];
+      const s=pr?+(pr.getAttribute('sz')||0):0; if(s>sz)sz=s;
+    }else if(ln==='br')txt+='\n';
+    else if(ln==='pPr')lvl=+(el.getAttribute('lvl')||0)||0;
+  }
+  return {text:txt.replace(/\r/g,'').replace(/[ \t]+\n/g,'\n').trim(),lvl:Math.max(0,Math.min(8,lvl)),sz};
+}
+// spTree in Dokumentreihenfolge ablaufen; Gruppen (p:grpSp) verschachteln Shapes.
+function pptxShapes(node,out){
+  const kids=node.children;
+  for(let i=0;i<kids.length;i++){
+    const el=kids[i],ln=el.localName;
+    if(ln==='sp'||ln==='pic'||ln==='graphicFrame')out.push(el);
+    else if(ln==='grpSp')pptxShapes(el,out);
+  }
+  return out;
+}
+function pptxSlide(zip,slidePath){
+  const doc=pptxDoc(zip,slidePath); if(!doc)return null;
+  const rels=pptxRels(zip,slidePath);
+  const baseDir=slidePath.slice(0,slidePath.lastIndexOf('/'));
+  const tree=doc.getElementsByTagNameNS(PPTX_NS_P,'spTree')[0];
+  const out={title:'',paras:[],media:[]};
+  if(!tree)return out;
+  const items=pptxShapes(tree,[]);
+  for(const el of items){
+    if(el.localName==='pic'){
+      const blip=el.getElementsByTagNameNS(PPTX_NS_A,'blip')[0];
+      const rid=blip&&blip.getAttributeNS(PPTX_NS_R,'embed');   // r:link = externes Bild -> ignorieren
+      const tgt=rid&&rels[rid];
+      if(tgt){
+        const mp=pptxPath(baseDir,tgt),x=(mp.split('.').pop()||'').toLowerCase();
+        if(PPTX_MIME[x]&&zip[mp])out.media.push({path:mp,mime:PPTX_MIME[x]});
+      }
+      continue;
+    }
+    // sp + graphicFrame: Absaetze einsammeln (graphicFrame deckt Tabellentext mit ab)
+    const ps=el.getElementsByTagNameNS(PPTX_NS_A,'p'),got=[];
+    for(let i=0;i<ps.length;i++){const o=pptxPara(ps[i]); if(o.text)got.push(o);}
+    if(!got.length)continue;
+    let isTitle=false;
+    if(el.localName==='sp'&&!out.title){
+      const ph=el.getElementsByTagNameNS(PPTX_NS_P,'ph')[0];
+      const t=ph?(ph.getAttribute('type')||''):'';
+      if(t==='title'||t==='ctrTitle'){out.title=got.map(g=>g.text).join('\n');isTitle=true;}
+    }
+    if(!isTitle)for(const g of got)out.paras.push(g);
+  }
+  // Fallback-Titel fuer Decks OHNE Platzhalter (real: die generierten Workshop-Folien haben
+  // 0x <p:ph>) -> groesste Schriftgroesse ist der Titel. Zwei Einschraenkungen, beide aus echten
+  // Folien gelernt:
+  //  - Absaetze ohne Buchstaben scheiden aus: der Abschnittsmarker "01" steht real mit sz=15000
+  //    auf der Folie, der eigentliche Titel daneben nur mit 4000 -> sonst waere "01" der Titel.
+  //  - die Groesse muss sich abheben (irgendein Absatz ist kleiner), sonst wuerde auf uniform
+  //    gesetzten Folien willkuerlich der erste Absatz zum Titel befoerdert.
+  if(!out.title){
+    let ti=-1,tsz=0;
+    for(let i=0;i<out.paras.length;i++){
+      const p=out.paras[i];
+      if(p.sz>tsz&&/\p{L}/u.test(p.text)){tsz=p.sz;ti=i;}
+    }
+    if(ti>=0&&out.paras.some(p=>p.sz&&p.sz<tsz)){out.title=out.paras[ti].text;out.paras.splice(ti,1);}
+  }
+  return out;
+}
+function pptxParse(zip){
+  const pres=pptxDoc(zip,'ppt/presentation.xml'); if(!pres)return null;
+  const rels=pptxRels(zip,'ppt/presentation.xml');
+  // Folien-Reihenfolge KOMMT NUR aus presentation.xml: die r:id-Reihenfolge entspricht nicht der
+  // Dateinummer (real im Workshop-Deck: Folie 7 = slide41.xml) -> nach Namen sortieren waere falsch.
+  const ids=pres.getElementsByTagNameNS(PPTX_NS_P,'sldId'),paths=[];
+  for(let i=0;i<ids.length;i++){
+    const rid=ids[i].getAttributeNS(PPTX_NS_R,'id'),t=rid&&rels[rid];
+    if(t){const p=pptxPath('ppt',t); if(zip[p])paths.push(p);}
+  }
+  if(!paths.length)return null;
+  const sz=pres.getElementsByTagNameNS(PPTX_NS_P,'sldSz')[0];
+  const cx=sz?+sz.getAttribute('cx'):0,cy=sz?+sz.getAttribute('cy'):0;
+  const arPad=(cx>0&&cy>0)?Math.max(30,Math.min(160,cy/cx*100)):56.25;
+  return {slides:paths.map(p=>pptxSlide(zip,p)||{title:'',paras:[],media:[]}),arPad};
+}
+// Blob-URLs pro Media-Datei (nicht pro Vorkommen: ein Logo auf 66 Folien = eine URL).
+// Die Liste haengt am #note-area und wird beim naechsten Datei-Oeffnen widerrufen.
+function pptxRender(deck,zip,area){
+  const urls=[],cache={};
+  const blobUrl=m=>cache[m.path]||(cache[m.path]=(u=>(urls.push(u),u))(URL.createObjectURL(new Blob([zip[m.path]],{type:m.mime}))));
+  const cards=deck.slides.map((s,i)=>{
+    let h='';
+    if(s.title)h+='<div class="pptx-title">'+esc(s.title)+'</div>';
+    for(const p of s.paras)h+='<div class="pptx-p'+(p.lvl>0?' b':'')+'"'+(p.lvl>1?' style="margin-left:'+((p.lvl-1)*16)+'px"':'')+'>'+esc(p.text)+'</div>';
+    if(s.media.length)h+='<div class="pptx-media">'+s.media.map(m=>'<img src="'+blobUrl(m)+'" alt="" loading="lazy">').join('')+'</div>';
+    if(!h)h='<div class="pptx-empty">(Folie ohne darstellbaren Inhalt)</div>';
+    return '<section class="pptx-slide">'+h+'<span class="pptx-num">'+(i+1)+'</span></section>';
+  }).join('');
+  area._pptxBlobs=urls;
+  return '<div class="pptx-deck" style="--pptx-arpad:'+deck.arPad.toFixed(3)+'%">'+cards+'</div>';
+}
+// Ohne das leckt jede PPTX-Vorschau ihre Bilder (77 Blobs allein im Workshop-Deck).
+function revokePptxBlobs(el){
+  if(!el||!el._pptxBlobs)return;
+  for(const u of el._pptxBlobs){try{URL.revokeObjectURL(u);}catch(e){}}
+  el._pptxBlobs=null;
+}
 // Office-Viewer: versucht eine markitdown-Vorschau (so viel wie moeglich in Nexus),
 // faellt sonst auf ein Popup "In Word/Excel oeffnen?" + Extern-Button zurueck.
 async function renderOfficeView(area,fname,path){
@@ -2590,6 +2775,27 @@ async function renderOfficeView(area,fname,path){
         return;
       }
     }catch(e){ /* mammoth fehlgeschlagen -> markitdown/extern als Fallback unten */ }
+  }
+  // .pptx: ZIP+XML rein clientseitig (fflate, lokal gebundelt) -> echte Folien-Karten OHNE Python.
+  // Loest zugleich den R16-Offen-Punkt "pptx auf Mac". Bei jedem Fehlschlag faellt es unten
+  // still auf die bisherige Kette (markitdown -> Extern-Popup) zurueck.
+  if(ext==='.pptx'){
+    try{
+      const ff=await loadFflate();
+      if(ff){
+        const buf=await fetch(fileUrl(path)).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.arrayBuffer();});
+        const zip=ff.unzipSync(new Uint8Array(buf));
+        const deck=pptxParse(zip);
+        if(deck&&deck.slides.length){
+          // Guard NACH dem Parsen, aber VOR den Blob-URLs: bei Tab-Wechsel waehrend der
+          // Konvertierung entstehen so gar keine URLs, die niemand mehr widerrufen koennte.
+          if(selectedPath!==path)return;
+          const n=deck.slides.length;
+          body.innerHTML='<div class="of-banner">Vorschau aus <b>'+esc(fname)+'</b> – '+n+' Folie'+(n===1?'':'n')+', Formatierung kann abweichen. Zum Bearbeiten in '+app+' öffnen.</div><h1 class="note-title">'+esc(fname.replace(/\.[^.]+$/,''))+'</h1>'+pptxRender(deck,zip,area);
+          return;
+        }
+      }
+    }catch(e){ /* pptx-Parser fehlgeschlagen -> markitdown/extern als Fallback unten */ }
   }
   try{
     const r=await fetch('/api/preview/office',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,path,filePath:path})});
