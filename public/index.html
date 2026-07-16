@@ -3369,7 +3369,12 @@ function onNoteScrollX(e){
 // duerfen sich die Achse einer laufenden Geste nicht gegenseitig ueberschreiben (R21a).
 const _axisGesture=new WeakMap();
 function smartAxisScroll(el,e){
-  const ax=Math.abs(e.deltaX), ay=Math.abs(e.deltaY);
+  let dx=e.deltaX, dy=e.deltaY;
+  // Shift+Mausrad = seitlich schieben. Windows/Chromium liefert dabei meist deltaY (deltaX=0)
+  // und wuerde nativ horizontal scrollen -> weil wir preventDefault(), legen wir das vertikale
+  // Delta selbst auf die Horizontale um. Trackpads mit echtem deltaX laufen unveraendert durch.
+  if(e.shiftKey && dx===0){ dx=dy; dy=0; }
+  const ax=Math.abs(dx), ay=Math.abs(dy);
   if(!ax && !ay)return;
   let g=_axisGesture.get(el);
   if(!g){g={axis:null,ts:0};_axisGesture.set(el,g);}
@@ -3377,8 +3382,8 @@ function smartAxisScroll(el,e){
   g.ts=e.timeStamp;
   const unit = e.deltaMode===1 ? 16 : (e.deltaMode===2 ? el.clientHeight : 1);  // line/page -> Pixel (Maus meist deltaMode 0)
   e.preventDefault();
-  if(g.axis==='y') el.scrollBy({top:e.deltaY*unit,behavior:'instant'});
-  else el.scrollBy({left:e.deltaX*unit,behavior:'instant'});
+  if(g.axis==='y') el.scrollBy({top:dy*unit,behavior:'instant'});
+  else el.scrollBy({left:dx*unit,behavior:'instant'});
 }
 function onNoteWheel(e){
   e.currentTarget.__restoreActive=false;e.currentTarget.classList.remove('dv-restoring');  // eigene Scroll-Geste bricht ein laufendes Restore ab (und blendet sofort ein)
