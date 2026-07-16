@@ -323,6 +323,11 @@ table.dataview-table tr:hover td{background:var(--accent-08)}
 /* R21b: PPTX-Vorschau – eine Karte pro Folie, Formen an ihren ECHTEN Koordinaten (a:xfrm).
    Gerendert in .note-content im #note-area, damit Achsen-Lock, Strg+Rad-Zoom und seitliches
    Schieben der Notiz-Mechanik gratis mitkommen (kein zweiter Scroll-Container). */
+/* Eigener, deckender Viewport wie beim PDF-Viewer (.pdfv, Z. 289): die Folien duerfen NICHT
+   hinter dem Tab-Band durchscheinen. Das Durchscheinen ist bewusst NUR Notiz-Verhalten
+   (.note-area hat dafuer padding-top:var(--tab-h), die Leiste ist sticky + backdrop-blur).
+   Toolbar und Scroll-Container werden vom PDF wiederverwendet -> garantiert gleiche Optik. */
+.pptxv{position:absolute;left:0;right:0;top:var(--tab-h);bottom:0;display:flex;flex-direction:column;background:var(--bg);z-index:6}
 .pptx-deck{display:flex;flex-direction:column;gap:18px;margin-top:4px}
 /* container-type:inline-size macht die Karte zum Bezug fuer cqw -> die Schrift skaliert exakt
    mit der Kartenbreite, also auch beim Strg+Rad-Zoom. aspect-ratio = echtes p:sldSz-Verhaeltnis;
@@ -2862,8 +2867,20 @@ async function renderOfficeView(area,fname,path){
           // Guard NACH dem Parsen, aber VOR den Blob-URLs: bei Tab-Wechsel waehrend der
           // Konvertierung entstehen so gar keine URLs, die niemand mehr widerrufen koennte.
           if(selectedPath!==path)return;
-          const n=deck.slides.length;
-          body.innerHTML='<div class="of-banner">Vorschau aus <b>'+esc(fname)+'</b> – '+n+' Folie'+(n===1?'':'n')+', Formatierung kann abweichen. Zum Bearbeiten in '+app+' öffnen.</div><h1 class="note-title">'+esc(fname.replace(/\.[^.]+$/,''))+'</h1>'+pptxRender(deck,zip,area);
+          const n=deck.slides.length,html=pptxRender(deck,zip,area);
+          // Eigener Viewport (.pptxv) statt #of-body: sonst scrollen die Folien hinter das
+          // Tab-Band, wie es nur fuer Notizen gewollt ist. Aufbau exakt wie beim PDF-Viewer.
+          area.innerHTML='<div class="pptxv"><div class="file-toolbar pdfv-bar"><span class="ft-name">'+fileIcon(ext)+' '+esc(fname)+'</span><span class="ft-spacer"></span><button class="ft-btn" id="of-open">'+openLabel+'</button></div>'
+            +'<div class="pdfv-scroll" id="pptxv-scroll"><div class="note-content">'
+            +'<div class="of-banner">Vorschau aus <b>'+esc(fname)+'</b> – '+n+' Folie'+(n===1?'':'n')+', Formatierung kann abweichen. Zum Bearbeiten in '+app+' öffnen.</div>'
+            +'<h1 class="note-title">'+esc(fname.replace(/\.[^.]+$/,''))+'</h1>'+html+'</div></div></div>';
+          const ob=area.querySelector('#of-open'); if(ob)ob.onclick=()=>openExternalFile(path);
+          // .note-content + onNoteWheel auf dem eigenen Scroll-Container -> Achsen-Lock,
+          // Strg+Rad-Zoom (--note-w) und seitliches Schieben bleiben identisch zur Notiz.
+          // stopPropagation wie beim PDF (Z. 2529), sonst laeuft die Geste zusaetzlich in den
+          // #note-area-Handler, der hier gar nicht mehr scrollen kann.
+          const sc=area.querySelector('#pptxv-scroll');
+          if(sc)sc.addEventListener('wheel',e=>{e.stopPropagation();onNoteWheel(e);},{passive:false});
           return;
         }
       }
