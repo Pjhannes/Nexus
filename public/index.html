@@ -320,24 +320,20 @@ table.dataview-table tr:hover td{background:var(--accent-08)}
 .ext-fallback .ef-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 /* Hinweisbanner ueber einer Office-Vorschau */
 .of-banner{font-size:12px;color:var(--dim);background:var(--accent-12);border:1px solid var(--accent-30);border-radius:8px;padding:8px 12px;margin-bottom:16px}
-/* R21b: PPTX-Vorschau – eine Karte pro Folie im .pdf-page-Look. Gerendert wird in .note-content
-   im #note-area, damit Achsen-Lock, Strg+Rad-Zoom und seitliches Schieben der Notiz-Mechanik
-   gratis mitkommen (kein zweiter Scroll-Container, kein neuer Wheel-Handler). */
+/* R21b: PPTX-Vorschau – eine Karte pro Folie, Formen an ihren ECHTEN Koordinaten (a:xfrm).
+   Gerendert in .note-content im #note-area, damit Achsen-Lock, Strg+Rad-Zoom und seitliches
+   Schieben der Notiz-Mechanik gratis mitkommen (kein zweiter Scroll-Container). */
 .pptx-deck{display:flex;flex-direction:column;gap:18px;margin-top:4px}
-.pptx-slide{position:relative;background:#fff;color:#1a1a1a;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.35);padding:26px 30px 30px;overflow:hidden}
-/* Float-Spacer statt aspect-ratio: erzwingt die echte Folien-Proportion (aus p:sldSz) als
-   MINDEST-Hoehe, laesst die Karte aber mit dem Inhalt wachsen. aspect-ratio wuerde den
-   Inhalt stattdessen ueberlaufen lassen. */
-.pptx-slide::before{content:'';float:left;width:0;padding-bottom:var(--pptx-arpad,56.25%)}
-.pptx-slide::after{content:'';display:block;clear:both}
-.pptx-title{font-size:19px;font-weight:700;line-height:1.28;color:#111;margin:0 0 12px;white-space:pre-wrap}
-.pptx-p{font-size:13px;line-height:1.5;color:#333;margin:0 0 7px;white-space:pre-wrap}
-.pptx-p.b{position:relative;padding-left:14px}
-.pptx-p.b::before{content:'\2022';position:absolute;left:2px;color:#8a8f94}
-.pptx-media{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;clear:both}
-.pptx-media img{max-width:100%;max-height:190px;object-fit:contain;border-radius:4px;background:#f3f4f6}
-.pptx-num{position:absolute;right:12px;bottom:9px;font-size:10.5px;color:#9aa0a6;letter-spacing:.04em}
-.pptx-empty{font-size:12.5px;color:#9aa0a6;font-style:italic}
+/* container-type:inline-size macht die Karte zum Bezug fuer cqw -> die Schrift skaliert exakt
+   mit der Kartenbreite, also auch beim Strg+Rad-Zoom. aspect-ratio = echtes p:sldSz-Verhaeltnis;
+   die Karte waechst NICHT mit dem Inhalt, weil die Formen absolut sitzen (wie auf der Folie). */
+.pptx-slide{position:relative;container-type:inline-size;aspect-ratio:var(--pptx-ar,1.7778);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.35);overflow:hidden}
+.pptx-sh{position:absolute;display:flex;flex-direction:column;overflow:hidden;padding:.3cqw .6cqw}
+.pptx-sh.an-ctr{justify-content:center}
+.pptx-sh.an-b{justify-content:flex-end}
+.pptx-tx{margin:0;line-height:1.22;white-space:pre-wrap;overflow-wrap:break-word}
+.pptx-img{position:absolute;object-fit:contain}
+.pptx-num{position:absolute;right:1.2cqw;bottom:.9cqw;font-size:1.6cqw;opacity:.4;font-variant-numeric:tabular-nums}
 
 /* Backlinks */
 .backlinks{margin-top:34px;border-top:1px solid var(--border);padding-top:16px}
@@ -2642,76 +2638,138 @@ function pptxRels(zip,part){
 }
 // Ein <a:p> -> {text,lvl,sz}. Die Runs eines Absatzes MUESSEN verbunden werden: PowerPoint
 // zerlegt Text in mehrere <a:r> (real: "Claude + dein\n" + "zweites Gehirn" = ein Titel).
-function pptxPara(p){
-  let txt='',sz=0,lvl=0;
-  const kids=p.children;
-  for(let i=0;i<kids.length;i++){
-    const el=kids[i],ln=el.localName;
+// Farbe aus einem Fill-/Ref-Element: srgbClr direkt, schemeClr ueber clrMap des Masters + Theme.
+function pptxColor(el,clr){
+  if(!el)return null;
+  const s=el.getElementsByTagNameNS(PPTX_NS_A,'srgbClr')[0];
+  if(s)return '#'+s.getAttribute('val');
+  const c=el.getElementsByTagNameNS(PPTX_NS_A,'schemeClr')[0];
+  if(c){const v=clr[c.getAttribute('val')];if(v)return '#'+v;}
+  return null;
+}
+// Relative Luminanz (WCAG) -> Auto-Kontrast fuer Text OHNE eigene Farbe. Real noetig: im GV-Deck
+// hat <a:rPr sz="3200" b="1"> gar keine Farbe und erbt Schwarz; das Workshop-Deck setzt explizit
+// Weiss auf #140F24. Ohne diese Regel waere eins von beiden unsichtbar.
+function pptxLum(hex){
+  const n=parseInt(hex.slice(1),16),f=c=>{c/=255;return c<=.03928?c/12.92:Math.pow((c+.055)/1.055,2.4);};
+  return .2126*f(n>>16&255)+.7152*f(n>>8&255)+.0722*f(n&255);
+}
+// Ziel einer Beziehung (Layout des Slides, Master des Layouts, Theme des Masters).
+function pptxRelTarget(zip,part,re){
+  const rels=pptxRels(zip,part),base=part.slice(0,part.lastIndexOf('/'));
+  for(const k in rels)if(re.test(rels[k]))return pptxPath(base,rels[k]);
+  return '';
+}
+// Theme-Farben + clrMap: <p:bgRef><a:schemeClr val="bg1"/> -> clrMap bg1=lt1 -> clrScheme lt1=FFFFFF.
+function pptxThemeClr(zip,master){
+  const out={};
+  if(!master)return out;
+  const tp=pptxRelTarget(zip,master,/theme\d*\.xml$/),t=tp&&pptxDoc(zip,tp);
+  if(t){
+    const cs=t.getElementsByTagNameNS(PPTX_NS_A,'clrScheme')[0];
+    if(cs)for(const el of cs.children){
+      const s=el.getElementsByTagNameNS(PPTX_NS_A,'srgbClr')[0],y=el.getElementsByTagNameNS(PPTX_NS_A,'sysClr')[0];
+      const v=s?s.getAttribute('val'):(y?y.getAttribute('lastClr'):null);
+      if(v)out[el.localName]=v;
+    }
+  }
+  const m=pptxDoc(zip,master),cm=m&&m.getElementsByTagNameNS(PPTX_NS_P,'clrMap')[0];
+  if(cm)['bg1','tx1','bg2','tx2'].forEach(k=>{const v=cm.getAttribute(k);if(v&&out[v])out[k]=out[v];});
+  return out;
+}
+// Hintergrund: Slide gewinnt, sonst Layout, sonst Master, sonst Weiss.
+function pptxBgColor(zip,parts,clr){
+  for(const p of parts){
+    const d=p&&pptxDoc(zip,p); if(!d)continue;
+    const bg=d.getElementsByTagNameNS(PPTX_NS_P,'bg')[0]; if(!bg)continue;
+    const c=pptxColor(bg,clr); if(c)return c;
+  }
+  return '#ffffff';
+}
+// a:xfrm -> Position/Groesse in EMU (+ Kindraum bei Gruppen).
+function pptxXfrm(el){
+  const x=el.getElementsByTagNameNS(PPTX_NS_A,'xfrm')[0]; if(!x)return null;
+  const g=n=>x.getElementsByTagNameNS(PPTX_NS_A,n)[0];
+  const off=g('off'),ext=g('ext'); if(!off||!ext)return null;
+  const r={x:+off.getAttribute('x'),y:+off.getAttribute('y'),cx:+ext.getAttribute('cx'),cy:+ext.getAttribute('cy'),rot:+(x.getAttribute('rot')||0)};
+  const co=g('chOff'),ce=g('chExt');
+  if(co)r.chOff={x:+co.getAttribute('x'),y:+co.getAttribute('y')};
+  if(ce)r.chExt={cx:+ce.getAttribute('cx'),cy:+ce.getAttribute('cy')};
+  return r;
+}
+// Ein <a:p> -> Text + Auszeichnung. Runs eines Absatzes MUESSEN verbunden werden: PowerPoint
+// zerlegt Text in mehrere <a:r> (real: "Claude + dein\n" + "zweites Gehirn" = ein Titel).
+function pptxPara(p,clr){
+  let txt='',sz=0,col=null,b=false,it=false,lvl=0,algn='';
+  for(const el of p.children){
+    const ln=el.localName;
     if(ln==='r'||ln==='fld'){
       const t=el.getElementsByTagNameNS(PPTX_NS_A,'t')[0];
       if(t)txt+=t.textContent||'';
       const pr=el.getElementsByTagNameNS(PPTX_NS_A,'rPr')[0];
-      const s=pr?+(pr.getAttribute('sz')||0):0; if(s>sz)sz=s;
+      if(pr){
+        const s=+(pr.getAttribute('sz')||0); if(s>sz)sz=s;
+        if(pr.getAttribute('b')==='1')b=true;
+        if(pr.getAttribute('i')==='1')it=true;
+        if(!col)for(const c of pr.children)if(c.localName==='solidFill'){col=pptxColor(c,clr);break;}
+      }
     }else if(ln==='br')txt+='\n';
-    else if(ln==='pPr')lvl=+(el.getAttribute('lvl')||0)||0;
+    else if(ln==='pPr'){lvl=+(el.getAttribute('lvl')||0)||0;algn=el.getAttribute('algn')||'';}
   }
-  return {text:txt.replace(/\r/g,'').replace(/[ \t]+\n/g,'\n').trim(),lvl:Math.max(0,Math.min(8,lvl)),sz};
+  return {text:txt.replace(/\r/g,'').trim(),lvl:Math.max(0,Math.min(8,lvl)),sz,col,b,i:it,algn};
 }
-// spTree in Dokumentreihenfolge ablaufen; Gruppen (p:grpSp) verschachteln Shapes.
-function pptxShapes(node,out){
-  const kids=node.children;
-  for(let i=0;i<kids.length;i++){
-    const el=kids[i],ln=el.localName;
-    if(ln==='sp'||ln==='pic'||ln==='graphicFrame')out.push(el);
-    else if(ln==='grpSp')pptxShapes(el,out);
+// spTree in Dokumentreihenfolge. Gruppen: Kind-Koordinaten liegen im Kindraum (chOff/chExt) und
+// muessen in den Folienraum gerechnet werden – keins der echten Decks nutzt Gruppen, PowerPoint
+// im Allgemeinen aber sehr wohl, deshalb defensiv mitgebaut.
+function pptxShapes(node,out,tf){
+  for(const el of node.children){
+    const ln=el.localName;
+    if(ln==='sp'||ln==='pic'||ln==='graphicFrame')out.push({el,tf});
+    else if(ln==='grpSp'){
+      const g=pptxXfrm(el); let ntf=tf;
+      if(g&&g.chOff&&g.chExt&&g.chExt.cx&&g.chExt.cy){
+        const sx=g.cx/g.chExt.cx,sy=g.cy/g.chExt.cy,vor=tf;
+        ntf=q=>{const r={x:g.x+(q.x-g.chOff.x)*sx,y:g.y+(q.y-g.chOff.y)*sy,cx:q.cx*sx,cy:q.cy*sy,rot:q.rot};return vor?vor(r):r;};
+      }
+      pptxShapes(el,out,ntf);
+    }
   }
   return out;
 }
-function pptxSlide(zip,slidePath){
+function pptxSlide(zip,slidePath,ctx){
   const doc=pptxDoc(zip,slidePath); if(!doc)return null;
-  const rels=pptxRels(zip,slidePath);
-  const baseDir=slidePath.slice(0,slidePath.lastIndexOf('/'));
+  const rels=pptxRels(zip,slidePath),baseDir=slidePath.slice(0,slidePath.lastIndexOf('/'));
+  const layout=pptxRelTarget(zip,slidePath,/slideLayout\d*\.xml$/);
+  const master=layout?pptxRelTarget(zip,layout,/slideMaster\d*\.xml$/):'';
+  const bg=pptxBgColor(zip,[slidePath,layout,master],ctx.clr);
+  const tx=pptxLum(bg)<.5?'#ffffff':'#1a1a1a';   // Standard-Textfarbe = Kontrast zum Hintergrund
+  const out={bg,tx,items:[]};
   const tree=doc.getElementsByTagNameNS(PPTX_NS_P,'spTree')[0];
-  const out={title:'',paras:[],media:[]};
   if(!tree)return out;
-  const items=pptxShapes(tree,[]);
-  for(const el of items){
+  for(const {el,tf} of pptxShapes(tree,[],null)){
+    const geo=pptxXfrm(el); if(!geo)continue;      // ohne Koordinaten nicht platzierbar
+    const g=tf?tf(geo):geo;
+    const box={l:g.x/ctx.cx*100,t:g.y/ctx.cy*100,w:g.cx/ctx.cx*100,h:g.cy/ctx.cy*100,rot:g.rot||0};
     if(el.localName==='pic'){
       const blip=el.getElementsByTagNameNS(PPTX_NS_A,'blip')[0];
       const rid=blip&&blip.getAttributeNS(PPTX_NS_R,'embed');   // r:link = externes Bild -> ignorieren
       const tgt=rid&&rels[rid];
-      if(tgt){
-        const mp=pptxPath(baseDir,tgt),x=(mp.split('.').pop()||'').toLowerCase();
-        if(PPTX_MIME[x]&&zip[mp])out.media.push({path:mp,mime:PPTX_MIME[x]});
-      }
+      if(!tgt)continue;
+      const mp=pptxPath(baseDir,tgt),x=(mp.split('.').pop()||'').toLowerCase();
+      if(PPTX_MIME[x]&&zip[mp])out.items.push(Object.assign({typ:'img',path:mp,mime:PPTX_MIME[x]},box));
       continue;
     }
-    // sp + graphicFrame: Absaetze einsammeln (graphicFrame deckt Tabellentext mit ab)
-    const ps=el.getElementsByTagNameNS(PPTX_NS_A,'p'),got=[];
-    for(let i=0;i<ps.length;i++){const o=pptxPara(ps[i]); if(o.text)got.push(o);}
-    if(!got.length)continue;
-    let isTitle=false;
-    if(el.localName==='sp'&&!out.title){
-      const ph=el.getElementsByTagNameNS(PPTX_NS_P,'ph')[0];
-      const t=ph?(ph.getAttribute('type')||''):'';
-      if(t==='title'||t==='ctrTitle'){out.title=got.map(g=>g.text).join('\n');isTitle=true;}
+    const ps=el.getElementsByTagNameNS(PPTX_NS_A,'p'),paras=[];
+    for(let i=0;i<ps.length;i++){const o=pptxPara(ps[i],ctx.clr); if(o.text)paras.push(o);}
+    let fill=null;
+    const spPr=el.getElementsByTagNameNS(PPTX_NS_P,'spPr')[0];
+    if(spPr)for(const c of spPr.children){
+      if(c.localName==='solidFill'){fill=pptxColor(c,ctx.clr);break;}
+      if(c.localName==='noFill')break;
     }
-    if(!isTitle)for(const g of got)out.paras.push(g);
-  }
-  // Fallback-Titel fuer Decks OHNE Platzhalter (real: die generierten Workshop-Folien haben
-  // 0x <p:ph>) -> groesste Schriftgroesse ist der Titel. Zwei Einschraenkungen, beide aus echten
-  // Folien gelernt:
-  //  - Absaetze ohne Buchstaben scheiden aus: der Abschnittsmarker "01" steht real mit sz=15000
-  //    auf der Folie, der eigentliche Titel daneben nur mit 4000 -> sonst waere "01" der Titel.
-  //  - die Groesse muss sich abheben (irgendein Absatz ist kleiner), sonst wuerde auf uniform
-  //    gesetzten Folien willkuerlich der erste Absatz zum Titel befoerdert.
-  if(!out.title){
-    let ti=-1,tsz=0;
-    for(let i=0;i<out.paras.length;i++){
-      const p=out.paras[i];
-      if(p.sz>tsz&&/\p{L}/u.test(p.text)){tsz=p.sz;ti=i;}
-    }
-    if(ti>=0&&out.paras.some(p=>p.sz&&p.sz<tsz)){out.title=out.paras[ti].text;out.paras.splice(ti,1);}
+    if(!paras.length&&!fill)continue;              // leere Deko-Form -> nichts zu zeigen
+    const bp=el.getElementsByTagNameNS(PPTX_NS_A,'bodyPr')[0];
+    out.items.push(Object.assign({typ:'sh',paras,fill,anchor:(bp&&bp.getAttribute('anchor'))||'t'},box));
   }
   return out;
 }
@@ -2727,25 +2785,39 @@ function pptxParse(zip){
   }
   if(!paths.length)return null;
   const sz=pres.getElementsByTagNameNS(PPTX_NS_P,'sldSz')[0];
-  const cx=sz?+sz.getAttribute('cx'):0,cy=sz?+sz.getAttribute('cy'):0;
-  const arPad=(cx>0&&cy>0)?Math.max(30,Math.min(160,cy/cx*100)):56.25;
-  return {slides:paths.map(p=>pptxSlide(zip,p)||{title:'',paras:[],media:[]}),arPad};
+  const cx=(sz&&+sz.getAttribute('cx'))||12192000,cy=(sz&&+sz.getAttribute('cy'))||6858000;
+  // Theme einmal pro Deck ueber den Master der ERSTEN Folie aufloesen (Decks haben praktisch
+  // immer genau einen Master; faellt er weg, bleiben nur explizite srgbClr-Farben uebrig).
+  const l0=pptxRelTarget(zip,paths[0],/slideLayout\d*\.xml$/);
+  const ctx={cx,cy,clr:pptxThemeClr(zip,l0?pptxRelTarget(zip,l0,/slideMaster\d*\.xml$/):'')};
+  return {cx,cy,ar:cx/cy,slides:paths.map(p=>pptxSlide(zip,p,ctx)||{bg:'#ffffff',tx:'#1a1a1a',items:[]})};
 }
 // Blob-URLs pro Media-Datei (nicht pro Vorkommen: ein Logo auf 66 Folien = eine URL).
 // Die Liste haengt am #note-area und wird beim naechsten Datei-Oeffnen widerrufen.
 function pptxRender(deck,zip,area){
-  const urls=[],cache={};
+  const urls=[],cache={},ALGN={ctr:'center',r:'right',l:'left',just:'justify'};
   const blobUrl=m=>cache[m.path]||(cache[m.path]=(u=>(urls.push(u),u))(URL.createObjectURL(new Blob([zip[m.path]],{type:m.mime}))));
+  const pos=o=>'left:'+o.l.toFixed(3)+'%;top:'+o.t.toFixed(3)+'%;width:'+o.w.toFixed(3)+'%;height:'+o.h.toFixed(3)+'%'+(o.rot?';transform:rotate('+(o.rot/60000).toFixed(2)+'deg)':'');
   const cards=deck.slides.map((s,i)=>{
-    let h='';
-    if(s.title)h+='<div class="pptx-title">'+esc(s.title)+'</div>';
-    for(const p of s.paras)h+='<div class="pptx-p'+(p.lvl>0?' b':'')+'"'+(p.lvl>1?' style="margin-left:'+((p.lvl-1)*16)+'px"':'')+'>'+esc(p.text)+'</div>';
-    if(s.media.length)h+='<div class="pptx-media">'+s.media.map(m=>'<img src="'+blobUrl(m)+'" alt="" loading="lazy">').join('')+'</div>';
-    if(!h)h='<div class="pptx-empty">(Folie ohne darstellbaren Inhalt)</div>';
-    return '<section class="pptx-slide">'+h+'<span class="pptx-num">'+(i+1)+'</span></section>';
+    const inner=s.items.map(o=>{
+      if(o.typ==='img')return '<img class="pptx-img" style="'+pos(o)+'" src="'+blobUrl(o)+'" alt="" loading="lazy">';
+      const ps=o.paras.map(p=>{
+        // sz ist in 1/100 pt; Folienbreite in pt = cx/12700. Anteil an der Kartenbreite in cqw
+        // -> Schrift skaliert automatisch mit Zoom und Fensterbreite.
+        const st=['font-size:'+((p.sz||1800)*12700/deck.cx).toFixed(3)+'cqw'];
+        if(p.col)st.push('color:'+p.col);
+        if(p.b)st.push('font-weight:700');
+        if(p.i)st.push('font-style:italic');
+        if(p.algn&&ALGN[p.algn])st.push('text-align:'+ALGN[p.algn]);
+        if(p.lvl)st.push('padding-left:'+(p.lvl*1.4)+'em');
+        return '<p class="pptx-tx" style="'+st.join(';')+'">'+esc(p.text)+'</p>';
+      }).join('');
+      return '<div class="pptx-sh an-'+o.anchor+'" style="'+pos(o)+(o.fill?';background:'+o.fill:'')+'">'+ps+'</div>';
+    }).join('');
+    return '<section class="pptx-slide" style="background:'+s.bg+';color:'+s.tx+'">'+inner+'<span class="pptx-num">'+(i+1)+'</span></section>';
   }).join('');
   area._pptxBlobs=urls;
-  return '<div class="pptx-deck" style="--pptx-arpad:'+deck.arPad.toFixed(3)+'%">'+cards+'</div>';
+  return '<div class="pptx-deck" style="--pptx-ar:'+deck.ar.toFixed(4)+'">'+cards+'</div>';
 }
 // Ohne das leckt jede PPTX-Vorschau ihre Bilder (77 Blobs allein im Workshop-Deck).
 function revokePptxBlobs(el){
