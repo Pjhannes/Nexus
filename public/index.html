@@ -295,15 +295,18 @@ table.dataview-table tr:hover td{background:var(--accent-08)}
 .pdfv-pageinp:focus{border-color:var(--accent)}
 .pdfv-total{font-size:12px;color:var(--dim)}
 .pdfv-zlabel{min-width:50px;text-align:center}
-.pdfv-scroll{flex:1;min-height:0;overflow:auto;padding:18px 12px 30px;background:var(--bg)}
-.pdfv-pages{display:flex;flex-direction:column;align-items:center;gap:16px}
+.pdfv-scroll{flex:1;min-height:0;overflow:auto;padding:18px 12px 30px;background:var(--bg);scrollbar-gutter:stable}
+/* R21a: flex-start (nie zentrierter Overflow -> linker Rand breiter Seiten bleibt erreichbar).
+   Wrapper-Breite = Seitenbreite (--pdfw, in layout() gesetzt) + symmetrische margin-inline wie bei
+   Notizen -> auch eine rausgezoomte (schmale) Seite bleibt frei nach links/rechts schiebbar. */
+.pdfv-pages{display:flex;flex-direction:column;align-items:flex-start;gap:16px;width:var(--pdfw,auto);margin-inline:max(0px,100% - var(--pdfw,100%))}
 .pdf-page{background:#fff;border-radius:4px;box-shadow:0 6px 24px rgba(0,0,0,.5);overflow:hidden;display:flex;align-items:center;justify-content:center}
 .pdf-page canvas{display:block}
 .pdf-page .pdf-ph{font-size:22px;opacity:.35;color:#444}
-.pdfv-scroll::-webkit-scrollbar{width:8px;height:8px}
+.pdfv-scroll::-webkit-scrollbar{width:6px;height:6px}
 .pdfv-scroll::-webkit-scrollbar-track{background:transparent}
-.pdfv-scroll::-webkit-scrollbar-thumb{background:var(--dim);border-radius:4px}
-.pdfv-scroll::-webkit-scrollbar-thumb:hover{background:var(--text)}
+.pdfv-scroll::-webkit-scrollbar-thumb{background:var(--sb-thumb);border-radius:3px}
+.pdfv-scroll::-webkit-scrollbar-thumb:hover{background:var(--sb-thumb-h)}
 .pdfv-scroll::-webkit-scrollbar-corner{background:transparent}
 .img-view{padding:24px;text-align:center}
 .img-view img{max-width:100%;border-radius:10px;border:1px solid var(--border)}
@@ -2415,7 +2418,9 @@ async function mountPdfViewer(host,fname,path,opts={}){
   function layout(){
     const s=effScale();
     zlabel.textContent=Math.round(s*100)+'%';
-    pageEls.forEach(el=>{el.style.width=Math.round(base.width*s)+'px';el.style.height=Math.round(base.height*s)+'px';});
+    const pw=Math.round(base.width*s);
+    pagesWrap.style.setProperty('--pdfw',pw+'px');   // Wrapper-Breite = Seitenbreite -> schmale Seite ueber margin-inline verschiebbar (wie Notizen)
+    pageEls.forEach(el=>{el.style.width=pw+'px';el.style.height=Math.round(base.height*s)+'px';});
   }
   for(let i=1;i<=N;i++){
     const el=document.createElement('div');
@@ -2452,7 +2457,16 @@ async function mountPdfViewer(host,fname,path,opts={}){
     if(document.activeElement!==pageInp)pageInp.value=cur;
   }
   function gotoPage(i){i=Math.max(1,Math.min(N,i|0));const el=pageEls[i-1];if(!el)return;const sr=scroll.getBoundingClientRect(),er=el.getBoundingClientRect();scroll.scrollTo({top:scroll.scrollTop+(er.top-sr.top)-10,behavior:'instant'});}
-  function applyZoom(){layout();pageEls.forEach(el=>el._rk=null);reRenderVisible();if(host._pdfPersist)host._pdfPersist();}
+  function applyZoom(){
+    // Zoom um den horizontalen Viewport-Mittelpunkt (haelt die Position wie bei Notizen): den
+    // Inhaltspunkt in der Mitte des sichtbaren Bereichs als Bruchteil merken und nachher wieder
+    // dorthin setzen -> eine rausgezoomte, schmale Seite bleibt mittig UND frei verschiebbar.
+    const wB=scroll.scrollWidth;
+    const frac=wB>0?(scroll.scrollLeft+scroll.clientWidth/2)/wB:0.5;
+    layout();pageEls.forEach(el=>el._rk=null);reRenderVisible();
+    scroll.scrollLeft=frac*scroll.scrollWidth-scroll.clientWidth/2;   // Browser klemmt auf [0,max]
+    if(host._pdfPersist)host._pdfPersist();
+  }
 
   const io=new IntersectionObserver(ents=>{
     if(!scroll.isConnected){cleanup();return;}
@@ -2466,6 +2480,7 @@ async function mountPdfViewer(host,fname,path,opts={}){
   const onWheel=e=>{
     e.stopPropagation();                                 // nie an #note-area-Handler (onNoteWheel) durchreichen
     if(e.ctrlKey){e.preventDefault();mode='manual';const f=e.deltaY<0?1.1:1/1.1;scale=Math.max(0.2,Math.min(5,effScale()*f));applyZoom();}
+    else smartAxisScroll(scroll,e);                      // R21a: achsen-gelockt wie Notizen statt nativem Diagonal-Scroll
   };
   scroll.addEventListener('wheel',onWheel,{passive:false});
   bar.addEventListener('click',e=>{
@@ -2489,12 +2504,12 @@ async function mountPdfViewer(host,fname,path,opts={}){
   // - host._pdfGetState() liefert dem Tab-System den aktuellen Stand (Scroll-Y + mode/scale).
   // - persistState() schreibt ihn debounced in den aktiven History-Eintrag (auch fuer Neustart/Restore).
   if(!compact){
-    host._pdfGetState=()=>scroll.isConnected?{y:scroll.scrollTop,mode,scale}:null;
+    host._pdfGetState=()=>scroll.isConnected?{x:scroll.scrollLeft,y:scroll.scrollTop,mode,scale}:null;
     let _pstTimer=0;
     const persistState=()=>{clearTimeout(_pstTimer);_pstTimer=setTimeout(()=>{
       const t=tabs[activeTab];
       if(t&&t.mode==='file'&&t.path===path&&Array.isArray(t.hist)&&t.hi>=0&&scroll.isConnected){
-        const e=t.hist[t.hi];if(e){e.pdf={y:scroll.scrollTop,mode,scale};saveTabs();}
+        const e=t.hist[t.hi];if(e){e.pdf={x:scroll.scrollLeft,y:scroll.scrollTop,mode,scale};saveTabs();}
       }
     },250);};
     scroll.addEventListener('scroll',persistState);
@@ -2508,8 +2523,10 @@ async function mountPdfViewer(host,fname,path,opts={}){
       if(mode==='manual'&&_restore.scale>0)scale=_restore.scale;
     }
     layout();reRenderVisible();updateCurrent();
-    if(_restore&&typeof _restore.y==='number'&&_restore.y>0){
-      scroll.scrollTop=_restore.y;reRenderVisible();updateCurrent();
+    if(_restore&&(_restore.y>0||_restore.x>0)){
+      if(typeof _restore.y==='number')scroll.scrollTop=_restore.y;
+      if(typeof _restore.x==='number')scroll.scrollLeft=_restore.x;   // R21a: horizontale Position (R19-Paritaet)
+      reRenderVisible();updateCurrent();
     }
   });
 }
@@ -3359,19 +3376,30 @@ function onNoteScrollX(e){
 // Trackpad/Maus melden bei schraeger Bewegung deltaX UND deltaY gleichzeitig -> der Browser scrollt
 // nativ beide Achsen. Wir unterdruecken das und scrollen nur die dominante Achse. Die Achse bleibt fuer
 // die Dauer einer Geste fix (Pause > 140ms = neue Geste), damit es bei Diagonalen nicht hin- und herspringt.
-let _wheelAxis=null, _wheelTs=0;
+// Gesten-State pro Scroll-Element (WeakMap) statt global: Notiz, Haupt-PDF und Split-PDF
+// duerfen sich die Achse einer laufenden Geste nicht gegenseitig ueberschreiben (R21a).
+const _axisGesture=new WeakMap();
+function smartAxisScroll(el,e){
+  let dx=e.deltaX, dy=e.deltaY;
+  // Shift+Mausrad = seitlich schieben. Windows/Chromium liefert dabei meist deltaY (deltaX=0)
+  // und wuerde nativ horizontal scrollen -> weil wir preventDefault(), legen wir das vertikale
+  // Delta selbst auf die Horizontale um. Trackpads mit echtem deltaX laufen unveraendert durch.
+  if(e.shiftKey && dx===0){ dx=dy; dy=0; }
+  const ax=Math.abs(dx), ay=Math.abs(dy);
+  if(!ax && !ay)return;
+  let g=_axisGesture.get(el);
+  if(!g){g={axis:null,ts:0};_axisGesture.set(el,g);}
+  if(!g.axis || e.timeStamp-g.ts>140) g.axis = ay>=ax ? 'y' : 'x';   // neue Geste -> Achse neu bestimmen
+  g.ts=e.timeStamp;
+  const unit = e.deltaMode===1 ? 16 : (e.deltaMode===2 ? el.clientHeight : 1);  // line/page -> Pixel (Maus meist deltaMode 0)
+  e.preventDefault();
+  if(g.axis==='y') el.scrollBy({top:dy*unit,behavior:'instant'});
+  else el.scrollBy({left:dx*unit,behavior:'instant'});
+}
 function onNoteWheel(e){
   e.currentTarget.__restoreActive=false;e.currentTarget.classList.remove('dv-restoring');  // eigene Scroll-Geste bricht ein laufendes Restore ab (und blendet sofort ein)
   if(e.ctrlKey){e.preventDefault();bumpNoteW(e.deltaY);return;}   // Zoom (Pinch/Strg) unveraendert
-  const ax=Math.abs(e.deltaX), ay=Math.abs(e.deltaY);
-  if(!ax && !ay)return;
-  if(!_wheelAxis || e.timeStamp-_wheelTs>140) _wheelAxis = ay>=ax ? 'y' : 'x';   // neue Geste -> Achse neu bestimmen
-  _wheelTs=e.timeStamp;
-  const area=e.currentTarget;
-  const unit = e.deltaMode===1 ? 16 : (e.deltaMode===2 ? area.clientHeight : 1);  // line/page -> Pixel (Maus meist deltaMode 0)
-  e.preventDefault();
-  if(_wheelAxis==='y') area.scrollBy({top:e.deltaY*unit,behavior:'instant'});
-  else area.scrollBy({left:e.deltaX*unit,behavior:'instant'});
+  smartAxisScroll(e.currentTarget,e);
 }
 // Bearbeiten-Button (Overlay im Tab-Band): nur in der Markdown-Leseansicht sichtbar.
 function showEditFab(path){const f=document.getElementById('note-edit-fab');if(!f)return;f.style.display='inline-block';f.onclick=()=>openEditor(path);const rt=document.getElementById('read-toggle');if(rt)rt.style.display='inline-block';updateReadToggle();}
