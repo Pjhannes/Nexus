@@ -562,6 +562,23 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
    width/margin-Formel auf .cm-content wuerde CM6s Umbruch-Messung stoeren. */
 .editor-host .cm-editor{height:100%;background:transparent;color:var(--text);max-width:var(--note-w,min(1000px,100%));margin-inline:auto}
 .editor-host .cm-scroller::-webkit-scrollbar{width:6px}
+/* ── R22 Phase 1: Live-Preview ──
+   Absichtlich an die .md-body-Werte angelehnt (code/strong/em/blockquote oben), damit
+   Editor und Leseansicht gleich aussehen. Groessen in em, nicht px: der Editor haengt an
+   --editor-fs und Strg+Rad. */
+.editor-host .cm-line.lp-h1{font-size:1.75em;font-weight:700;color:var(--accent-tx);line-height:1.3}
+.editor-host .cm-line.lp-h2{font-size:1.45em;font-weight:700;color:var(--accent-tx);line-height:1.35}
+.editor-host .cm-line.lp-h3{font-size:1.22em;font-weight:650;color:var(--accent-tx)}
+.editor-host .cm-line.lp-h4{font-size:1.08em;font-weight:650;color:var(--accent-tx)}
+.editor-host .cm-line.lp-h5,.editor-host .cm-line.lp-h6{font-weight:650;color:var(--accent-tx)}
+.editor-host .cm-line.lp-quote{border-left:3px solid var(--accent);background:var(--accent-04);padding-left:12px}
+.editor-host .lp-strong{color:var(--text);font-weight:650}
+.editor-host .lp-em{color:#e6e9f2;font-style:italic}
+.editor-host .lp-code{background:rgba(255,255,255,.07);border-radius:5px;padding:.12em .4em;font-size:.86em;color:#e6d6a8}
+.editor-host .lp-link{color:var(--accent-tx);border-bottom:1px solid var(--accent-30);cursor:pointer}
+.editor-host .lp-strike{text-decoration:line-through;color:var(--dim)}
+/* Die Rohsyntax-Zeile (Cursor drin) bekommt KEINE Sonderfarbe – sie soll sich nicht
+   bewegen, nur die Marker tauchen wieder auf. */
 /* CM6 bringt sein restliches CSS selbst mit (style-mod injiziert es zur Laufzeit) ->
    es gibt bewusst KEINE gevendorte .css-Datei. CM5 lud dafuer codemirror.min.css vom CDN.
    Farben/Schrift kommen aus cm6Theme() (dort, weil CM6s eigene Regeln sonst gewinnen). */
@@ -2223,6 +2240,59 @@ async function loadBacklinks(path){
 }
 
 // ═════════════════════ EDITOR (Bearbeiten + Speichern) ═════════════════════
+//__LP_START__
+// Entscheidet, welche Markdown-Marker verschwinden und wie der Inhalt gestylt wird.
+// Bewusst OHNE DOM und OHNE CodeMirror-Import gekapselt (Muster wie der Markdown-Renderer
+// zwischen //__MD_START__/__MD_END__), damit test/live-preview.test.mjs die Regeln headless
+// prueft – im ViewPlugin waeren sie nur im Browser testbar, und die Regeln sind der
+// fehleranfaellige Teil, nicht die CM6-Verdrahtung.
+//
+// doc    – braucht nur { sliceString(from,to), lineAt(pos)->{from,to} }. CM6s Text erfuellt
+//          das; der Test stubbt dieselben zwei Methoden. So muss nie das ganze Dokument
+//          serialisiert werden (Pauls groesste Notiz hat 51 MB).
+// tokens – [{name,from,to,parent}] aus dem Lezer-Baum, NUR sichtbarer Bereich, Eltern vor Kindern.
+// reveal – [{from,to}] Zeilenbereiche, die Rohsyntax zeigen sollen (Selektion).
+// ->       {hide:[{from,to}], marks:[{from,to,cls}], lines:[{from,cls}]}
+
+// Namen aus @lezer/markdown. ACHTUNG: der Ueberschriften-Marker heisst HeaderMark –
+// "HeadingMark" gibt es NICHT. Ein Tippfehler hier greift still nie.
+const LP_HIDE=new Set(['HeaderMark','EmphasisMark','CodeMark','LinkMark','StrikethroughMark','QuoteMark']);
+const LP_MARK={StrongEmphasis:'lp-strong',Emphasis:'lp-em',InlineCode:'lp-code',Strikethrough:'lp-strike',Link:'lp-link'};
+const LP_LINE={ATXHeading1:'lp-h1',ATXHeading2:'lp-h2',ATXHeading3:'lp-h3',ATXHeading4:'lp-h4',ATXHeading5:'lp-h5',ATXHeading6:'lp-h6'};
+
+function lpRevealed(from,to,reveal){for(const r of reveal){if(from<=r.to&&to>=r.from)return true;}return false;}
+
+function lpBuild(doc,tokens,reveal){
+  const hide=[],marks=[],lines=[];
+  for(const t of tokens){
+    const cls=LP_LINE[t.name];
+    if(cls){lines.push({from:doc.lineAt(t.from).from,cls});continue;}
+    if(t.name==='Blockquote'){
+      // Blockquote kann mehrzeilig sein -> jede Zeile bekommt die Klasse.
+      let p=t.from;
+      for(;;){const ln=doc.lineAt(p);lines.push({from:ln.from,cls:'lp-quote'});if(ln.to>=t.to)break;p=ln.to+1;}
+      continue;
+    }
+    const mc=LP_MARK[t.name];
+    if(mc){marks.push({from:t.from,to:t.to,cls:mc});continue;}
+    // URL/Titel eines [Text](url) verschwinden mit den Klammern; der Link-Knoten selbst
+    // ist schon als lp-link markiert, uebrig bleibt sichtbar genau der Linktext.
+    const istLinkTeil=(t.name==='URL'||t.name==='LinkTitle')&&t.parent==='Link';
+    if(!LP_HIDE.has(t.name)&&!istLinkTeil)continue;
+    if(lpRevealed(t.from,t.to,reveal))continue;   // Cursor in der Zeile -> Rohsyntax zeigen
+    let to=t.to;
+    if(t.name==='HeaderMark'||t.name==='QuoteMark'){
+      // "## " / "> " – das Leerzeichen dahinter muss mit weg, sonst rueckt die Zeile ein.
+      // Nur Leerzeichen fressen, keine Zeilenumbrueche (leeres "#" bleibt sonst haengen).
+      const ln=doc.lineAt(t.to);
+      while(to<ln.to&&doc.sliceString(to,to+1)===' ')to++;
+    }
+    hide.push({from:t.from,to});
+  }
+  return {hide,marks,lines};
+}
+//__LP_END__
+
 let editorState=null; let _cmLoaded=null;
 // CodeMirror 6 LOKAL (public/vendor/cm6 + Import-Map im <head>) -> der Editor laeuft OFFLINE.
 // Vorher: CM5 5.65.16 vom CDN (jsdelivr), offline gab es nur die <textarea>.
@@ -2293,6 +2363,47 @@ function cm6Theme(m){
     '.cm-scroller::-webkit-scrollbar-thumb':{background:'var(--sb-thumb)',borderRadius:'3px'}
   },{dark:true});
 }
+// Verdrahtet lpBuild mit CM6. Baut Decorations NUR ueber view.visibleRanges – bei Pauls
+// 51-MB-Notiz waere alles andere aussichtslos.
+function cm6LivePreview(m){
+  const {Decoration,ViewPlugin,EditorView}=m.V, {syntaxTree}=m.L;
+  const versteckt=Decoration.replace({});
+  function baue(view){
+    const tokens=[],reveal=[];
+    // Rohsyntax auf den Zeilen JEDER Selektion (nicht nur der Cursorzeile).
+    for(const r of view.state.selection.ranges){
+      reveal.push({from:view.state.doc.lineAt(r.from).from,to:view.state.doc.lineAt(r.to).to});
+    }
+    for(const {from,to} of view.visibleRanges){
+      syntaxTree(view.state).iterate({from,to,enter:n=>{
+        tokens.push({name:n.name,from:n.from,to:n.to,parent:n.node.parent?n.node.parent.name:null});
+      }});
+    }
+    const r=lpBuild(view.state.doc,tokens,reveal);
+    const deco=[],atom=[];
+    for(const l of r.lines)deco.push(Decoration.line({class:l.cls}).range(l.from));
+    for(const k of r.marks)if(k.to>k.from)deco.push(Decoration.mark({class:k.cls}).range(k.from,k.to));
+    for(const h of r.hide)if(h.to>h.from){const d=versteckt.range(h.from,h.to);deco.push(d);atom.push(d);}
+    // true = CM6 sortiert selbst; ohne das wirft RangeSet bei ueberlappenden Marks.
+    return {deco:Decoration.set(deco,true),atom:Decoration.set(atom,true)};
+  }
+  const plugin=ViewPlugin.fromClass(class{
+    constructor(view){const r=baue(view);this.decorations=r.deco;this.atom=r.atom;}
+    update(u){
+      if(!(u.docChanged||u.selectionSet||u.viewportChanged))return;
+      // Waehrend einer IME-Komposition nichts umbauen (sonst bricht die Eingabe ab), aber
+      // die Positionen mitziehen – sonst zeigen sie hinterher ins Leere.
+      if(u.view.composing){this.decorations=this.decorations.map(u.changes);this.atom=this.atom.map(u.changes);return;}
+      const r=baue(u.view);this.decorations=r.deco;this.atom=r.atom;
+    }
+  },{
+    decorations:v=>v.decorations,
+    // atomicRanges NUR ueber die versteckten Marker, nicht ueber die Style-Marks: sonst
+    // waere auch fetter Text mit den Pfeiltasten nicht mehr durchquerbar.
+    provide:p=>EditorView.atomicRanges.of(v=>v.plugin(p)?.atom||Decoration.none)
+  });
+  return plugin;
+}
 async function openEditor(path,isNew){
   if(!(await maybeLeaveEditor()))return;
   hideEditFab();
@@ -2325,6 +2436,7 @@ async function openEditor(path,isNew){
         CM.V.EditorView.lineWrapping,
         new CM.L.LanguageSupport(cm6Markdown(CM)),
         CM.L.syntaxHighlighting(cm6Highlight(CM)),
+        cm6LivePreview(CM),
         CM.V.EditorView.updateListener.of(u=>{if(u.docChanged)markDirty();}),
         cm6Theme(CM)
       ]}),parent:host
