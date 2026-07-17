@@ -1,0 +1,16 @@
+# Nexus – Zeilenenden
+#
+# Das Repo laeuft mit core.autocrlf=true (Windows): Git speichert LF im Blob und
+# macht daraus beim Checkout CRLF. Fuer eigenen Quelltext ist das gewollt.
+#
+# NICHT gewollt ist es fuer public/vendor/cm6/: diese Dateien sind BYTE-IDENTISCHE
+# Kopien aus npm-Tarballs (Herkunft + sha512 in public/vendor/cm6/MANIFEST.tsv).
+# Wuerde autocrlf sie beim Checkout auf CRLF umschreiben, waeren sie nicht mehr
+# byte-identisch zum Tarball und `node scripts/fetch-cm6.mjs --verify` schluege
+# in jedem frischen Clone fehl – die Integritaetskette waere wertlos.
+# (Bei fflate/pdfjs/mammoth faellt das nicht auf: die sind minifiziert und damit
+#  praktisch einzeilig – da gibt es kein LF zu konvertieren. Die CM6-dist-Dateien
+#  liefert npm unminifiziert und mehrzeilig aus.)
+#
+# -text = Git fasst die Zeilenenden nie an, in keine Richtung.
+public/vendor/cm6/** -text
