@@ -13,8 +13,17 @@ const b = html.indexOf('//__LP_END__');
 if (a < 0 || b < 0) { console.error('Marker //__LP_START__/__LP_END__ nicht gefunden'); process.exit(1); }
 const core = html.slice(a, b);
 
-const mod = await import('data:text/javascript,' + encodeURIComponent(core + '\nexport {lpBuild,LP_HIDE,LP_MARK,LP_LINE};'));
-const { lpBuild, LP_HIDE } = mod;
+const mod = await import('data:text/javascript,' + encodeURIComponent(core + '\nexport {lpBuild,LP_HIDE,LP_MARK,LP_LINE,lpNorm,lpLineForText,lpBlockForLine};'));
+const { lpBuild, LP_HIDE, lpNorm, lpLineForText, lpBlockForLine } = mod;
+
+// Stub fuer stripInline. WICHTIG: bildet die ECHTE Funktion nach, die NUR Inline-Markdown
+// entfernt – Block-Marker ("## ", "> ", "- ") bleiben stehen. Ein frueherer Stub entfernte sie
+// auch und war damit maechtiger als das Original: die Tests waren gruen, live fand der Anker
+// keine einzige Ueberschrift. Block-Marker abzuraeumen ist Aufgabe von lpStripBlock().
+const strip = (l) => l
+  .replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1')
+  .replace(/`(.+?)`/g, '$1').replace(/\[(.+?)\]\(.+?\)/g, '$1')
+  .replace(/\[\[(.+?)\]\]/g, '$1');
 
 let pass = 0, fail = 0;
 function ok(label, cond, detail) {
@@ -215,6 +224,97 @@ console.log('\nLive-Preview-Kern (R22 Phase 1)\n');
   const r = lpBuild(doc, toks, [{ from: 0, to: 5 }, { from: 12, to: 17 }]);
   ok('Mehrfachselektion – Zeile 1 und 3 roh, nur Zeile 2 versteckt', r.hide.length === 2 && r.hide.every(h => h.from >= 6 && h.to <= 11), r.hide);
 }
+
+// ═══ Anker Leseansicht <-> Editor (Paul, 2026-07-17: "wenn ich in Zeile 30 bin und auf
+//     Bearbeiten klicke, soll Zeile 30 an derselben Stelle stehen") ═══
+console.log('\nAnker Leseansicht <-> Editor\n');
+
+const NOTIZ = [
+  '---', 'title: Test', '---', '',
+  '# Grosse Ueberschrift', '',
+  'Ein Absatz mit **fett** und `code` drin.', '',
+  '## Abschnitt zwei', '',
+  '- erster Punkt', '- zweiter Punkt', '',
+  'Noch ein Absatz, der weiter unten steht und lang genug ist.', '',
+  '> Ein Zitat hier', '',
+  'Letzter Absatz zum Schluss.',
+];
+
+// Erwartung aus dem Array rechnen, nicht abzaehlen – von Hand hatte ich mich verzaehlt.
+const zeileMit = (teil) => NOTIZ.findIndex(l => l.includes(teil));
+
+// ── 15) Ueberschrift: gerenderter Text -> Quellzeile ────────────────────────
+ok('Anker: "Abschnitt zwei" -> Quellzeile des "## " (im DOM ist der Marker weg)',
+  lpLineForText(NOTIZ, 'Abschnitt zwei', strip) === zeileMit('## Abschnitt zwei'), lpLineForText(NOTIZ, 'Abschnitt zwei', strip));
+
+// ── 16) Absatz mit Inline-Markdown: DOM-Text != Quelltext ──────────────────
+ok('Anker: gerendertes "Ein Absatz mit fett und code drin." findet die Quellzeile mit **/`',
+  lpLineForText(NOTIZ, 'Ein Absatz mit fett und code drin.', strip) === zeileMit('**fett**'),
+  lpLineForText(NOTIZ, 'Ein Absatz mit fett und code drin.', strip));
+
+// ── 17) Der Kernfall (Pauls Szenario): Block weiter unten -> nicht Zeile 0 ──
+{
+  const got = lpLineForText(NOTIZ, 'Noch ein Absatz, der weiter unten steht und lang genug ist.', strip);
+  ok('Anker: Absatz weiter unten -> seine echte Quellzeile, NICHT 0', got === zeileMit('Noch ein Absatz') && got > 10, got);
+}
+
+// ── 18) Zitat ─────────────────────────────────────────────────────────────
+ok('Anker: Zitat "Ein Zitat hier" -> Quellzeile mit "> "',
+  lpLineForText(NOTIZ, 'Ein Zitat hier', strip) === zeileMit('> Ein Zitat'),
+  lpLineForText(NOTIZ, 'Ein Zitat hier', strip));
+
+// ── 18b) Nummerierte Ueberschrift: die Nummer gehoert zum Titel, nicht zur Liste ──
+// Live an _System/Technische-Tipps.md aufgefallen: eine Schleife ueber alle Block-Marker
+// frisst nach dem "## " auch das "17. " und findet die Zeile dann nie.
+{
+  const N = ['## 17. Wikilink-Parsing in Nexus: escapte Tabellen-Pipes', '', 'Text danach hier drin.'];
+  ok('Anker: "## 17. Wikilink-Parsing…" -> Zeile 0 (die "17." bleibt Teil des Titels)',
+    lpLineForText(N, '17. Wikilink-Parsing in Nexus: escapte Tabellen-Pipes', strip) === 0,
+    lpLineForText(N, '17. Wikilink-Parsing in Nexus: escapte Tabellen-Pipes', strip));
+}
+
+// ── 18d) Checkbox-Zeile: "- [ ] " gehoert komplett zum Marker ─────────────
+// Live an _System/Uni-Deadlines.md aufgefallen (152 Checkboxen): die Leseansicht rendert das
+// "[ ]" als Kaestchen (.task-cb), im DOM steht nur der Text danach.
+{
+  const N = ['- [ ] 30.04. 08:00 UT VL Upload Metallkunde', '- [x] 23.04. erledigter Punkt hier'];
+  ok('Anker: "- [ ] 30.04. …" -> Zeile 0', lpLineForText(N, '30.04. 08:00 UT VL Upload Metallkunde', strip) === 0,
+    lpLineForText(N, '30.04. 08:00 UT VL Upload Metallkunde', strip));
+  ok('Anker: "- [x] …" (erledigt) -> Zeile 1', lpLineForText(N, '23.04. erledigter Punkt hier', strip) === 1,
+    lpLineForText(N, '23.04. erledigter Punkt hier', strip));
+}
+
+// ── 18c) Verschachteltes Zitat mit Liste: beide Marker muessen weg ────────
+{
+  const N = ['> - ein Punkt im Zitat hier'];
+  ok('Anker: "> - Punkt" -> beide Marker weg', lpLineForText(N, 'ein Punkt im Zitat hier', strip) === 0,
+    lpLineForText(N, 'ein Punkt im Zitat hier', strip));
+}
+
+// ── 19) Kein Treffer -> -1, kein falscher Sprung an den Anfang ────────────
+ok('Anker: unbekannter Text -> -1 (Aufrufer laesst die Position dann in Ruhe)',
+  lpLineForText(NOTIZ, 'Diesen Text gibt es nirgends', strip) === -1);
+
+// ── 20) Kurze Zeilen duerfen nicht zufaellig treffen ──────────────────────
+ok('Anker: "---" trifft NICHT (zu kurz, sonst landet man im Frontmatter)',
+  lpLineForText(NOTIZ, '---', strip) === -1, lpLineForText(NOTIZ, '---', strip));
+
+// ── 21) Leerer/None-Text -> -1 ───────────────────────────────────────────
+ok('Anker: leerer Text -> -1', lpLineForText(NOTIZ, '', strip) === -1 && lpLineForText(NOTIZ, null, strip) === -1);
+
+// ── 22) Rueckrichtung: Quellzeile -> gerenderter Block ───────────────────
+{
+  const bloecke = [{ text: 'Grosse Ueberschrift' }, { text: 'Ein Absatz mit fett und code drin.' },
+  { text: 'Abschnitt zwei' }, { text: 'erster Punkt zweiter Punkt' },
+  { text: 'Noch ein Absatz, der weiter unten steht und lang genug ist.' }];
+  ok('Anker rueckwaerts: "## Abschnitt zwei" -> Block 2', lpBlockForLine(bloecke, '## Abschnitt zwei', strip) === 2,
+    lpBlockForLine(bloecke, '## Abschnitt zwei', strip));
+  ok('Anker rueckwaerts: unbekannte Zeile -> -1', lpBlockForLine(bloecke, 'gibt es nicht hier', strip) === -1);
+}
+
+// ── 23) lpNorm ──────────────────────────────────────────────────────────
+ok('lpNorm: Whitespace vereinheitlicht', lpNorm('  a \n\t b  ') === 'a b');
+ok('lpNorm: null/undefined -> ""', lpNorm(null) === '' && lpNorm(undefined) === '');
 
 console.log(`\n${pass} ok, ${fail} fehlgeschlagen\n`);
 process.exit(fail ? 1 : 0);

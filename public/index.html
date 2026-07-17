@@ -2291,6 +2291,60 @@ function lpBuild(doc,tokens,reveal){
   }
   return {hide,marks,lines};
 }
+
+// ── Anker beim Wechsel Leseansicht <-> Editor ──────────────────────────────
+// Ohne das springt der Editor an den Dateianfang und man sucht seine Stelle wieder.
+// Genau das soll R22 abschaffen ("nahtlos bearbeiten"). Der Plan loest es erst in Phase 3
+// bauartbedingt (die Notiz IST dann der Editor); bis dahin uebertragen wir die Position.
+//
+// Der Renderer kennt keine Zeilennummern (kein data-line) und darf laut Plan nicht
+// angefasst werden - er bedient auch Lesemodus/Split/Transklusion/Office. Also der Weg
+// ueber den TEXT: der sichtbare Text eines Blocks beginnt mit dem markdown-befreiten Text
+// seiner ersten Quellzeile. lpNorm vereinheitlicht Whitespace, lpLineForText sucht sie.
+// Reine Funktionen -> headless testbar.
+function lpNorm(t){return (t||'').replace(/\s+/g,' ').trim();}
+
+// strip = Funktion, die Markdown aus EINER Zeile entfernt (in der App: stripInline).
+// Rueckgabe: 0-basierter Zeilenindex oder -1.
+// Block-Marker am Zeilenanfang weg. NOETIG, weil stripInline() nur INLINE-Markdown kennt:
+// das "## " einer Ueberschrift bliebe sonst stehen und der Textvergleich schluege fehl.
+// Schleife wegen Verschachtelung ("> - Punkt").
+// Block-Marker am Zeilenanfang weg. NOETIG, weil stripInline() nur INLINE-Markdown kennt:
+// das "## " einer Ueberschrift bliebe sonst stehen und der Textvergleich schluege fehl.
+function lpStripBlock(l){
+  let p;
+  do{p=l;l=l.replace(/^\s{0,3}>\s?/,"");}while(l!==p);      // Zitat-Ebenen ("> > x")
+  // Danach GENAU EINEN Marker, nicht in der Schleife: bei "## 17. Wikilink-Parsing" ist die
+  // "17." Teil der Ueberschrift, kein Listenpunkt - eine Schleife wuerde sie mitfressen und
+  // der Anker faende die Zeile nie (live an Technische-Tipps.md aufgefallen).
+  // Das "[ ] "/"[x] " einer Checkbox gehoert zum Marker, nicht zum Text: die Leseansicht
+  // rendert es als .task-cb-Kaestchen, im DOM steht es nicht mehr drin.
+  return l.replace(/^\s{0,3}(#{1,6}\s+|(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?)/,"");
+}
+function lpLineForText(zeilen,text,strip){
+  const ziel=lpNorm(text);
+  if(!ziel)return -1;
+  for(let i=0;i<zeilen.length;i++){
+    const roh=zeilen[i];
+    if(!roh||!roh.trim())continue;
+    const s=lpNorm(strip?strip(lpStripBlock(roh)):lpStripBlock(roh));
+    // Zu kurze Zeilen ("-", "|", "---") treffen sonst irgendwo zufaellig.
+    if(s.length<4)continue;
+    if(ziel.startsWith(s.slice(0,Math.min(s.length,44))))return i;
+  }
+  return -1;
+}
+
+// Umgekehrte Richtung: welcher gerenderte Block gehoert zu dieser Quellzeile?
+// bloecke = [{text}] in Dokumentreihenfolge.
+function lpBlockForLine(bloecke,zeile,strip){
+  const s=lpNorm(strip?strip(lpStripBlock(zeile)):lpStripBlock(zeile));
+  if(s.length<4)return -1;
+  for(let i=0;i<bloecke.length;i++){
+    if(lpNorm(bloecke[i].text).startsWith(s.slice(0,Math.min(s.length,44))))return i;
+  }
+  return -1;
+}
 //__LP_END__
 
 let editorState=null; let _cmLoaded=null;
@@ -2404,6 +2458,42 @@ function cm6LivePreview(m){
   });
   return plugin;
 }
+// Liest die aktuelle Leseposition: erster Block, dessen Unterkante noch im Viewport liegt,
+// plus sein Abstand zur Viewport-Oberkante. Gleiche Idee wie withScrollAnchor (Lesemodus R17),
+// nur ueber den Text statt ueber die Element-Identitaet - der Editor baut ja neues DOM.
+// Text eines gerenderten Blocks OHNE die UI-Teile, die der Renderer einstreut und die im
+// Quelltext nicht vorkommen: der "#"-Permalink in jeder Ueberschrift (.h-anchor), der
+// "Kopieren"-Knopf + Sprachlabel eines Codeblocks, das Falt-Dreieck eines Callouts und das
+// "✓" einer Checkbox. Ohne das sucht der Anker nach "#Bild-Einbettung..." und findet nie etwas.
+function noteBlockText(el){
+  const k=el.cloneNode(true);
+  k.querySelectorAll('.h-anchor,.cb-copy,.cb-lang,.fold,.task-cb').forEach(x=>x.remove());
+  return lpNorm(k.textContent);
+}
+// Sucht in kind das oberste Element, dessen Unterkante noch unter aTop liegt. Steigt dabei in
+// Listen/Zitate ab: bei Uni-Deadlines.md ist EIN <ul> der Block fuer bis zu 152 Punkte - ohne
+// Abstieg waere der Anker immer der erste Punkt und man landete am Abschnittsanfang.
+function noteAnkerEl(wurzel,aTop){
+  let el=null;
+  for(const c of wurzel.children){const r=c.getBoundingClientRect();if(r.bottom>aTop+4){el=c;break;}}
+  if(!el)return null;
+  if(/^(UL|OL|BLOCKQUOTE)$/.test(el.tagName)&&el.children.length){
+    const tiefer=noteAnkerEl(el,aTop);
+    if(tiefer)return tiefer;
+  }
+  return el;
+}
+function noteLeseAnker(){
+  const area=document.getElementById('note-area');
+  const body=area&&area.querySelector('.md-body');
+  if(!body||!area)return null;
+  const aTop=area.getBoundingClientRect().top;
+  const el=noteAnkerEl(body,aTop);
+  if(!el)return null;
+  const t=noteBlockText(el).slice(0,60);
+  const r=el.getBoundingClientRect();
+  return t?{text:t,off:Math.max(0,Math.round(r.top-aTop))}:null;
+}
 async function openEditor(path,isNew){
   if(!(await maybeLeaveEditor()))return;
   hideEditFab();
@@ -2413,7 +2503,11 @@ async function openEditor(path,isNew){
   if(!_silentRender)updateActiveTab(path,'editor');
   document.querySelectorAll('.tree-file.selected').forEach(e=>e.classList.remove('selected'));
   document.querySelector('.tree-file[data-path="'+cssAttr(path)+'"]')?.classList.add('selected');
-  const area=document.getElementById('note-area');area.scrollTop=0;
+  const area=document.getElementById('note-area');
+  // Position der Leseansicht merken, BEVOR sie ueberschrieben wird: der Block, der oben
+  // im Viewport steht, soll im Editor an derselben Stelle stehen.
+  const _anker=noteLeseAnker();
+  area.scrollTop=0;
   const fname=path.split('/').pop();
   area.innerHTML='<div class="editor-wrap">'
     +'<div class="editor-toolbar"><span class="ed-name">✎ '+esc(fname)+'</span><span class="ed-dirty" id="ed-dirty"></span><span class="ft-spacer"></span>'
@@ -2453,6 +2547,16 @@ async function openEditor(path,isNew){
     // -> der .cm-scroller bekommt Achsen-Lock und Strg+Rad-Zoom, ohne onNoteWheel anzufassen.
     const sc=host.querySelector('.cm-scroller');
     if(sc)sc.addEventListener('wheel',e=>{e.stopPropagation();onNoteWheel(e);},{passive:false});
+    // Leseposition uebernehmen: dieselbe Zeile an dieselbe Viewport-Hoehe, Cursor gleich
+    // dorthin - sonst tippt man nach dem Klick auf "Bearbeiten" oben in der Datei weiter.
+    // Synchron, NICHT in rAF: im versteckten Tab feuert rAF nie (Technische-Tipps Nr. 35).
+    if(_anker){
+      const z=lpLineForText(raw.split('\n'),_anker.text,stripInline);
+      if(z>=0){
+        const pos=cm.state.doc.line(Math.min(z+1,cm.state.doc.lines)).from;
+        cm.dispatch({selection:{anchor:pos},effects:CM.V.EditorView.scrollIntoView(pos,{y:'start',yMargin:_anker.off})});
+      }
+    }
   }else{
     const ta=document.createElement('textarea');ta.className='ed-textarea';ta.value=raw;ta.spellcheck=false;host.appendChild(ta);
     ta.addEventListener('input',markDirty);
