@@ -3,6 +3,30 @@
 <head>
 <meta charset="UTF-8">
 <title>Nexus</title>
+<!-- CodeMirror 6 laeuft ohne Bundler: die gevendorten npm-Dateien importieren einander
+     ueber bare specifier ("@codemirror/state"), die diese Import-Map auf /vendor/cm6/ zeigt.
+     Dadurch bleiben die Dateien BYTE-IDENTISCHE Tarball-Kopien (Herkunft + sha512 s.
+     public/vendor/cm6/MANIFEST.tsv, Pruefung: node scripts/fetch-cm6.mjs --verify).
+     ACHTUNG, zwei Fallen: (1) Dieses Tag MUSS oberhalb des grossen Inline-Skriptblocks
+     stehen - scripts/verify-html.mjs schneidet von dessen oeffnendem Tag bis zum LETZTEN
+     schliessenden Tag aus und jagt das durch node --check; steht es darunter, zerreisst es
+     den Block. (2) Der Marker, nach dem verify-html sucht, darf hier nirgends woertlich
+     vorkommen - auch nicht in einem Kommentar, sonst schneidet der Checker ab hier. -->
+<script type="importmap">
+{"imports":{
+ "@codemirror/state":"/vendor/cm6/codemirror-state.js",
+ "@codemirror/view":"/vendor/cm6/codemirror-view.js",
+ "@codemirror/language":"/vendor/cm6/codemirror-language.js",
+ "@codemirror/commands":"/vendor/cm6/codemirror-commands.js",
+ "@lezer/markdown":"/vendor/cm6/lezer-markdown.js",
+ "@lezer/common":"/vendor/cm6/lezer-common.js",
+ "@lezer/highlight":"/vendor/cm6/lezer-highlight.js",
+ "@marijn/find-cluster-break":"/vendor/cm6/marijn-find-cluster-break.js",
+ "crelt":"/vendor/cm6/crelt.js",
+ "style-mod":"/vendor/cm6/style-mod.js",
+ "w3c-keyname":"/vendor/cm6/w3c-keyname.js"
+}}
+</script>
 <style>
 :root {
   --bg:#07090f; --panel:rgba(255,255,255,.04); --panel2:rgba(255,255,255,.07);
@@ -530,17 +554,17 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 .ed-btn:hover{color:var(--text);border-color:var(--accent)}
 .ed-btn kbd{font-size:9.5px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--dim)}
 .ed-btn.ghost{background:transparent}
-.editor-host{flex:1;min-height:0;overflow:auto}
-.editor-host .CodeMirror{height:100%;background:transparent;color:var(--text);font-family:Consolas,'SF Mono',monospace;font-size:var(--editor-fs,13.5px);line-height:1.65}
-.editor-host .CodeMirror-gutters{background:rgba(8,10,18,.5);border-right:1px solid var(--border)}
-.editor-host .CodeMirror-linenumber{color:var(--dim)}
-.editor-host .CodeMirror-cursor{border-left:1.7px solid var(--accent)}
-.editor-host .CodeMirror-selected{background:var(--accent-20)!important}
-.editor-host .cm-header{color:var(--accent-tx);font-weight:650}
-.editor-host .cm-link,.editor-host .cm-url{color:var(--accent)}
-.editor-host .cm-comment{color:#7ec8e3}
-.editor-host .cm-variable-2{color:var(--text)}
-.editor-host .cm-quote{color:var(--accent-tx)}
+/* CM6 scrollt selbst (.cm-scroller) -> der Host darf NICHT mitscrollen. */
+.editor-host{flex:1;min-height:0;overflow:hidden}
+/* Breite an die Notiz koppeln: gleiche Spaltenbreite wie die Leseansicht, und Strg+Rad
+   (bumpNoteW -> --note-w) zoomt den Editor genauso wie jede Notiz. Begrenzt wird der
+   GANZE .cm-editor (Zeilennummern + Text wandern zusammen), nicht .cm-content - eine
+   width/margin-Formel auf .cm-content wuerde CM6s Umbruch-Messung stoeren. */
+.editor-host .cm-editor{height:100%;background:transparent;color:var(--text);max-width:var(--note-w,min(1000px,100%));margin-inline:auto}
+.editor-host .cm-scroller::-webkit-scrollbar{width:6px}
+/* CM6 bringt sein restliches CSS selbst mit (style-mod injiziert es zur Laufzeit) ->
+   es gibt bewusst KEINE gevendorte .css-Datei. CM5 lud dafuer codemirror.min.css vom CDN.
+   Farben/Schrift kommen aus cm6Theme() (dort, weil CM6s eigene Regeln sonst gewinnen). */
 .ed-textarea{width:100%;height:100%;box-sizing:border-box;resize:none;background:transparent;color:var(--text);border:none;outline:none;padding:18px 22px;font-family:Consolas,'SF Mono',monospace;font-size:var(--editor-fs,13.5px);line-height:1.65;tab-size:2}
 .ed-preview-pane{flex:1;min-height:0;overflow:auto}
 .ed-preview-pane .note-content{padding:24px 40px 70px}
@@ -2200,17 +2224,74 @@ async function loadBacklinks(path){
 
 // ═════════════════════ EDITOR (Bearbeiten + Speichern) ═════════════════════
 let editorState=null; let _cmLoaded=null;
+// CodeMirror 6 LOKAL (public/vendor/cm6 + Import-Map im <head>) -> der Editor laeuft OFFLINE.
+// Vorher: CM5 5.65.16 vom CDN (jsdelivr), offline gab es nur die <textarea>.
+// Muster wie pdfjs/mammoth/fflate: lazy, gecachte Promise, null bei Fehler.
+// Das .catch ist PFLICHT: Promise.all REJECTED bei einem Ladefehler, waehrend der alte
+// Loader zu null resolvte. Ohne catch wuerde openEditor werfen und #editor-host bliebe
+// leer - weder Editor noch Textarea.
 function loadCodeMirror(){
   if(_cmLoaded!==null)return _cmLoaded;
-  _cmLoaded=new Promise(res=>{
-    const base='https://cdn.jsdelivr.net/npm/codemirror@5.65.16/';
-    const css=document.createElement('link');css.rel='stylesheet';css.href=base+'lib/codemirror.min.css';document.head.appendChild(css);
-    const s=document.createElement('script');s.src=base+'lib/codemirror.min.js';
-    s.onload=()=>{const m=document.createElement('script');m.src=base+'mode/markdown/markdown.min.js';m.onload=()=>res(window.CodeMirror||null);m.onerror=()=>res(window.CodeMirror||null);document.head.appendChild(m);};
-    s.onerror=()=>res(null);
-    document.head.appendChild(s);
-  });
+  _cmLoaded=(async()=>{
+    try{
+      const [S,V,L,C,MD,HL]=await Promise.all([
+        import('@codemirror/state'),import('@codemirror/view'),import('@codemirror/language'),
+        import('@codemirror/commands'),import('@lezer/markdown'),import('@lezer/highlight')
+      ]);
+      return {S,V,L,C,MD,HL};
+    }catch(e){
+      // Sichtbar melden: sonst faellt ein kaputter/unvollstaendiger Vendor-Ordner still auf
+      // die Textarea zurueck - exakt das Symptom, das Phase 0 beseitigen soll.
+      console.error('[Nexus] CodeMirror 6 nicht ladbar (public/vendor/cm6):',e);
+      toast('Editor: CodeMirror nicht ladbar \u2013 einfacher Textmodus','err');
+      return null;
+    }
+  })();
   return _cmLoaded;
+}
+// Markdown OHNE @codemirror/lang-markdown: der Lezer-Baum (Token-Quelle fuer R22 Phase 1)
+// kommt aus @lezer/markdown; lang-markdown wuerde ihn nur wrappen und dabei die ganze
+// lang-html-Kette (+367 kB) fuer HTML-in-Markdown nachziehen. GFM (Tabellen, Task-Listen,
+// Strikethrough) liefert @lezer/markdown selbst mit.
+let _cm6Md=null;
+function cm6Markdown(m){
+  if(_cm6Md)return _cm6Md;
+  const data=m.L.defineLanguageFacet({commentTokens:{block:{open:'<!--',close:'-->'}}});
+  _cm6Md=new m.L.Language(data,m.MD.parser.configure([m.MD.GFM]),[],'markdown');
+  return _cm6Md;
+}
+// Highlighting an den bisherigen CM5-Look angelehnt (cm-header/cm-link/cm-comment/cm-quote).
+let _cm6Hl=null;
+function cm6Highlight(m){
+  if(_cm6Hl)return _cm6Hl;
+  const t=m.HL.tags;
+  _cm6Hl=m.L.HighlightStyle.define([
+    {tag:t.heading,color:'var(--accent-tx)',fontWeight:'650'},
+    {tag:[t.link,t.url],color:'var(--accent)'},
+    {tag:t.monospace,color:'#7ec8e3'},
+    {tag:t.quote,color:'var(--accent-tx)'},
+    {tag:t.emphasis,fontStyle:'italic'},
+    {tag:t.strong,fontWeight:'700'},
+    {tag:t.strikethrough,textDecoration:'line-through'},
+    {tag:t.list,color:'var(--text)'},
+    {tag:[t.processingInstruction,t.meta],color:'var(--dim)'}
+  ]);
+  return _cm6Hl;
+}
+// dark:true ist PFLICHT - ohne das Flag nimmt CM6 seine HELLEN Basis-Varianten
+// (Selektion/Gutter) und rendert hell in einer dunklen App.
+function cm6Theme(m){
+  return m.V.EditorView.theme({
+    '&':{height:'100%',backgroundColor:'transparent',color:'var(--text)'},
+    '&.cm-focused':{outline:'none'},
+    '.cm-scroller':{fontFamily:"Consolas,'SF Mono',monospace",fontSize:'var(--editor-fs,13.5px)',lineHeight:'1.65'},
+    '.cm-content':{caretColor:'var(--accent)'},
+    '.cm-cursor,.cm-dropCursor':{borderLeftColor:'var(--accent)',borderLeftWidth:'1.7px'},
+    '.cm-gutters':{backgroundColor:'rgba(8,10,18,.5)',borderRight:'1px solid var(--border)',color:'var(--dim)'},
+    '.cm-activeLine,.cm-activeLineGutter':{backgroundColor:'transparent'},
+    '&.cm-focused .cm-selectionBackground,.cm-selectionBackground,.cm-content ::selection':{backgroundColor:'var(--accent-20)'},
+    '.cm-scroller::-webkit-scrollbar-thumb':{background:'var(--sb-thumb)',borderRadius:'3px'}
+  },{dark:true});
 }
 async function openEditor(path,isNew){
   if(!(await maybeLeaveEditor()))return;
@@ -2232,10 +2313,34 @@ async function openEditor(path,isNew){
   const host=document.getElementById('editor-host');
   const CM=await loadCodeMirror();
   if(CM){
-    const cm=CM(host,{value:raw,mode:'markdown',lineNumbers:true,lineWrapping:true,autofocus:true,extraKeys:{'Ctrl-S':()=>saveEditor(),'Cmd-S':()=>saveEditor()}});
-    cm.on('change',markDirty);
-    editorState={path,original:raw,getValue:()=>cm.getValue(),isNew:!!isNew,cm};
-    setTimeout(()=>cm.refresh(),30);
+    // Paritaet zu CM5: CM5 brachte Basis-Keymap + Undo/Redo + Tab-Einrueckung von Haus aus mit,
+    // CM6 NICHT - ohne history()/historyKeymap/defaultKeymap/indentWithTab waeren Strg+Z,
+    // Pos1/Ende/Strg+Pfeil und Tab still tot. Ctrl+S wird bewusst NICHT gebunden: der globale
+    // capture-Handler (s.u., Ctrl+S/Ctrl+E) faengt es schon ab - eine zweite Bindung wuerde
+    // doppelt speichern.
+    const cm=new CM.V.EditorView({
+      state:CM.S.EditorState.create({doc:raw,extensions:[
+        CM.V.lineNumbers(),CM.C.history(),CM.V.drawSelection(),
+        CM.V.keymap.of([...CM.C.defaultKeymap,...CM.C.historyKeymap,CM.C.indentWithTab]),
+        CM.V.EditorView.lineWrapping,
+        new CM.L.LanguageSupport(cm6Markdown(CM)),
+        CM.L.syntaxHighlighting(cm6Highlight(CM)),
+        CM.V.EditorView.updateListener.of(u=>{if(u.docChanged)markDirty();}),
+        cm6Theme(CM)
+      ]}),parent:host
+    });
+    cm.focus();
+    // editorState-Shape unveraendert {path,original,getValue,isNew,cm} - daran haengen
+    // maybeLeaveEditor, beforeunload, Ctrl+E, Tabs mode:"editor" und togglePreview.
+    editorState={path,original:raw,getValue:()=>cm.state.doc.toString(),isNew:!!isNew,cm};
+    // Wheel-Ownership wie beim PDF- (Z. ~2534) und Office-Viewer (Z. ~2897): ohne
+    // stopPropagation laeuft die Geste zusaetzlich in onNoteWheel, dessen unbedingtes
+    // preventDefault() den nativen CM-Scroll abwuergt - und #note-area hat bei offenem
+    // Editor gar nichts zu scrollen (.editor-wrap{height:100%}). Genau deshalb scrollte
+    // der CM5-Editor per Mausrad bisher NICHT. onNoteWheel arbeitet mit e.currentTarget
+    // -> der .cm-scroller bekommt Achsen-Lock und Strg+Rad-Zoom, ohne onNoteWheel anzufassen.
+    const sc=host.querySelector('.cm-scroller');
+    if(sc)sc.addEventListener('wheel',e=>{e.stopPropagation();onNoteWheel(e);},{passive:false});
   }else{
     const ta=document.createElement('textarea');ta.className='ed-textarea';ta.value=raw;ta.spellcheck=false;host.appendChild(ta);
     ta.addEventListener('input',markDirty);
@@ -2271,7 +2376,7 @@ function togglePreview(){
   let pv=document.getElementById('ed-preview-pane');
   const showing=pv&&pv.style.display!=='none';
   const btn=document.getElementById('ed-preview');
-  if(showing){pv.style.display='none';host.style.display='';if(btn)btn.textContent='Vorschau';if(editorState.cm)editorState.cm.refresh();return;}
+  if(showing){pv.style.display='none';host.style.display='';if(btn)btn.textContent='Vorschau';if(editorState.cm)editorState.cm.requestMeasure();return;}
   if(!pv){pv=document.createElement('div');pv.id='ed-preview-pane';pv.className='ed-preview-pane';wrap.appendChild(pv);}
   const res=renderMarkdown(editorState.getValue());
   pv.innerHTML='<div class="note-content"><div class="md-body">'+res.html+'</div></div>';
@@ -3694,7 +3799,7 @@ function onPanelFsInput(v){const px=parseFloat(v)||12;localStorage.setItem('nexu
 function currentNoteW(){const n=parseInt(localStorage.getItem('nexus.noteW')||'',10);return (n>=300&&n<=4000)?n:0;}
 function applyNoteW(px){const s=document.documentElement.style;if(px>0)s.setProperty('--note-w',px+'px');else s.removeProperty('--note-w');}
 function setNoteW(px){px=Math.max(300,Math.min(4000,Math.round(px)));localStorage.setItem('nexus.noteW',String(px));applyNoteW(px);}
-function bumpNoteW(deltaY){let base=currentNoteW();if(!base){const el=document.querySelector('#note-area .note-content');base=el?el.offsetWidth:(document.getElementById('note-area')?.clientWidth||900);}setNoteW(base-deltaY*1.1);}
+function bumpNoteW(deltaY){let base=currentNoteW();if(!base){const el=document.querySelector('#note-area .note-content, #note-area .cm-editor');base=el?el.offsetWidth:(document.getElementById('note-area')?.clientWidth||900);}setNoteW(base-deltaY*1.1);}
 // Horizontale Notiz-Position (global, wie --note-w): als Bruchteil 0..1 des Scroll-Spielraums gespeichert
 // (0 = buendig rechts, 1 = buendig links, 0.5 = mittig). Bruchteil statt Pixel -> robust gegen Breiten-/Fenster-
 // aenderungen. Default 0.5 = mittig (bisheriges Verhalten beim allerersten Oeffnen).
