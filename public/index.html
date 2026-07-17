@@ -1962,7 +1962,12 @@ async function openFile(path,opts){
     if(ext==='.md'||ext==='.markdown'||ext===''){
       const raw=await fetch(fileUrl(path)).then(r=>r.text());
       renderMarkdownView(area,fname,raw,path);
-      applyNoteScroll(area,typeof _navScrollTarget==='number'?_navScrollTarget:0);
+      // Aus dem Editor gekommen? Dieselbe Zeile wieder an dieselbe Hoehe. Der Anker gilt nur
+      // einmal und nur fuer die Notiz, aus der er stammt.
+      const _ank=(_editorLeaveAnker&&_editorLeaveAnker.path===path)?_editorLeaveAnker:null;
+      _editorLeaveAnker=null;
+      const _ankTop=noteScrollFuerAnker(area,_ank);
+      applyNoteScroll(area,_ankTop!=null?_ankTop:(typeof _navScrollTarget==='number'?_navScrollTarget:0));
       queueSearchHit(area,opts&&opts.searchHit);   // R23: aus der Suche geoeffnet -> Fundstelle anspringen + markieren
       logActivity(folderColor(path.split('/')[0]||''),'read_note → <b>'+esc(fname)+'</b>','open');
     } else if(ext==='.html'||ext==='.htm'){
@@ -2347,6 +2352,9 @@ function lpBlockForLine(bloecke,zeile,strip){
 }
 //__LP_END__
 
+// Position beim Verlassen des Editors; traegt den Pfad mit, damit ein liegengebliebener
+// Anker (z.B. abgebrochene neue Notiz) nicht auf die naechste Notiz angewandt wird.
+let _editorLeaveAnker=null;
 let editorState=null; let _cmLoaded=null;
 // CodeMirror 6 LOKAL (public/vendor/cm6 + Import-Map im <head>) -> der Editor laeuft OFFLINE.
 // Vorher: CM5 5.65.16 vom CDN (jsdelivr), offline gab es nur die <textarea>.
@@ -2465,6 +2473,46 @@ function cm6LivePreview(m){
 // Quelltext nicht vorkommen: der "#"-Permalink in jeder Ueberschrift (.h-anchor), der
 // "Kopieren"-Knopf + Sprachlabel eines Codeblocks, das Falt-Dreieck eines Callouts und das
 // "✓" einer Checkbox. Ohne das sucht der Anker nach "#Bild-Einbettung..." und findet nie etwas.
+// Rueckrichtung des Ankers (Editor -> Leseansicht): Element suchen, dessen Text mit dem
+// markdown-befreiten Quelltext der Ankerzeile beginnt. Steigt wie noteAnkerEl in Listen ab.
+function noteElFuerText(wurzel,text){
+  const pre=text.slice(0,Math.min(text.length,44));
+  for(const c of wurzel.children){
+    if(/^(UL|OL|BLOCKQUOTE)$/.test(c.tagName)&&c.children.length){
+      const tief=noteElFuerText(c,text); if(tief)return tief;
+    }
+    if(noteBlockText(c).startsWith(pre))return c;
+  }
+  return null;
+}
+// Position im Editor: erste Zeile im Viewport mit genug Text (leere/kurze taugen nicht als
+// Anker) + ihr Abstand zur Oberkante des CM-Scrollers.
+function editorLeseAnker(){
+  if(!editorState||!editorState.cm)return null;
+  const cm=editorState.cm,sc=cm.scrollDOM;
+  const r=sc.getBoundingClientRect();
+  const pos=cm.posAtCoords({x:r.left+30,y:r.top+6});
+  if(pos==null)return null;
+  const doc=cm.state.doc;
+  let n=doc.lineAt(pos).number;
+  for(let i=0;i<60&&n<=doc.lines;i++,n++){
+    const ln=doc.line(n);
+    const t=lpNorm(stripInline(lpStripBlock(ln.text)));
+    if(t.length<4)continue;
+    const c=cm.coordsAtPos(ln.from);
+    return {text:t,off:Math.max(0,Math.round((c?c.top:r.top)-r.top)),path:editorState.path};
+  }
+  return null;
+}
+// Pixelziel fuer die Leseansicht aus einem Editor-Anker. null = kein Treffer -> der Aufrufer
+// faellt auf das normale Verhalten zurueck, statt blind nach oben zu springen.
+function noteScrollFuerAnker(area,anker){
+  if(!anker||!anker.text)return null;
+  const body=area.querySelector('.md-body'); if(!body)return null;
+  const el=noteElFuerText(body,anker.text); if(!el)return null;
+  const aTop=area.getBoundingClientRect().top;
+  return Math.max(0,Math.round(area.scrollTop+(el.getBoundingClientRect().top-aTop)-anker.off));
+}
 function noteBlockText(el){
   const k=el.cloneNode(true);
   k.querySelectorAll('.h-anchor,.cb-copy,.cb-lang,.fold,.task-cb').forEach(x=>x.remove());
@@ -2604,6 +2652,9 @@ function togglePreview(){
 async function cancelEditor(){
   if(isDirty()&&!(await uiConfirm('Ungespeicherte Änderungen verwerfen?')))return;
   const path=editorState&&editorState.path,wasNew=editorState&&editorState.isNew;
+  // Position merken, BEVOR editorState geleert wird - sonst landet man beim Beenden des
+  // Bearbeiten-Modus wieder ganz oben in der Notiz (Paul, 2026-07-17).
+  _editorLeaveAnker=editorLeseAnker();
   editorState=null;
   if(wasNew||!path){document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';setCrumb(esc(activeVault));}
   else openFile(path);
