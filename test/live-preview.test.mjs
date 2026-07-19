@@ -452,6 +452,79 @@ console.log('\nE4b – Scanner, Bild, Frontmatter\n');
   ok('Guard: --- nach dem Frontmatter wird HR-Widget', r.widgets.length === 1 && r.widgets[0].type === 'hr' && r.widgets[0].from === 39, r.widgets);
 }
 
+// ═══ E5: Wikilinks + Callouts ═══
+console.log('\nE5 – Wikilinks & Callouts\n');
+
+// ── 42) Wikilink ohne Alias: Klammern weg, Ziel sichtbar als lp-wikilink ──
+{
+  const t = 'Siehe [[START]] dazu';
+  const r = lpBuild(mkDoc(t), lpScanLine(t, 0), []);
+  ok('E5: [[ und ]] versteckt (2 Ranges)', r.hide.length === 2 && r.hide[0].from === 6 && r.hide[0].to === 8 && r.hide[1].from === 13 && r.hide[1].to === 15, r.hide);
+  ok('E5: "START" als lp-wikilink', r.marks.some(m => m.cls === 'lp-wikilink' && t.slice(m.from, m.to) === 'START'), r.marks);
+}
+
+// ── 43) Mit Alias: "Ziel|" verschwindet mit, sichtbar nur der Alias ───────
+{
+  const t = '[[START|zum Anfang]]';
+  const r = lpBuild(mkDoc(t), lpScanLine(t, 0), []);
+  ok('E5: 3 hide-Ranges ([[ + "START|" + ]])', r.hide.length === 3, r.hide);
+  ok('E5: sichtbar bleibt "zum Anfang"', r.marks.some(m => m.cls === 'lp-wikilink' && t.slice(m.from, m.to) === 'zum Anfang'), r.marks);
+}
+
+// ── 44) Mit #Anker: Label wie in renderWiki = "Ziel#Anker" ───────────────
+{
+  const t = '[[Notiz#Abschnitt]]';
+  const r = lpBuild(mkDoc(t), lpScanLine(t, 0), []);
+  ok('E5: "Notiz#Abschnitt" bleibt sichtbar', r.marks.some(m => m.cls === 'lp-wikilink' && t.slice(m.from, m.to) === 'Notiz#Abschnitt'), r.marks);
+}
+
+// ── 45) Embed: ![[ wird ⧉-Widget, Rest wie Wikilink ──────────────────────
+{
+  const t = 'Ein Embed: ![[START]]';
+  const r = lpBuild(mkDoc(t), lpScanLine(t, 0), []);
+  ok('E5: embed-Widget ersetzt "![[" ({11,14})', r.widgets.length === 1 && r.widgets[0].type === 'embed' && r.widgets[0].from === 11 && r.widgets[0].to === 14, r.widgets);
+  ok('E5: "]]" versteckt, "START" lp-wikilink', r.hide.length === 1 && r.marks.some(m => m.cls === 'lp-wikilink' && t.slice(m.from, m.to) === 'START'), { hide: r.hide, marks: r.marks });
+}
+
+// ── 46) Reveal: Cursor im Wikilink -> Klammern sichtbar, Stil bleibt ──────
+{
+  const t = '[[START|zum Anfang]]';
+  const r = lpBuild(mkDoc(t), lpScanLine(t, 0), [{ from: 4, to: 4 }]);
+  ok('E5: revealed -> nichts versteckt, lp-wikilink bleibt', r.hide.length === 0 && r.widgets.length === 0 && r.marks.some(m => m.cls === 'lp-wikilink'), r.hide);
+}
+
+// ── 47) Callout: Kennung -> Icon-Widget, Zeilen lp-callout ────────────────
+{
+  const t = '> [!note] Callout-Titel\n> Callout-Inhalt hier';
+  const doc = mkDoc(t);
+  const r = lpBuild(doc, [{ name: 'Blockquote', from: 0, to: t.length }], []);
+  ok('E5: beide Zeilen lp-callout', r.lines.length === 2 && r.lines.every(l => l.cls === 'lp-callout'), r.lines);
+  ok('E5: callout-Widget ersetzt "[!note] " ({2,10}, typ note)',
+    r.widgets.length === 1 && r.widgets[0].type === 'callout' && r.widgets[0].from === 2 && r.widgets[0].to === 10 && r.widgets[0].data.typ === 'note', r.widgets);
+}
+
+// ── 48) Callout mit Fold-Suffix + Grossschreibung -> typ normalisiert ─────
+{
+  const t = '> [!TIP]+ Aufklappbar';
+  const r = lpBuild(mkDoc(t), [{ name: 'Blockquote', from: 0, to: t.length }], []);
+  ok('E5: "[!TIP]+" -> typ "tip"', r.widgets.length === 1 && r.widgets[0].data.typ === 'tip', r.widgets);
+}
+
+// ── 49) Callout revealed: Kennung roh, Zeilen-Styling bleibt ──────────────
+{
+  const t = '> [!note] Titel\n> Inhalt';
+  const r = lpBuild(mkDoc(t), [{ name: 'Blockquote', from: 0, to: t.length }], [{ from: 5, to: 5 }]);
+  ok('E5: Cursor auf Titelzeile -> kein Icon-Widget, lp-callout bleibt',
+    r.widgets.length === 0 && r.lines.every(l => l.cls === 'lp-callout'), r.widgets);
+}
+
+// ── 50) Normales Zitat bleibt lp-quote (kein Callout-Fehlalarm) ───────────
+{
+  const t = '> Ein normales Zitat';
+  const r = lpBuild(mkDoc(t), [{ name: 'Blockquote', from: 0, to: t.length }], []);
+  ok('E5: Zitat ohne [!..] -> lp-quote', r.lines.length === 1 && r.lines[0].cls === 'lp-quote', r.lines);
+}
+
 // ═══ Anker Leseansicht <-> Editor (Paul, 2026-07-17: "wenn ich in Zeile 30 bin und auf
 //     Bearbeiten klicke, soll Zeile 30 an derselben Stelle stehen") ═══
 console.log('\nAnker Leseansicht <-> Editor\n');

@@ -598,6 +598,14 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
    ohne display:inline-block - eine Mark-Decoration darf mitten im Umbruch liegen). */
 .editor-host .lp-mark{background:rgba(234,179,8,.28);color:#ffe9a8;border-radius:3px;padding:0 3px}
 .editor-host .lp-tag{color:var(--accent-tx);background:var(--accent-12);border-radius:5px;padding:0 7px;font-size:.85em}
+/* E5: Wikilink im a.wikilink-Look (Z.220); Callout-Zeilen generisch (die per-Typ-Farbe
+   traegt das Icon - ein umrandeter Block wie .callout ist zeilenbasiert nicht abbildbar).
+   :has() macht die Titelzeile fett wie .callout-title. */
+.editor-host .lp-wikilink{color:#7ec8e3;border-bottom:1px solid rgba(126,200,227,.32);cursor:pointer}
+.editor-host .lp-embed{color:#7ec8e3;opacity:.8}
+.editor-host .cm-line.lp-callout{border-left:3px solid var(--accent);background:var(--panel);padding-left:16px}
+.editor-host .cm-line.lp-callout:has(.lp-callout-icon){font-weight:600}
+.editor-host .lp-callout-icon{display:inline-block;width:18px;text-align:center}
 /* Die Rohsyntax-Zeile (Cursor drin) bekommt KEINE Sonderfarbe – sie soll sich nicht
    bewegen, nur die Marker tauchen wieder auf. */
 /* CM6 bringt sein restliches CSS selbst mit (style-mod injiziert es zur Laufzeit) ->
@@ -2369,14 +2377,40 @@ function lpBuild(doc,tokens,reveal){
         if(!lpRevealed(t.parentFrom,t.parentTo,reveal)){hide.push({from:t.from,to:t.from+2});hide.push({from:t.to-2,to:t.to});}
         continue;
       }
+      // E5: Wikilink [[Ziel|Alias]] - sichtbar bleibt der Alias (ohne Alias: das Ziel,
+      // inkl. #Anker, genau wie das label in renderWiki). ![[Embed]] bekommt statt der
+      // "![[" ein kompaktes Einbettungs-Zeichen (echte Transklusion: E6). Aufgeloest
+      // (resolveWiki) wird NICHT hier - der Kern kennt keinen Index; Ctrl+Klick macht
+      // das ViewPlugin.
+      const inner=(t.data&&t.data.inner)||'';
+      const emb=!!(t.data&&t.data.embed);
+      const wOpen=t.from+(emb?3:2),wClose=t.to-2;
+      if(lpRevealed(t.parentFrom,t.parentTo,reveal)){marks.push({from:wOpen,to:wClose,cls:'lp-wikilink'});continue;}
+      const pipe=inner.indexOf('|');
+      if(emb)widgets.push({from:t.from,to:wOpen,type:'embed',data:{}});
+      else hide.push({from:t.from,to:wOpen});
+      if(pipe>=0)hide.push({from:wOpen,to:wOpen+pipe+1});
+      hide.push({from:wClose,to:t.to});
+      marks.push({from:pipe>=0?wOpen+pipe+1:wOpen,to:wClose,cls:'lp-wikilink'});
       continue;
     }
     const cls=LP_LINE[t.name];
     if(cls){lines.push({from:doc.lineAt(t.from).from,cls});continue;}
     if(t.name==='Blockquote'){
       // Blockquote kann mehrzeilig sein -> jede Zeile bekommt die Klasse.
+      // E5: Beginnt die erste Zeile mit "[!typ]" (Muster wie renderQuote), ist es ein
+      // Callout: eigene Zeilenklasse, die Kennung wird durch ein Icon-Widget ersetzt.
+      // Der Typ geht ROH in data - Farbe/Zeichen kennt erst das ViewPlugin (CALLOUTS-
+      // Map liegt ausserhalb des LP-Kerns, der Kern bleibt headless importierbar).
+      const first=doc.lineAt(t.from);
+      const ftext=doc.sliceString(first.from,first.to);
+      const km=/^(\s{0,3}>\s?)\[!([\w-]+)\]([+-]?)(\s?)/.exec(ftext);
+      const qcls=km?'lp-callout':'lp-quote';
       let p=t.from;
-      for(;;){const ln=doc.lineAt(p);lines.push({from:ln.from,cls:'lp-quote'});if(ln.to>=t.to)break;p=ln.to+1;}
+      for(;;){const ln=doc.lineAt(p);lines.push({from:ln.from,cls:qcls});if(ln.to>=t.to)break;p=ln.to+1;}
+      if(km&&!lpRevealed(first.from,first.to,reveal)){
+        widgets.push({from:first.from+km[1].length,to:first.from+km[0].length,type:'callout',data:{typ:km[2].toLowerCase()}});
+      }
       continue;
     }
     // E4a: Zeilen-Widgets Bullet/Checkbox/HR. Reveal ZEILENWEISE (wie ##/> in E1):
@@ -2592,7 +2626,14 @@ function cm6LivePreview(m){
       });
       return s;
     },
-    hr:()=>{const s=document.createElement('span');s.className='lp-hr';return s;}
+    hr:()=>{const s=document.createElement('span');s.className='lp-hr';return s;},
+    // E5: Einbettungs-Zeichen fuer ![[..]] (echte Transklusion kommt in E6).
+    embed:()=>{const s=document.createElement('span');s.className='lp-embed';s.textContent='⧉ ';s.title='Einbettung';return s;},
+    // E5: Callout-Icon ersetzt die [!typ]-Kennung; Farbe/Zeichen aus der CALLOUTS-Map
+    // der Leseansicht (hier, nicht im Kern - der bleibt headless).
+    callout:(spec)=>{const s=document.createElement('span');s.className='lp-callout-icon';
+      const c=(typeof CALLOUTS!=='undefined')?CALLOUTS[spec.data.typ]:null;
+      s.textContent=(c?c.i:'✎')+' ';if(c)s.style.color=c.c;s.title='[!'+spec.data.typ+']';return s;}
   };
   class LpWidget extends WidgetType{
     constructor(spec){super();this.spec=spec;this.key=spec.type+'|'+JSON.stringify(spec.data);}
@@ -2655,7 +2696,26 @@ function cm6LivePreview(m){
     // waere auch fetter Text mit den Pfeiltasten nicht mehr durchquerbar.
     provide:p=>EditorView.atomicRanges.of(v=>v.plugin(p)?.atom||Decoration.none)
   });
-  return plugin;
+  // E5: Ctrl+Klick auf einen Wikilink folgt ihm - in den CENTER-SPLIT, nicht openFile:
+  // der Editor (evtl. mit ungespeicherten Aenderungen) bleibt unangetastet, kein
+  // maybeLeaveEditor-Dialog mitten im Schreibfluss. Normaler Klick setzt nur den Cursor.
+  const linkKlick=EditorView.domEventHandlers({mousedown:(e,view)=>{
+    if(!(e.ctrlKey||e.metaKey))return false;
+    const pos=view.posAtCoords({x:e.clientX,y:e.clientY});
+    if(pos==null)return false;
+    const ln=view.state.doc.lineAt(pos);
+    for(const tk of lpScanLine(ln.text,ln.from)){
+      if(tk.name==='Wikilink'&&pos>=tk.from&&pos<=tk.to){
+        const ziel=tk.data.inner.split('|')[0].split('#')[0].trim();
+        const p=(typeof resolveWiki==='function')?resolveWiki(ziel):null;
+        if(p){e.preventDefault();openCenterSplit(p);}
+        else toast('Notiz nicht gefunden: '+ziel,'err');
+        return true;
+      }
+    }
+    return false;
+  }});
+  return [plugin,linkKlick];
 }
 // Liest die aktuelle Leseposition: erster Block, dessen Unterkante noch im Viewport liegt,
 // plus sein Abstand zur Viewport-Oberkante. Gleiche Idee wie withScrollAnchor (Lesemodus R17),
