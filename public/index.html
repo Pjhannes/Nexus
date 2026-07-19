@@ -153,7 +153,7 @@ body.col-resizing{cursor:col-resize;user-select:none}
    wuerde die Mittel-Spalte per Auto-Platzierung im ersten (0px-)Track landen -> 0 Breite, kein Text. */
 .app.reading .main{grid-template-columns:minmax(0,1fr) !important}
 .app.reading .main>.col:nth-child(3){grid-column:1 / -1 !important;min-width:0 !important}
-.app.reading .side,.app.reading .resizer,.app.reading .right-panel,.app.reading #tabbar,.app.reading .statusbar,.app.reading #note-edit-fab,.app.reading #rz-center,.app.reading #note-pane2{display:none !important}
+.app.reading .side,.app.reading .resizer,.app.reading .right-panel,.app.reading #tabbar,.app.reading .statusbar,.app.reading #note-edit-fab,.app.reading #edit-controls,.app.reading #rz-center,.app.reading #note-pane2{display:none !important}
 .app.reading #note-area{flex:1 1 auto !important;padding-top:18px !important;scroll-padding-top:18px !important}
 .app.reading .note-content{width:100% !important;max-width:none !important;margin-inline:0 !important;padding:24px clamp(28px,8vw,160px) 120px !important}
 .app.reading .md-body{font-size:calc(var(--reader-fs,14.5px) + 2px) !important}
@@ -546,37 +546,76 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 /* ── Editor (Bearbeiten/Speichern) ── */
 .note-area{flex:1}
 .editor-wrap{display:flex;flex-direction:column;height:100%}
-.editor-toolbar{display:flex;align-items:center;gap:10px;padding:9px 18px;border-bottom:1px solid var(--border);background:rgba(8,10,18,.6);flex-shrink:0}
-.editor-toolbar .ed-name{font-size:13px;color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
-.editor-toolbar .ed-dirty{font-size:11px;color:#febc2e;white-space:nowrap}
-.editor-toolbar .ft-spacer{flex:1}
+/* E3: Die .editor-toolbar ist weg (Layout-Shift beim Moduswechsel) - die Buttons leben jetzt
+   im #edit-controls-Overlay an der Stelle des Bearbeiten-FABs (s.u. bei #note-edit-fab). */
 .ed-btn{font-size:12px;color:var(--dim);background:var(--panel2);border:1px solid var(--border);border-radius:7px;padding:5px 12px;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
 .ed-btn:hover{color:var(--text);border-color:var(--accent)}
-.ed-btn kbd{font-size:9.5px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--dim)}
 .ed-btn.ghost{background:transparent}
+.ed-dirty{font-size:11px;color:#febc2e;white-space:nowrap}
+.ed-dirty:not(:empty){margin-left:2px}
 /* CM6 scrollt selbst (.cm-scroller) -> der Host darf NICHT mitscrollen. */
 .editor-host{flex:1;min-height:0;overflow:hidden}
-/* Breite an die Notiz koppeln: gleiche Spaltenbreite wie die Leseansicht, und Strg+Rad
-   (bumpNoteW -> --note-w) zoomt den Editor genauso wie jede Notiz. Begrenzt wird der
-   GANZE .cm-editor (Zeilennummern + Text wandern zusammen), nicht .cm-content - eine
-   width/margin-Formel auf .cm-content wuerde CM6s Umbruch-Messung stoeren. */
-.editor-host .cm-editor{height:100%;background:transparent;color:var(--text);max-width:var(--note-w,min(1000px,100%));margin-inline:auto}
+/* E2: Breite/Padding EXAKT wie .note-content (Z.144) - dieselbe Formel, dasselbe Padding,
+   auf .cm-content. margin am .cm-content ist das offizielle CM6-Zentrier-Rezept (die
+   fruehere Warnung hier war Vorsicht aus Phase 0, im Browser widerlegt: posAtCoords,
+   Klick-Positionierung und Umbruch-Messung arbeiten mit margins am Content korrekt).
+   Ohne Gutter (Zeilennummern seit E2 weg) wandert damit der Textanfang pixelgleich
+   zur Leseansicht, und Strg+Rad (bumpNoteW -> --note-w) zoomt weiter beide gleich. */
+.editor-host .cm-editor{height:100%;background:transparent;color:var(--text)}
+/* flex:none ist PFLICHT: .cm-content ist Flex-Item im .cm-scroller und CM6s
+   .cm-lineWrapping setzt flex-shrink:1 - ohne flex:none wird die width-Formel als
+   flex-basis auf Containerbreite geschrumpft und Strg+Rad-Zoom griffe nicht. */
+.editor-host .cm-content{flex:none;width:var(--note-w,min(1000px,100%));max-width:none;margin-inline:max(0px,100% - var(--note-w,min(1000px,100%)));padding:16px 46px 90px}
 .editor-host .cm-scroller::-webkit-scrollbar{width:6px}
-/* ── R22 Phase 1: Live-Preview ──
-   Absichtlich an die .md-body-Werte angelehnt (code/strong/em/blockquote oben), damit
-   Editor und Leseansicht gleich aussehen. Groessen in em, nicht px: der Editor haengt an
-   --editor-fs und Strg+Rad. */
-.editor-host .cm-line.lp-h1{font-size:1.75em;font-weight:700;color:var(--accent-tx);line-height:1.3}
-.editor-host .cm-line.lp-h2{font-size:1.45em;font-weight:700;color:var(--accent-tx);line-height:1.35}
-.editor-host .cm-line.lp-h3{font-size:1.22em;font-weight:650;color:var(--accent-tx)}
-.editor-host .cm-line.lp-h4{font-size:1.08em;font-weight:650;color:var(--accent-tx)}
-.editor-host .cm-line.lp-h5,.editor-host .cm-line.lp-h6{font-weight:650;color:var(--accent-tx)}
-.editor-host .cm-line.lp-quote{border-left:3px solid var(--accent);background:var(--accent-04);padding-left:12px}
-.editor-host .lp-strong{color:var(--text);font-weight:650}
+/* ── R22 Live-Preview (E2: 1:1 die .md-body-Werte, Z.201-229) ──
+   Groessen/Farben/Gewicht EXAKT wie die Leseansicht (h1-h6: .md-h Z.203-206), damit der
+   Editor von der Notiz nicht unterscheidbar ist. Abstaende als PADDING, nie margin:
+   CM6s Hoehen-Schaetzung ignoriert vertikale margins auf Zeilen -> die Scrollmath
+   springt; padding/border gehen in die gemessene Hoehe ein. Der .5em-Abstand NACH
+   einer Ueberschrift (margin-bottom der Leseansicht) ist konzeptbedingt nicht abbildbar
+   (die Folgezeile ist eine eigene cm-line) - im Quelltext folgt dort ohnehin meist
+   eine Leerzeile. */
+.editor-host .cm-line.lp-h1{font-size:24px;font-weight:650;line-height:1.3;border-bottom:1px solid var(--border);padding-top:1.5em;padding-bottom:.3em}
+.editor-host .cm-line.lp-h2{font-size:20px;font-weight:650;line-height:1.3;border-bottom:1px solid rgba(255,255,255,.05);padding-top:1.5em;padding-bottom:.25em}
+.editor-host .cm-line.lp-h3{font-size:17px;font-weight:650;line-height:1.3;padding-top:1.5em}
+.editor-host .cm-line.lp-h4{font-size:15px;font-weight:650;line-height:1.3;padding-top:1.5em}
+.editor-host .cm-line.lp-h5{font-size:13.5px;font-weight:650;line-height:1.3;color:var(--dim);padding-top:1.5em}
+.editor-host .cm-line.lp-h6{font-size:12.5px;font-weight:650;line-height:1.3;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;padding-top:1.5em}
+.editor-host .cm-line.lp-quote{border-left:3px solid var(--accent);background:var(--accent-04);padding-left:16px}
+.editor-host .lp-strong{color:#fff;font-weight:650}
 .editor-host .lp-em{color:#e6e9f2;font-style:italic}
-.editor-host .lp-code{background:rgba(255,255,255,.07);border-radius:5px;padding:.12em .4em;font-size:.86em;color:#e6d6a8}
+.editor-host .lp-code{background:rgba(255,255,255,.07);border-radius:5px;padding:.12em .4em;font-family:Consolas,'SF Mono',monospace;font-size:.86em;color:#e6d6a8}
 .editor-host .lp-link{color:var(--accent-tx);border-bottom:1px solid var(--accent-30);cursor:pointer}
 .editor-host .lp-strike{text-decoration:line-through;color:var(--dim)}
+/* E4a: Widgets. lp-taskcb erbt den .task-cb-Look der Leseansicht (Z.215); inline-flex
+   verhindert zugleich, dass das line-through der Done-Zeile durchs Kaestchen laeuft
+   (text-decoration propagiert nicht in atomare Inline-Boxen). */
+.editor-host .lp-bullet{color:var(--text)}
+.editor-host .lp-taskcb{display:inline-flex;vertical-align:-2px;margin:0 1px 0 0;cursor:pointer}
+.editor-host .lp-hr{display:inline-block;width:100%;border-top:1px solid var(--border);vertical-align:middle}
+.editor-host .cm-line.lp-task-done{color:var(--dim);text-decoration:line-through}
+/* E4b: Highlight + Tag im Look der Leseansicht (.md-body mark Z.224 / .md-tag Z.232;
+   ohne display:inline-block - eine Mark-Decoration darf mitten im Umbruch liegen). */
+.editor-host .lp-mark{background:rgba(234,179,8,.28);color:#ffe9a8;border-radius:3px;padding:0 3px}
+.editor-host .lp-tag{color:var(--accent-tx);background:var(--accent-12);border-radius:5px;padding:0 7px;font-size:.85em}
+/* E5: Wikilink im a.wikilink-Look (Z.220); Callout-Zeilen generisch (die per-Typ-Farbe
+   traegt das Icon - ein umrandeter Block wie .callout ist zeilenbasiert nicht abbildbar).
+   :has() macht die Titelzeile fett wie .callout-title. */
+.editor-host .lp-wikilink{color:#7ec8e3;border-bottom:1px solid rgba(126,200,227,.32);cursor:pointer}
+.editor-host .lp-embed{color:#7ec8e3;opacity:.8}
+.editor-host .cm-line.lp-callout{border-left:3px solid var(--accent);background:var(--panel);padding-left:16px}
+.editor-host .cm-line.lp-callout:has(.lp-callout-icon){font-weight:600}
+.editor-host .lp-callout-icon{display:inline-block;width:18px;text-align:center}
+/* E6: Codeblock-Zeilen im .code-block-Look (Z.239/244), Tabellen mono + Pipes gedimmt,
+   Properties-Chip, Bildvorschau (width:100% wrappt das Punkt-Widget auf eine eigene
+   visuelle Zeile), Mathe. */
+.editor-host .cm-line.lp-codeblock{background:rgba(0,0,0,.22);font-family:Consolas,'SF Mono',monospace;font-size:12.5px;line-height:1.55;color:var(--accent-tx)}
+.editor-host .cm-line.lp-table{font-family:Consolas,'SF Mono',monospace;font-size:.92em}
+.editor-host .lp-dim{color:var(--dim)}
+.editor-host .lp-props{display:inline-block;color:var(--dim);background:var(--panel2);border:1px solid var(--border);border-radius:7px;padding:2px 10px;font-size:12px;cursor:pointer;margin:4px 0}
+.editor-host .lp-img-widget{display:inline-block;width:100%}
+.editor-host .lp-img{max-width:min(480px,100%);border-radius:10px;border:1px solid var(--border);margin:6px 0;display:block}
+.editor-host .lp-math{color:#e6d6a8}
 /* Die Rohsyntax-Zeile (Cursor drin) bekommt KEINE Sonderfarbe – sie soll sich nicht
    bewegen, nur die Marker tauchen wieder auf. */
 /* CM6 bringt sein restliches CSS selbst mit (style-mod injiziert es zur Laufzeit) ->
@@ -592,8 +631,11 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 /* Bearbeiten-Button fixiert: ganz rechts, auf gleicher Hoehe wie die Tabs (im Tab-Band, --tab-h).
    Liegt als Overlay in der .col (wie die .tabbar), bleibt also beim Scrollen oben rechts. Optik unveraendert. */
 #note-edit-fab{position:absolute;top:calc(var(--tab-h)/2);right:28px;transform:translateY(-50%);z-index:21;margin:0;transition:background-color .15s,border-color .15s;backdrop-filter:blur(8px) saturate(1.3);-webkit-backdrop-filter:blur(8px) saturate(1.3)}
+/* E3: Editiermodus-Cluster (Speichern/Vorschau/x) an EXAKT der FAB-Position - gleiches
+   Overlay, null Layout-Verschiebung beim Wechsel Lesen<->Bearbeiten. */
+#edit-controls{position:absolute;top:calc(var(--tab-h)/2);right:28px;transform:translateY(-50%);z-index:21;display:flex;gap:8px;align-items:center;backdrop-filter:blur(8px) saturate(1.3);-webkit-backdrop-filter:blur(8px) saturate(1.3)}
 /* Studio: rechtes Panel schwebt ueber der .col -> Button links davon halten */
-.app[data-layout="softdark"] #note-edit-fab{right:calc(var(--col-r,360px) + 38px)}
+.app[data-layout="softdark"] #note-edit-fab,.app[data-layout="softdark"] #edit-controls{right:calc(var(--col-r,360px) + 38px)}
 .ovl-msg{padding:18px;font-size:13.5px;line-height:1.5;white-space:pre-line;color:var(--text)}
 .pk-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:13.5px;color:var(--text)}
 .pk-item:hover{background:var(--panel2)}
@@ -888,6 +930,13 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
     <div class="col">
       <div class="tabbar" id="tabbar"></div>
       <button class="ed-edit-btn" id="note-edit-fab" title="Bearbeiten (Ctrl+E)" style="display:none">&#9998; Bearbeiten</button>
+      <!-- E3: Editiermodus-Overlay an EXAKT der FAB-Stelle - ersetzt die alte .editor-toolbar,
+           damit der Wechsel Lesen<->Bearbeiten keinen Layout-Shift erzeugt. -->
+      <span id="edit-controls" style="display:none">
+        <button class="ed-btn" id="ed-save" title="Speichern (Ctrl+S)">Speichern<span class="ed-dirty" id="ed-dirty"></span></button>
+        <button class="ed-btn" id="ed-preview" title="Gerenderte Vorschau">Vorschau</button>
+        <button class="ed-btn ghost" id="ed-cancel" title="Bearbeiten beenden">&#10005;</button>
+      </span>
       <div class="center-body" id="center-body">
         <div class="note-area" id="note-area">
           <div class="placeholder"><span class="big">&#9670;</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>
@@ -2262,29 +2311,210 @@ async function loadBacklinks(path){
 // Namen aus @lezer/markdown. ACHTUNG: der Ueberschriften-Marker heisst HeaderMark –
 // "HeadingMark" gibt es NICHT. Ein Tippfehler hier greift still nie.
 const LP_HIDE=new Set(['HeaderMark','EmphasisMark','CodeMark','LinkMark','StrikethroughMark','QuoteMark']);
-const LP_MARK={StrongEmphasis:'lp-strong',Emphasis:'lp-em',InlineCode:'lp-code',Strikethrough:'lp-strike',Link:'lp-link'};
+// Image mit dabei (E4b): der Alt-Text eines ![alt](url) bleibt sichtbar und sieht aus wie
+// ein Link; URL+Klammern verschwinden (istLinkTeil unten prueft auch parent==='Image').
+const LP_MARK={StrongEmphasis:'lp-strong',Emphasis:'lp-em',InlineCode:'lp-code',Strikethrough:'lp-strike',Link:'lp-link',Image:'lp-link'};
 const LP_LINE={ATXHeading1:'lp-h1',ATXHeading2:'lp-h2',ATXHeading3:'lp-h3',ATXHeading4:'lp-h4',ATXHeading5:'lp-h5',ATXHeading6:'lp-h6'};
+// Marker, deren Reveal-Kontext die ZEILE ist (Marker steht am Zeilenanfang; ListMark/
+// TaskMarker schon jetzt gelistet - sie werden erst mit den Widgets (E4) versteckt).
+const LP_LINE_MARK=new Set(['HeaderMark','QuoteMark','ListMark','TaskMarker']);
 
 function lpRevealed(from,to,reveal){for(const r of reveal){if(from<=r.to&&to>=r.from)return true;}return false;}
 
+// E4b: Pseudo-Tokens fuer Konstrukte, die @lezer/markdown NICHT parst: Wikilinks [[..]],
+// ==Highlight== und #Tags. Reiner Zeilen-Scanner in Lezer-Token-Form; das ViewPlugin
+// scannt nur die Zeilen der visibleRanges (51-MB-sicher) und merged VOR lpBuild in die
+// Token-Liste. parentFrom/To zeigen aufs Konstrukt selbst -> Konstrukt-Reveal (E1) gratis.
+// Bewusst KEIN MatchDecorator (baut am puren Kern vorbei) und KEINE Lezer-Extension
+// (InlineContext fummelig, [[ kollidiert mit dem Link-Parser). Regexes fuer Tag und
+// Highlight sind 1:1 die der Leseansicht (mdInline) - gleiche Erkennung beider Seiten.
+function lpScanLine(text,off){
+  const out=[];let m;
+  const wiki=/(!?)\[\[([^\[\]\n]+?)\]\]/g;
+  while((m=wiki.exec(text))){const from=off+m.index,to=from+m[0].length;
+    out.push({name:'Wikilink',from,to,parent:null,parentFrom:from,parentTo:to,data:{embed:m[1]==='!',inner:m[2]}});}
+  const hi=/==([^=\n]+?)==/g;
+  while((m=hi.exec(text))){const from=off+m.index,to=from+m[0].length;
+    out.push({name:'Highlight',from,to,parent:null,parentFrom:from,parentTo:to,data:{}});}
+  const tag=/(^|\s)#([\p{L}\p{N}_][\p{L}\p{N}_/-]*)/gu;
+  while((m=tag.exec(text))){const from=off+m.index+m[1].length,to=from+1+m[2].length;
+    out.push({name:'Tag',from,to,parent:null,parentFrom:from,parentTo:to,data:{tag:m[2]}});}
+  // E6: Inline-Mathe - Regex 1:1 aus mdInline ($ nicht neben Whitespace, kein $5-und-$10-
+  // Fehlalarm). Block-$$ ueber mehrere Zeilen bleibt bewusst roh (Zeilen-Scanner).
+  const math=/\$(?!\s)([^$\n]+?)(?<!\s)\$/g;
+  while((m=math.exec(text))){const from=off+m.index,to=from+m[0].length;
+    out.push({name:'MathInline',from,to,parent:null,parentFrom:from,parentTo:to,data:{tex:m[1]}});}
+  return out;
+}
+
+// E4b: Frontmatter-Ende (0 = kein Frontmatter). Der Bereich zwischen den --- bleibt
+// IMMER roh: ohne Frontmatter-Extension parst Lezer "title: X" + "---" als Setext-
+// Ueberschrift, deren HeaderMark-"---" heute schon versteckt wird - und ein HR-Widget
+// (E4a) wuerde den Trenner ganz ersetzen. Nur der Dokumentanfang wird gescannt (Cap 100
+// Zeilen); der Fortschritts-Check faengt das Dokumentende in Stub UND CM6-Text ab.
+function lpFrontmatterEnd(doc){
+  const first=doc.lineAt(0);
+  if(doc.sliceString(first.from,first.to)!=='---')return 0;
+  let pos=first.to+1;
+  for(let i=0;i<100;i++){
+    let ln;try{ln=doc.lineAt(pos);}catch(e){return 0;}
+    if(ln.from<pos)return 0;                        // kein Fortschritt -> Dokumentende
+    const s=doc.sliceString(ln.from,ln.to);
+    if(/^(---|\.\.\.)\s*$/.test(s))return ln.to;
+    pos=ln.to+1;
+  }
+  return 0;
+}
+
+// E6: Beschreibung des kollabierten Eigenschaften-Widgets (null = keins: kein Frontmatter
+// oder Cursor drin -> roh). NICHT Teil von lpBuild: das Widget ersetzt Zeilenumbrueche,
+// und solche Decorations verbietet CM6 aus ViewPlugins - es kommt deshalb aus einem
+// StateField (cm6LivePreview), das diese pure Funktion aufruft. n = ":"-Zeilen.
+function lpPropsWidget(doc,reveal){
+  const fmEnd=lpFrontmatterEnd(doc);
+  if(!fmEnd||lpRevealed(0,fmEnd,reveal))return null;
+  let n=0,pos=doc.lineAt(0).to+1;
+  for(let i=0;i<100;i++){const ln=doc.lineAt(pos);if(ln.to>=fmEnd)break;if(doc.sliceString(ln.from,ln.to).includes(':'))n++;pos=ln.to+1;}
+  return {from:0,to:fmEnd,type:'props',data:{n}};
+}
+
 function lpBuild(doc,tokens,reveal){
-  const hide=[],marks=[],lines=[];
+  const hide=[],marks=[],lines=[],widgets=[];
+  // E4a: ListMark ("-") wartet, ob auf derselben Zeile ein TaskMarker ("[x]") folgt -
+  // dann werden beide zusammen EIN Checkbox-Widget; sonst wird der Marker ein Bullet.
+  // widgets = reine DATEN ({from,to,type,data}); zu DOM materialisiert sie erst das
+  // ViewPlugin (LpWidget) - so bleibt der Kern headless testbar.
+  let pendingBullet=null;
+  const flushBullet=()=>{if(pendingBullet){widgets.push({from:pendingBullet.from,to:pendingBullet.to,type:'bullet',data:{}});pendingBullet=null;}};
+  // E4b: Frontmatter bleibt komplett roh; in Code-Bereichen gilt kein Pseudo-Markdown
+  // (die Leseansicht rendert dort auch roh - lpScanLine kennt den Kontext nicht).
+  const fmEnd=lpFrontmatterEnd(doc);
+  const codeRanges=[];
+  for(const t of tokens)if(t.name==='InlineCode'||t.name==='FencedCode'||t.name==='CodeBlock'||t.name==='CodeText')codeRanges.push(t);
+  const inCode=(a,b)=>{for(const r of codeRanges)if(a<r.to&&b>r.from)return true;return false;};
   for(const t of tokens){
+    if(t.from<fmEnd)continue;
+    // E6: Codeblock-Zeilen bekommen den .code-block-Look; die ```-Fences versteckt schon
+    // das generische CodeMark-hide (Reveal-Kontext = ganzer Block).
+    if(t.name==='FencedCode'){
+      let p=t.from;
+      for(;;){const ln=doc.lineAt(p);lines.push({from:ln.from,cls:'lp-codeblock'});if(ln.to>=t.to)break;p=ln.to+1;}
+      continue;
+    }
+    // E6: Tabellen-Zeilen in Mono (Spalten stehen buendig), Pipes gedimmt. BEWUSST kein
+    // editierbares Tabellen-Widget (Mehrwochenprojekt, kollidiert mit atomicRanges) -
+    // echte Tabellenbearbeitung bleibt Leseansicht/Vorschau.
+    if(t.name==='Table'){
+      let p=t.from;
+      for(;;){const ln=doc.lineAt(p);lines.push({from:ln.from,cls:'lp-table'});
+        const s=doc.sliceString(ln.from,ln.to);
+        for(let i=0;i<s.length;i++)if(s[i]==='|')marks.push({from:ln.from+i,to:ln.from+i+1,cls:'lp-dim'});
+        if(ln.to>=t.to)break;p=ln.to+1;}
+      continue;
+    }
+    // E4b: Pseudo-Tokens aus lpScanLine (Wikilink kommt in E5 dran).
+    if(t.name==='Highlight'||t.name==='Tag'||t.name==='Wikilink'||t.name==='MathInline'){
+      if(inCode(t.from,t.to))continue;
+      if(t.name==='Tag'){marks.push({from:t.from,to:t.to,cls:'lp-tag'});continue;}
+      // E6: $tex$ wird ein KaTeX-Widget (Rendering async im ViewPlugin); Cursor im
+      // Konstrukt -> roher Quelltext.
+      if(t.name==='MathInline'){
+        if(!lpRevealed(t.parentFrom,t.parentTo,reveal))widgets.push({from:t.from,to:t.to,type:'math',data:{tex:t.data.tex}});
+        continue;
+      }
+      if(t.name==='Highlight'){
+        // Styling bleibt auch bei Reveal (wie lp-strong); nur die == verschwinden.
+        marks.push({from:t.from+2,to:t.to-2,cls:'lp-mark'});
+        if(!lpRevealed(t.parentFrom,t.parentTo,reveal)){hide.push({from:t.from,to:t.from+2});hide.push({from:t.to-2,to:t.to});}
+        continue;
+      }
+      // E5: Wikilink [[Ziel|Alias]] - sichtbar bleibt der Alias (ohne Alias: das Ziel,
+      // inkl. #Anker, genau wie das label in renderWiki). ![[Embed]] bekommt statt der
+      // "![[" ein kompaktes Einbettungs-Zeichen (echte Transklusion: E6). Aufgeloest
+      // (resolveWiki) wird NICHT hier - der Kern kennt keinen Index; Ctrl+Klick macht
+      // das ViewPlugin.
+      const inner=(t.data&&t.data.inner)||'';
+      const emb=!!(t.data&&t.data.embed);
+      const wOpen=t.from+(emb?3:2),wClose=t.to-2;
+      // E6: Bild-Embeds (![[x.png]]) bekommen eine echte Vorschau als Punkt-Widget am
+      // Zeilenende - sie bleibt AUCH bei Reveal stehen (wie Obsidian: beim Editieren
+      // der Zeile sieht man das Bild weiter). Endungsliste = IMG_EXT der Leseansicht;
+      // hier als Regex, der Kern kennt keine App-Konstanten.
+      if(emb&&/\.(png|jpe?g|gif|webp|svg|bmp|avif|ico)$/i.test(inner.split('|')[0].trim())){
+        const ln=doc.lineAt(t.to);
+        widgets.push({from:ln.to,to:ln.to,type:'img',data:{wiki:inner.split('|')[0].trim()}});
+      }
+      if(lpRevealed(t.parentFrom,t.parentTo,reveal)){marks.push({from:wOpen,to:wClose,cls:'lp-wikilink'});continue;}
+      const pipe=inner.indexOf('|');
+      if(emb)widgets.push({from:t.from,to:wOpen,type:'embed',data:{}});
+      else hide.push({from:t.from,to:wOpen});
+      if(pipe>=0)hide.push({from:wOpen,to:wOpen+pipe+1});
+      hide.push({from:wClose,to:t.to});
+      marks.push({from:pipe>=0?wOpen+pipe+1:wOpen,to:wClose,cls:'lp-wikilink'});
+      continue;
+    }
     const cls=LP_LINE[t.name];
     if(cls){lines.push({from:doc.lineAt(t.from).from,cls});continue;}
     if(t.name==='Blockquote'){
       // Blockquote kann mehrzeilig sein -> jede Zeile bekommt die Klasse.
+      // E5: Beginnt die erste Zeile mit "[!typ]" (Muster wie renderQuote), ist es ein
+      // Callout: eigene Zeilenklasse, die Kennung wird durch ein Icon-Widget ersetzt.
+      // Der Typ geht ROH in data - Farbe/Zeichen kennt erst das ViewPlugin (CALLOUTS-
+      // Map liegt ausserhalb des LP-Kerns, der Kern bleibt headless importierbar).
+      const first=doc.lineAt(t.from);
+      const ftext=doc.sliceString(first.from,first.to);
+      const km=/^(\s{0,3}>\s?)\[!([\w-]+)\]([+-]?)(\s?)/.exec(ftext);
+      const qcls=km?'lp-callout':'lp-quote';
       let p=t.from;
-      for(;;){const ln=doc.lineAt(p);lines.push({from:ln.from,cls:'lp-quote'});if(ln.to>=t.to)break;p=ln.to+1;}
+      for(;;){const ln=doc.lineAt(p);lines.push({from:ln.from,cls:qcls});if(ln.to>=t.to)break;p=ln.to+1;}
+      if(km&&!lpRevealed(first.from,first.to,reveal)){
+        widgets.push({from:first.from+km[1].length,to:first.from+km[0].length,type:'callout',data:{typ:km[2].toLowerCase()}});
+      }
+      continue;
+    }
+    // E4a: Zeilen-Widgets Bullet/Checkbox/HR. Reveal ZEILENWEISE (wie ##/> in E1):
+    // Cursor auf der Zeile -> kein Widget, der Rohtext bleibt direkt editierbar.
+    if(t.name==='ListMark'||t.name==='TaskMarker'||t.name==='HorizontalRule'){
+      const ln=doc.lineAt(t.from);
+      if(pendingBullet&&pendingBullet.line!==ln.from)flushBullet();
+      if(lpRevealed(ln.from,ln.to,reveal)){pendingBullet=null;continue;}
+      if(t.name==='ListMark'){
+        // Nur [-*+]-Bullets werden Punkte; Nummern ("1.") bleiben sichtbar (wie Obsidian).
+        if(/^[-*+]$/.test(doc.sliceString(t.from,t.to)))pendingBullet={from:t.from,to:t.to,line:ln.from};
+        continue;
+      }
+      if(t.name==='TaskMarker'){
+        const checked=/x/i.test(doc.sliceString(t.from,t.to));
+        widgets.push({from:pendingBullet?pendingBullet.from:t.from,to:t.to,type:'task',data:{checked}});
+        if(checked)lines.push({from:ln.from,cls:'lp-task-done'});
+        pendingBullet=null;continue;
+      }
+      widgets.push({from:t.from,to:t.to,type:'hr',data:{}});
       continue;
     }
     const mc=LP_MARK[t.name];
     if(mc){marks.push({from:t.from,to:t.to,cls:mc});continue;}
-    // URL/Titel eines [Text](url) verschwinden mit den Klammern; der Link-Knoten selbst
-    // ist schon als lp-link markiert, uebrig bleibt sichtbar genau der Linktext.
-    const istLinkTeil=(t.name==='URL'||t.name==='LinkTitle')&&t.parent==='Link';
+    // E6: Markdown-Bild ![alt](url) -> Vorschau-Widget am Zeilenende, unabhaengig vom
+    // Reveal (s. Wiki-Embed oben). src ROH wie in mdInline (dort wird die URL auch
+    // unaufgeloest ins <img src> geschrieben - identisches Verhalten beider Seiten).
+    if(t.name==='URL'&&t.parent==='Image'){
+      const ln=doc.lineAt(t.to);
+      widgets.push({from:ln.to,to:ln.to,type:'img',data:{src:doc.sliceString(t.from,t.to)}});
+    }
+    // URL/Titel eines [Text](url) bzw. ![alt](url) verschwinden mit den Klammern; der
+    // Link-/Image-Knoten selbst ist schon als lp-link markiert, sichtbar bleibt genau
+    // der Link-/Alt-Text. Ohne den Image-Zweig blieb die URL stehen: "![alt](u)" -> "altu".
+    const istLinkTeil=(t.name==='URL'||t.name==='LinkTitle')&&(t.parent==='Link'||t.parent==='Image');
     if(!LP_HIDE.has(t.name)&&!istLinkTeil)continue;
-    if(lpRevealed(t.from,t.to,reveal))continue;   // Cursor in der Zeile -> Rohsyntax zeigen
+    // Reveal-Kontext (E1): Zeilen-Marker ("## ", "> ") zeigen sich, sobald der Cursor
+    // irgendwo auf ihrer ZEILE steht - am Zeilenanfang waere ein Konstrukt-Reveal
+    // unerreichbar klein. Inline-Marker (**, *, `, ~~, []()) zeigen sich nur, wenn der
+    // Cursor ihr KONSTRUKT beruehrt (Eltern-Range: StrongEmphasis/Emphasis/InlineCode/
+    // Link/...). Ohne Eltern-Range -> Rueckfall auf die Zeile (defensiv, alte Semantik).
+    let cf,ct;
+    if(!LP_LINE_MARK.has(t.name)&&t.parentFrom!=null){cf=t.parentFrom;ct=t.parentTo;}
+    else{const ln=doc.lineAt(t.from);cf=ln.from;ct=ln.to;}
+    if(lpRevealed(cf,ct,reveal))continue;         // Cursor im Kontext -> Rohsyntax zeigen
     let to=t.to;
     if(t.name==='HeaderMark'||t.name==='QuoteMark'){
       // "## " / "> " – das Leerzeichen dahinter muss mit weg, sonst rueckt die Zeile ein.
@@ -2294,7 +2524,8 @@ function lpBuild(doc,tokens,reveal){
     }
     hide.push({from:t.from,to});
   }
-  return {hide,marks,lines};
+  flushBullet();
+  return {hide,marks,lines,widgets};
 }
 
 // ── Anker beim Wechsel Leseansicht <-> Editor ──────────────────────────────
@@ -2333,13 +2564,23 @@ function lpStripBlock(l){
   // rendert es als .task-cb-Kaestchen, im DOM steht es nicht mehr drin.
   return l.replace(/^\s{0,3}(#{1,6}\s+|(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?)/,"");
 }
+// Quelltext fuer den Anker-Vergleich auf SICHTTEXT bringen: (1) Bild-/Embed-Syntax weg -
+// der gerenderte Block hat weder alt-Text (Attribut) noch Embed-Inhalt (eigener
+// .transclude-Block) als Text; stripInline liesse "!Logo" stehen. (2) [[Ziel|Alias]] ->
+// Alias - die Leseansicht zeigt den ALIAS, stripInline nimmt aber das ZIEL ($1); ohne
+// die Ersetzung platzte der Vergleich an jeder Alias-Zeile (live: Rueckweg fiel auf 0).
+function lpStripMedia(l){return (l||'')
+  .replace(/!\[[^\]]*\]\([^)]*\)/g,'')
+  .replace(/!\[\[[^\]]+\]\]/g,'')
+  .replace(/\[\[([^\]|#]+)\|([^\]]+)\]\]/g,'$2');}
 function lpLineForText(zeilen,text,strip){
   const ziel=lpNorm(text);
   if(!ziel)return -1;
   for(let i=0;i<zeilen.length;i++){
     const roh=zeilen[i];
     if(!roh||!roh.trim())continue;
-    const s=lpNorm(strip?strip(lpStripBlock(roh)):lpStripBlock(roh));
+    const m=lpStripMedia(roh);
+    const s=lpNorm(strip?strip(lpStripBlock(m)):lpStripBlock(m));
     // Zu kurze Zeilen ("-", "|", "---") treffen sonst irgendwo zufaellig.
     if(s.length<4)continue;
     if(ziel.startsWith(s.slice(0,Math.min(s.length,44))))return i;
@@ -2350,7 +2591,8 @@ function lpLineForText(zeilen,text,strip){
 // Umgekehrte Richtung: welcher gerenderte Block gehoert zu dieser Quellzeile?
 // bloecke = [{text}] in Dokumentreihenfolge.
 function lpBlockForLine(bloecke,zeile,strip){
-  const s=lpNorm(strip?strip(lpStripBlock(zeile)):lpStripBlock(zeile));
+  const m=lpStripMedia(zeile);
+  const s=lpNorm(strip?strip(lpStripBlock(m)):lpStripBlock(m));
   if(s.length<4)return -1;
   for(let i=0;i<bloecke.length;i++){
     if(lpNorm(bloecke[i].text).startsWith(s.slice(0,Math.min(s.length,44))))return i;
@@ -2423,10 +2665,13 @@ function cm6Theme(m){
   return m.V.EditorView.theme({
     '&':{height:'100%',backgroundColor:'transparent',color:'var(--text)'},
     '&.cm-focused':{outline:'none'},
-    '.cm-scroller':{fontFamily:"Consolas,'SF Mono',monospace",fontSize:'var(--editor-fs,13.5px)',lineHeight:'1.65'},
+    // E2 Typografie-Paritaet: exakt die Werte der Leseansicht (.md-body, Z.201 + --reader-font),
+    // damit Zeilenumbrueche im Editor an denselben Woertern sitzen wie in der Notiz.
+    // --editor-fs (Settings-Slider) gilt nur noch fuer den Textarea-Fallback; Mono bleibt
+    // gezielt auf .lp-code/Codebloecken.
+    '.cm-scroller':{fontFamily:'var(--reader-font)',fontSize:'var(--reader-fs,14.5px)',lineHeight:'1.72'},
     '.cm-content':{caretColor:'var(--accent)'},
     '.cm-cursor,.cm-dropCursor':{borderLeftColor:'var(--accent)',borderLeftWidth:'1.7px'},
-    '.cm-gutters':{backgroundColor:'rgba(8,10,18,.5)',borderRight:'1px solid var(--border)',color:'var(--dim)'},
     '.cm-activeLine,.cm-activeLineGutter':{backgroundColor:'transparent'},
     '&.cm-focused .cm-selectionBackground,.cm-selectionBackground,.cm-content ::selection':{backgroundColor:'var(--accent-20)'},
     '.cm-scroller::-webkit-scrollbar-thumb':{background:'var(--sb-thumb)',borderRadius:'3px'}
@@ -2435,24 +2680,112 @@ function cm6Theme(m){
 // Verdrahtet lpBuild mit CM6. Baut Decorations NUR ueber view.visibleRanges – bei Pauls
 // 51-MB-Notiz waere alles andere aussichtslos.
 function cm6LivePreview(m){
-  const {Decoration,ViewPlugin,EditorView}=m.V, {syntaxTree}=m.L;
+  const {Decoration,ViewPlugin,EditorView,WidgetType}=m.V, {syntaxTree}=m.L;
   const versteckt=Decoration.replace({});
+  // E4a: Materialisierung der lpBuild-widgets (reine Daten) zu DOM. Pro Typ ein Erzeuger;
+  // toDOM bekommt die View von CM6 mitgereicht.
+  const LP_DOM={
+    bullet:()=>{const s=document.createElement('span');s.className='lp-bullet';s.textContent='•';return s;},
+    task:(spec,view)=>{
+      const s=document.createElement('span');
+      s.className='task-cb lp-taskcb'+(spec.data.checked?' done':'');
+      s.textContent=spec.data.checked?'✓':'';
+      // Toggle im DOKUMENT (nicht via /api - der Editor hat evtl. ungespeicherte
+      // Aenderungen; gespeichert wird wie immer per Ctrl+S/Speichern). posAtDOM statt
+      // gemerkter Offsets: die veralten nach jedem Tastendruck davor.
+      // MOUSEDOWN, nicht click: CM ignoriert das Event (ignoreEvent true), und ein
+      // click kaeme nie an, weil der Rebuild nach dem dispatch das DOM ersetzt.
+      s.addEventListener('mousedown',e=>{
+        e.preventDefault();e.stopPropagation();
+        const pos=view.posAtDOM(s),ln=view.state.doc.lineAt(pos);
+        const mm=/^([ \t]*(?:[-*+]|\d+[.)])\s+\[)([ xX])\]/.exec(ln.text);
+        if(mm)view.dispatch({changes:{from:ln.from+mm[1].length,to:ln.from+mm[1].length+1,insert:mm[2].trim()?' ':'x'}});
+      });
+      return s;
+    },
+    hr:()=>{const s=document.createElement('span');s.className='lp-hr';return s;},
+    // E5: Einbettungs-Zeichen fuer ![[..]] (echte Transklusion kommt in E6).
+    embed:()=>{const s=document.createElement('span');s.className='lp-embed';s.textContent='⧉ ';s.title='Einbettung';return s;},
+    // E5: Callout-Icon ersetzt die [!typ]-Kennung; Farbe/Zeichen aus der CALLOUTS-Map
+    // der Leseansicht (hier, nicht im Kern - der bleibt headless).
+    callout:(spec)=>{const s=document.createElement('span');s.className='lp-callout-icon';
+      const c=(typeof CALLOUTS!=='undefined')?CALLOUTS[spec.data.typ]:null;
+      s.textContent=(c?c.i:'✎')+' ';if(c)s.style.color=c.c;s.title='[!'+spec.data.typ+']';return s;},
+    // E6: Frontmatter kollabiert; Klick setzt den Cursor an den Anfang (CM behandelt
+    // mousedown, ignoreEvent false) -> Reveal -> Rohtext zum Bearbeiten.
+    props:(spec)=>{const s=document.createElement('span');s.className='lp-props';
+      s.textContent='⚙ Eigenschaften ('+spec.data.n+')';s.title='Frontmatter – klicken zum Bearbeiten';return s;},
+    // E6: Bildvorschau (Punkt-Widget am Zeilenende; width:100% wrappt es auf eine eigene
+    // visuelle Zeile - Block-Decorations sind aus ViewPlugins verboten). Nachgeladenes
+    // Bild -> requestMeasure, sonst stimmt CM6s Hoehenschaetzung nicht.
+    img:(spec,view)=>{
+      const w=document.createElement('span');w.className='lp-img-widget';
+      let src=null;
+      if(spec.data.wiki){const p=(typeof resolveAssetPath==='function')?resolveAssetPath(spec.data.wiki):null;if(p)src=fileUrl(p);}
+      else src=spec.data.src;
+      if(!src)return w;
+      const img=document.createElement('img');img.className='lp-img';img.alt='';img.src=src;
+      img.onload=()=>view.requestMeasure();
+      img.onerror=()=>{img.remove();view.requestMeasure();};
+      w.appendChild(img);return w;
+    },
+    // E6: Inline-Mathe. Erst der rohe TeX (Fallback offline/CDN-Fehler - wie die
+    // Leseansicht, KaTeX ist CDN), dann async gerendert + neu vermessen.
+    math:(spec,view)=>{
+      const s=document.createElement('span');s.className='lp-math';s.textContent=spec.data.tex;
+      loadKatex().then(k=>{if(!k||!s.isConnected)return;
+        try{s.innerHTML=k.renderToString(spec.data.tex,{throwOnError:false});view.requestMeasure();}catch(e){}});
+      return s;
+    }
+  };
+  class LpWidget extends WidgetType{
+    constructor(spec){super();this.spec=spec;this.key=spec.type+'|'+JSON.stringify(spec.data);}
+    eq(o){return o.key===this.key;}                  // gleicher Typ+Zustand -> DOM wiederverwenden
+    toDOM(view){return LP_DOM[this.spec.type](this.spec,view);}
+    // task faengt mousedown selbst (Toggle); Bullet/HR lassen CM ran -> Klick setzt den
+    // Cursor in die Zeile, die Zeile revealt, der Rohtext ist editierbar.
+    ignoreEvent(){return this.spec.type==='task';}
+  }
   function baue(view){
     const tokens=[],reveal=[];
-    // Rohsyntax auf den Zeilen JEDER Selektion (nicht nur der Cursorzeile).
+    // Rohsyntax pro KONSTRUKT, nicht pro Zeile (E1): die Selektion geht ROH an lpBuild;
+    // dort entscheidet der Kontext (Eltern-Range bei Inline, Zeile bei Zeilen-Markern),
+    // ob ein Marker auftaucht. So oeffnet sich nur das **fett**, in dem der Cursor steht,
+    // nicht jede Formatierung der Zeile.
     for(const r of view.state.selection.ranges){
-      reveal.push({from:view.state.doc.lineAt(r.from).from,to:view.state.doc.lineAt(r.to).to});
+      reveal.push({from:r.from,to:r.to});
     }
     for(const {from,to} of view.visibleRanges){
       syntaxTree(view.state).iterate({from,to,enter:n=>{
-        tokens.push({name:n.name,from:n.from,to:n.to,parent:n.node.parent?n.node.parent.name:null});
+        // Eltern-Range mitgeben: lpBuild braucht sie als Reveal-Kontext der Inline-Marker
+        // (der EmphasisMark allein ist 2 Zeichen breit - der Cursor steht aber im Konstrukt).
+        const p=n.node.parent;
+        tokens.push({name:n.name,from:n.from,to:n.to,parent:p?p.name:null,
+                     parentFrom:p?p.from:null,parentTo:p?p.to:null});
       }});
+      // E4b: Pseudo-Tokens (Wikilink/Highlight/Tag) zeilenweise NUR im sichtbaren
+      // Bereich scannen und in die Token-Liste mergen; den Code-Schutz macht lpBuild.
+      let pos=from;
+      for(;;){
+        const ln=view.state.doc.lineAt(pos);
+        if(ln.length)tokens.push(...lpScanLine(ln.text,ln.from));
+        if(ln.to>=to)break;
+        pos=ln.to+1;
+      }
     }
     const r=lpBuild(view.state.doc,tokens,reveal);
     const deco=[],atom=[];
     for(const l of r.lines)deco.push(Decoration.line({class:l.cls}).range(l.from));
     for(const k of r.marks)if(k.to>k.from)deco.push(Decoration.mark({class:k.cls}).range(k.from,k.to));
     for(const h of r.hide)if(h.to>h.from){const d=versteckt.range(h.from,h.to);deco.push(d);atom.push(d);}
+    // Widgets ersetzen ihre Quellzeichen und sind atomar (Pfeiltasten ueberspringen sie
+    // als Einheit; Backspace dahinter loescht das ganze Konstrukt - Obsidian-Verhalten).
+    // E6: Punkt-Widgets (from==to, z.B. Bildvorschau) ersetzen nichts - Decoration.widget
+    // inline mit side:1, NICHT atomar (der Cursor laeuft normal daran vorbei).
+    for(const w of r.widgets||[]){
+      if(w.to>w.from){const d=Decoration.replace({widget:new LpWidget(w)}).range(w.from,w.to);deco.push(d);atom.push(d);}
+      else deco.push(Decoration.widget({widget:new LpWidget(w),side:1}).range(w.from));
+    }
     // true = CM6 sortiert selbst; ohne das wirft RangeSet bei ueberlappenden Marks.
     return {deco:Decoration.set(deco,true),atom:Decoration.set(atom,true)};
   }
@@ -2471,7 +2804,41 @@ function cm6LivePreview(m){
     // waere auch fetter Text mit den Pfeiltasten nicht mehr durchquerbar.
     provide:p=>EditorView.atomicRanges.of(v=>v.plugin(p)?.atom||Decoration.none)
   });
-  return plugin;
+  // E5: Ctrl+Klick auf einen Wikilink folgt ihm - in den CENTER-SPLIT, nicht openFile:
+  // der Editor (evtl. mit ungespeicherten Aenderungen) bleibt unangetastet, kein
+  // maybeLeaveEditor-Dialog mitten im Schreibfluss. Normaler Klick setzt nur den Cursor.
+  const linkKlick=EditorView.domEventHandlers({mousedown:(e,view)=>{
+    if(!(e.ctrlKey||e.metaKey))return false;
+    const pos=view.posAtCoords({x:e.clientX,y:e.clientY});
+    if(pos==null)return false;
+    const ln=view.state.doc.lineAt(pos);
+    for(const tk of lpScanLine(ln.text,ln.from)){
+      if(tk.name==='Wikilink'&&pos>=tk.from&&pos<=tk.to){
+        const ziel=tk.data.inner.split('|')[0].split('#')[0].trim();
+        const p=(typeof resolveWiki==='function')?resolveWiki(ziel):null;
+        if(p){e.preventDefault();openCenterSplit(p);}
+        else toast('Notiz nicht gefunden: '+ziel,'err');
+        return true;
+      }
+    }
+    return false;
+  }});
+  // E6: Properties-Widget als StateField - es ersetzt Zeilenumbrueche (das ganze
+  // Frontmatter), was CM6 aus ViewPlugins verbietet ("Decorations that replace line
+  // breaks may not be specified via plugins"). Frontmatter haengt nicht am Viewport,
+  // ein Feld ueber Doc+Selektion reicht. Atomar, damit der Cursor nicht unsichtbar
+  // durch die versteckten Zeilen wandert.
+  function propsDeco(st){
+    const reveal=[];for(const r of st.selection.ranges)reveal.push({from:r.from,to:r.to});
+    const w=lpPropsWidget(st.doc,reveal);
+    return w?Decoration.set([Decoration.replace({widget:new LpWidget(w)}).range(w.from,w.to)]):Decoration.none;
+  }
+  const propsField=m.S.StateField.define({
+    create:st=>propsDeco(st),
+    update:(v,tr)=>(tr.docChanged||tr.selection)?propsDeco(tr.state):v,
+    provide:f=>[EditorView.decorations.from(f),EditorView.atomicRanges.of(view=>view.state.field(f))]
+  });
+  return [plugin,linkKlick,propsField];
 }
 // Liest die aktuelle Leseposition: erster Block, dessen Unterkante noch im Viewport liegt,
 // plus sein Abstand zur Viewport-Oberkante. Gleiche Idee wie withScrollAnchor (Lesemodus R17),
@@ -2485,7 +2852,10 @@ function cm6LivePreview(m){
 function noteElFuerText(wurzel,text){
   const pre=text.slice(0,Math.min(text.length,44));
   for(const c of wurzel.children){
-    if(/^(UL|OL|BLOCKQUOTE)$/.test(c.tagName)&&c.children.length){
+    // LI mit dabei: verschachtelte Listen liegen als UL IM <li> - ohne den Abstieg war
+    // ein Editor-Anker auf "  - verschachtelt" rueckwaerts nie aufloesbar und der
+    // Ruecksprung fiel auf 0 (live am 600er-Rundlauf der LP-Testkarte).
+    if(/^(UL|OL|BLOCKQUOTE|LI)$/.test(c.tagName)&&c.children.length){
       const tief=noteElFuerText(c,text); if(tief)return tief;
     }
     if(noteBlockText(c).startsWith(pre))return c;
@@ -2501,10 +2871,19 @@ function editorLeseAnker(){
   const pos=cm.posAtCoords({x:r.left+30,y:r.top+6});
   if(pos==null)return null;
   const doc=cm.state.doc;
+  // Frontmatter ueberspringen: die Leseansicht rendert es nie als Textblock (nur als
+  // .props-Details) - ein Anker "typ: testkarte" faende dort nichts und der Ruecksprung
+  // fiele auf 0 zurueck. Seit dem Properties-Widget (E6) steht der Editor-Anfang
+  // andauernd auf diesen Zeilen.
+  const fmEnd=lpFrontmatterEnd(doc);
   let n=doc.lineAt(pos).number;
   for(let i=0;i<60&&n<=doc.lines;i++,n++){
     const ln=doc.line(n);
-    const t=lpNorm(stripInline(lpStripBlock(ln.text)));
+    if(ln.from<fmEnd)continue;
+    // Bild-/Embed-Syntax raus, BEVOR der Anker entsteht (lpStripMedia, s. Kern):
+    // "![Logo](x.png)" wuerde im stripInline zu "!Logo", der gerenderte Block hat aber
+    // nur "Ein Bild: " (alt ist Attribut, kein Text) - der Ruecksprung faende nichts.
+    const t=lpNorm(stripInline(lpStripBlock(lpStripMedia(ln.text))));
     if(t.length<4)continue;
     const c=cm.coordsAtPos(ln.from);
     return {text:t,off:Math.max(0,Math.round((c?c.top:r.top)-r.top)),path:editorState.path};
@@ -2530,7 +2909,17 @@ function noteBlockText(el){
 // Abstieg waere der Anker immer der erste Punkt und man landete am Abschnittsanfang.
 function noteAnkerEl(wurzel,aTop){
   let el=null;
-  for(const c of wurzel.children){const r=c.getBoundingClientRect();if(r.bottom>aTop+4){el=c;break;}}
+  for(const c of wurzel.children){
+    const r=c.getBoundingClientRect();if(r.bottom<=aTop+4)continue;
+    // Transklusionen ueberspringen: ihr Text (fremde Notiz + "oeffnen"-UI) kommt im
+    // eigenen Quelltext nicht vor - ein Anker darauf faende nie eine Zeile und der
+    // Editor spraenge an den Anfang (live an der LP-Testkarte mit ![[START]] passiert).
+    if(c.classList&&(c.classList.contains('transclude')||c.querySelector&&c.querySelector(':scope > .transclude')))continue;
+    // Leere Elemente ueberspringen: ein Block-Embed IM Absatz splittet das <p> beim
+    // HTML-Parsen - das leere Rest-<p> wuerde sonst Anker und noteLeseAnker gaebe null.
+    if(!noteBlockText(c))continue;
+    el=c;break;
+  }
   if(!el)return null;
   if(/^(UL|OL|BLOCKQUOTE)$/.test(el.tagName)&&el.children.length){
     const tiefer=noteAnkerEl(el,aTop);
@@ -2550,37 +2939,55 @@ function noteLeseAnker(){
   return t?{text:t,off:Math.max(0,Math.round(r.top-aTop))}:null;
 }
 async function openEditor(path,isNew){
+  // Reentry-Guard: Doppelklick auf "Bearbeiten" waehrend fetch/loadCodeMirror laufen
+  // wuerde sonst zwei EditorViews bauen.
+  if(openEditor._busy)return;
+  openEditor._busy=true;
+  try{
   if(!(await maybeLeaveEditor()))return;
-  hideEditFab();
+  // E3: ALLES Asynchrone ZUERST - die Leseansicht bleibt bis zum fertigen Editor stehen
+  // (kein Frame Leerzustand; beim allerersten Aufruf laedt hier CM6 im Hintergrund).
   let raw='';
   if(!isNew){try{raw=await fetch(fileUrl(path)).then(r=>r.text());}catch(e){toast('Konnte Datei nicht laden','err');return;}}
+  const CM=await loadCodeMirror();
   selectedPath=path;
   if(!_silentRender)updateActiveTab(path,'editor');
   document.querySelectorAll('.tree-file.selected').forEach(e=>e.classList.remove('selected'));
   document.querySelector('.tree-file[data-path="'+cssAttr(path)+'"]')?.classList.add('selected');
   const area=document.getElementById('note-area');
-  // Position der Leseansicht merken, BEVOR sie ueberschrieben wird: der Block, der oben
-  // im Viewport steht, soll im Editor an derselben Stelle stehen.
+  // Leseposition ERST NACH den awaits lesen - der Nutzer kann waehrend des Ladens
+  // gescrollt haben; der Block oben im Viewport soll im Editor an derselben Stelle stehen.
   const _anker=noteLeseAnker();
-  area.scrollTop=0;
   const fname=path.split('/').pop();
-  area.innerHTML='<div class="editor-wrap">'
-    +'<div class="editor-toolbar"><span class="ed-name">✎ '+esc(fname)+'</span><span class="ed-dirty" id="ed-dirty"></span><span class="ft-spacer"></span>'
-    +'<button class="ed-btn" id="ed-save">Speichern <kbd>Ctrl S</kbd></button>'
-    +'<button class="ed-btn" id="ed-preview">Vorschau</button>'
-    +'<button class="ed-btn ghost" id="ed-cancel">Abbrechen</button></div>'
-    +'<div class="editor-host" id="editor-host"></div></div>';
+  // Ab hier EIN synchroner Block bis zum fertigen, richtig gescrollten Editor: der Browser
+  // paintet erst am Task-Ende genau einmal -> kein "erst oben, dann Sprung". Deshalb ist
+  // das Scrollziel Constructor-Config (config.scrollTo wirkt im ersten Measure-Zyklus VOR
+  // dem ersten Paint) und NICHT ein nachtraeglicher dispatch. Kein area.scrollTop=0 mehr:
+  // .editor-wrap{height:100%} -> der Browser clampt selbst.
+  setEditControls('edit');
+  area.innerHTML='<div class="editor-wrap"><div class="editor-host" id="editor-host"></div></div>';
   const host=document.getElementById('editor-host');
-  const CM=await loadCodeMirror();
   if(CM){
+    let selPos=0,yOff=0;
+    if(_anker){
+      const zeilen=raw.split('\n');
+      const z=lpLineForText(zeilen,_anker.text,stripInline);
+      if(z>=0){
+        // Zeilenindex -> Dokument-Offset ueber den Rohtext (der State existiert noch nicht).
+        let off=0;for(let i=0;i<z;i++)off+=zeilen[i].length+1;
+        selPos=Math.min(off,raw.length);yOff=_anker.off;
+      }
+    }
     // Paritaet zu CM5: CM5 brachte Basis-Keymap + Undo/Redo + Tab-Einrueckung von Haus aus mit,
     // CM6 NICHT - ohne history()/historyKeymap/defaultKeymap/indentWithTab waeren Strg+Z,
     // Pos1/Ende/Strg+Pfeil und Tab still tot. Ctrl+S wird bewusst NICHT gebunden: der globale
     // capture-Handler (s.u., Ctrl+S/Ctrl+E) faengt es schon ab - eine zweite Bindung wuerde
     // doppelt speichern.
+    // KEINE lineNumbers() (E2/Paul 2026-07-19): die Leseansicht hat keine - der Editor
+    // soll von ihr nicht unterscheidbar sein. Bei Bedarf spaeter als Setting via Compartment.
     const cm=new CM.V.EditorView({
-      state:CM.S.EditorState.create({doc:raw,extensions:[
-        CM.V.lineNumbers(),CM.C.history(),CM.V.drawSelection(),
+      state:CM.S.EditorState.create({doc:raw,selection:{anchor:selPos},extensions:[
+        CM.C.history(),CM.V.drawSelection(),
         CM.V.keymap.of([...CM.C.defaultKeymap,...CM.C.historyKeymap,CM.C.indentWithTab]),
         CM.V.EditorView.lineWrapping,
         new CM.L.LanguageSupport(cm6Markdown(CM)),
@@ -2590,28 +2997,58 @@ async function openEditor(path,isNew){
         cm6Theme(CM)
       ]}),parent:host
     });
+    // Scrollziel DIREKT setzen, im SELBEN Task - der Browser paintet erst am Task-Ende,
+    // also ohne sichtbaren Sprung. NICHT scrollIntoView: sowohl config.scrollTo des
+    // Konstruktors als auch der Effekt-dispatch greifen seit den Widget-/Atomic-
+    // Extensions (E4-E6) nicht mehr (live verifiziert: Ziel Zeile 28, yMargin 0..379,
+    // scrollTop blieb immer 0 - direktes scrollTop haelt dagegen zuverlaessig).
+    // Zweistufig: lineBlockAt (Hoehen-SCHAETZUNG) positioniert grob, damit die Zielzeile
+    // im Render-Fenster liegt; die Feinkorrektur laeuft im ersten requestMeasure-read
+    // (echte Geometrie: kollabiertes Frontmatter, Heading-Paddings) - measure laeuft im
+    // rAF VOR dem ersten Paint, der Nutzer sieht nur die fertige Position.
+    if(selPos>0){
+      // Zweistufig, weil CM6s ERSTER measure-Zyklus (rAF) jeden im Mount-Task gesetzten
+      // scrollTop mit seinem gecachten 0 ueberschreibt (live nachgemessen; ein Set
+      // NACH dem ersten Zyklus haelt dagegen). Stufe 1 setzt sofort (deckt den ersten
+      // Paint und den versteckten Tab ab, wo rAF nie feuert - Technische-Tipps Nr. 35);
+      // Stufe 2 laeuft im eigenen rAF NACH CM6s measure-rAF (Anmeldereihenfolge) und
+      // damit weiterhin VOR dem ersten sichtbaren Frame: coordsAtPos liefert dann die
+      // ECHTE Geometrie (kollabiertes Frontmatter, Heading-Paddings), Fallback ist
+      // lineBlockAt mit den nun gemessenen Hoehen.
+      const setzGrob=()=>{const blk=cm.lineBlockAt(selPos);cm.scrollDOM.scrollTop=Math.max(0,Math.round(blk.top-yOff));};
+      const setzFein=()=>{
+        if(!cm.scrollDOM.isConnected)return;
+        const c=cm.coordsAtPos(selPos);
+        if(c){const r=cm.scrollDOM.getBoundingClientRect();cm.scrollDOM.scrollTop+=Math.round((c.top-r.top)-yOff);}
+        else setzGrob();
+      };
+      setzGrob();
+      // Stufe 3-Guard: nur NUTZER-Gesten stoppen die Nachfuehrung. Ein scrollTop-
+      // Differenz-Vergleich taugt nicht - genau die Hoehenaenderung, die wir
+      // korrigieren wollen, verschiebt selbst den scrollTop.
+      let userMoved=false;
+      const markUser=()=>{userMoved=true;};
+      cm.scrollDOM.addEventListener('wheel',markUser,{once:true,passive:true});
+      cm.scrollDOM.addEventListener('mousedown',markUser,{once:true});
+      cm.contentDOM.addEventListener('keydown',markUser,{once:true});
+      requestAnimationFrame(()=>{
+        setzFein();
+        // Stufe 3: KaTeX-/Bild-Widgets aendern die Hoehen NACH dem ersten Frame
+        // (renderToString/onload/onerror -> requestMeasure) und verschieben die
+        // Zeile wieder. Einmal nachfuehren.
+        setTimeout(()=>{if(!userMoved)setzFein();},400);
+      });
+    }
     cm.focus();
     // editorState-Shape unveraendert {path,original,getValue,isNew,cm} - daran haengen
     // maybeLeaveEditor, beforeunload, Ctrl+E, Tabs mode:"editor" und togglePreview.
     editorState={path,original:raw,getValue:()=>cm.state.doc.toString(),isNew:!!isNew,cm};
-    // Wheel-Ownership wie beim PDF- (Z. ~2534) und Office-Viewer (Z. ~2897): ohne
-    // stopPropagation laeuft die Geste zusaetzlich in onNoteWheel, dessen unbedingtes
-    // preventDefault() den nativen CM-Scroll abwuergt - und #note-area hat bei offenem
-    // Editor gar nichts zu scrollen (.editor-wrap{height:100%}). Genau deshalb scrollte
-    // der CM5-Editor per Mausrad bisher NICHT. onNoteWheel arbeitet mit e.currentTarget
-    // -> der .cm-scroller bekommt Achsen-Lock und Strg+Rad-Zoom, ohne onNoteWheel anzufassen.
+    // Wheel-Ownership wie beim PDF- und Office-Viewer: ohne stopPropagation laeuft die
+    // Geste zusaetzlich in onNoteWheel, dessen unbedingtes preventDefault() den nativen
+    // CM-Scroll abwuergt. onNoteWheel arbeitet mit e.currentTarget -> der .cm-scroller
+    // bekommt Achsen-Lock und Strg+Rad-Zoom, ohne onNoteWheel anzufassen.
     const sc=host.querySelector('.cm-scroller');
     if(sc)sc.addEventListener('wheel',e=>{e.stopPropagation();onNoteWheel(e);},{passive:false});
-    // Leseposition uebernehmen: dieselbe Zeile an dieselbe Viewport-Hoehe, Cursor gleich
-    // dorthin - sonst tippt man nach dem Klick auf "Bearbeiten" oben in der Datei weiter.
-    // Synchron, NICHT in rAF: im versteckten Tab feuert rAF nie (Technische-Tipps Nr. 35).
-    if(_anker){
-      const z=lpLineForText(raw.split('\n'),_anker.text,stripInline);
-      if(z>=0){
-        const pos=cm.state.doc.line(Math.min(z+1,cm.state.doc.lines)).from;
-        cm.dispatch({selection:{anchor:pos},effects:CM.V.EditorView.scrollIntoView(pos,{y:'start',yMargin:_anker.off})});
-      }
-    }
   }else{
     const ta=document.createElement('textarea');ta.className='ed-textarea';ta.value=raw;ta.spellcheck=false;host.appendChild(ta);
     ta.addEventListener('input',markDirty);
@@ -2619,15 +3056,14 @@ async function openEditor(path,isNew){
     editorState={path,original:raw,getValue:()=>ta.value,isNew:!!isNew,textarea:ta};
     ta.focus();
   }
-  document.getElementById('ed-save').onclick=()=>saveEditor();
-  document.getElementById('ed-preview').onclick=()=>togglePreview();
-  document.getElementById('ed-cancel').onclick=()=>cancelEditor();
   setCrumb(esc(activeVault)+' / <b>'+esc(fname)+'</b> &middot; bearbeiten');
   logActivity(folderColor((path.split('/')[0])||''),'edit &rarr; <b>'+esc(fname)+'</b>');
   markDirty();
+  }finally{openEditor._busy=false;}
 }
 function isDirty(){return !!(editorState&&editorState.getValue()!==editorState.original);}
-function markDirty(){const d=document.getElementById('ed-dirty');if(d)d.textContent=isDirty()?'● ungespeichert':'';}
+// E3: kompakter Dirty-Punkt im Speichern-Button des Overlays (statt "ungespeichert"-Text).
+function markDirty(){const d=document.getElementById('ed-dirty');if(d){const dirty=isDirty();d.textContent=dirty?'●':'';d.title=dirty?'ungespeicherte Änderungen':'';}}
 async function saveEditor(){
   if(!editorState)return;
   const content=editorState.getValue(),path=editorState.path;
@@ -2663,7 +3099,7 @@ async function cancelEditor(){
   // Bearbeiten-Modus wieder ganz oben in der Notiz (Paul, 2026-07-17).
   _editorLeaveAnker=editorLeseAnker();
   editorState=null;
-  if(wasNew||!path){document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';setCrumb(esc(activeVault));}
+  if(wasNew||!path){hideEditFab();document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';setCrumb(esc(activeVault));}
   else openFile(path);
 }
 async function maybeLeaveEditor(){
@@ -4073,7 +4509,7 @@ function onPanelFsInput(v){const px=parseFloat(v)||12;localStorage.setItem('nexu
 function currentNoteW(){const n=parseInt(localStorage.getItem('nexus.noteW')||'',10);return (n>=300&&n<=4000)?n:0;}
 function applyNoteW(px){const s=document.documentElement.style;if(px>0)s.setProperty('--note-w',px+'px');else s.removeProperty('--note-w');}
 function setNoteW(px){px=Math.max(300,Math.min(4000,Math.round(px)));localStorage.setItem('nexus.noteW',String(px));applyNoteW(px);}
-function bumpNoteW(deltaY){let base=currentNoteW();if(!base){const el=document.querySelector('#note-area .note-content, #note-area .cm-editor');base=el?el.offsetWidth:(document.getElementById('note-area')?.clientWidth||900);}setNoteW(base-deltaY*1.1);}
+function bumpNoteW(deltaY){let base=currentNoteW();if(!base){const el=document.querySelector('#note-area .note-content, #note-area .cm-content');base=el?el.offsetWidth:(document.getElementById('note-area')?.clientWidth||900);}setNoteW(base-deltaY*1.1);}
 // Horizontale Notiz-Position (global, wie --note-w): als Bruchteil 0..1 des Scroll-Spielraums gespeichert
 // (0 = buendig rechts, 1 = buendig links, 0.5 = mittig). Bruchteil statt Pixel -> robust gegen Breiten-/Fenster-
 // aenderungen. Default 0.5 = mittig (bisheriges Verhalten beim allerersten Oeffnen).
@@ -4351,8 +4787,24 @@ function onNoteWheel(e){
   smartAxisScroll(e.currentTarget,e);
 }
 // Bearbeiten-Button (Overlay im Tab-Band): nur in der Markdown-Leseansicht sichtbar.
-function showEditFab(path){const f=document.getElementById('note-edit-fab');if(!f)return;f.style.display='inline-block';f.onclick=()=>openEditor(path);const rt=document.getElementById('read-toggle');if(rt)rt.style.display='inline-block';updateReadToggle();}
-function hideEditFab(){const f=document.getElementById('note-edit-fab');if(f)f.style.display='none';const rt=document.getElementById('read-toggle');if(rt)rt.style.display='none';}
+function showEditFab(path){const f=document.getElementById('note-edit-fab');if(!f)return;f.style.display='inline-block';f.onclick=()=>openEditor(path);const ec=document.getElementById('edit-controls');if(ec)ec.style.display='none';const rt=document.getElementById('read-toggle');if(rt)rt.style.display='inline-block';updateReadToggle();}
+// Versteckt FAB UND Editier-Cluster: hideEditFab feuert auf jedem Ansichtswechsel (Tabs,
+// PDF, Placeholder ...) - das Cluster darf dort genauso wenig stehen bleiben wie der FAB.
+function hideEditFab(){const f=document.getElementById('note-edit-fab');if(f)f.style.display='none';const ec=document.getElementById('edit-controls');if(ec)ec.style.display='none';const rt=document.getElementById('read-toggle');if(rt)rt.style.display='none';}
+// E3: Editiermodus-Overlay an der FAB-Stelle (ersetzt die alte .editor-toolbar).
+// Bindet die Buttons bei jedem Aufruf neu - onclick-Zuweisung ist idempotent.
+function setEditControls(mode){
+  const f=document.getElementById('note-edit-fab'),ec=document.getElementById('edit-controls');
+  if(!ec)return;
+  if(mode==='edit'){
+    if(f)f.style.display='none';
+    const rt=document.getElementById('read-toggle');if(rt)rt.style.display='none';
+    ec.style.display='flex';
+    document.getElementById('ed-save').onclick=()=>saveEditor();
+    document.getElementById('ed-preview').onclick=()=>togglePreview();
+    document.getElementById('ed-cancel').onclick=()=>cancelEditor();
+  }else ec.style.display='none';
+}
 
 // ── Lesemodus: Vollbild-Fokus auf die aktuelle Notiz ──────────────────────────
 // withScrollAnchor haelt die Leseposition ueber den Layoutwechsel: Anker = erstes Element im
