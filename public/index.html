@@ -153,7 +153,7 @@ body.col-resizing{cursor:col-resize;user-select:none}
    wuerde die Mittel-Spalte per Auto-Platzierung im ersten (0px-)Track landen -> 0 Breite, kein Text. */
 .app.reading .main{grid-template-columns:minmax(0,1fr) !important}
 .app.reading .main>.col:nth-child(3){grid-column:1 / -1 !important;min-width:0 !important}
-.app.reading .side,.app.reading .resizer,.app.reading .right-panel,.app.reading #tabbar,.app.reading .statusbar,.app.reading #note-edit-fab,.app.reading #rz-center,.app.reading #note-pane2{display:none !important}
+.app.reading .side,.app.reading .resizer,.app.reading .right-panel,.app.reading #tabbar,.app.reading .statusbar,.app.reading #note-edit-fab,.app.reading #edit-controls,.app.reading #rz-center,.app.reading #note-pane2{display:none !important}
 .app.reading #note-area{flex:1 1 auto !important;padding-top:18px !important;scroll-padding-top:18px !important}
 .app.reading .note-content{width:100% !important;max-width:none !important;margin-inline:0 !important;padding:24px clamp(28px,8vw,160px) 120px !important}
 .app.reading .md-body{font-size:calc(var(--reader-fs,14.5px) + 2px) !important}
@@ -546,14 +546,13 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 /* ── Editor (Bearbeiten/Speichern) ── */
 .note-area{flex:1}
 .editor-wrap{display:flex;flex-direction:column;height:100%}
-.editor-toolbar{display:flex;align-items:center;gap:10px;padding:9px 18px;border-bottom:1px solid var(--border);background:rgba(8,10,18,.6);flex-shrink:0}
-.editor-toolbar .ed-name{font-size:13px;color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
-.editor-toolbar .ed-dirty{font-size:11px;color:#febc2e;white-space:nowrap}
-.editor-toolbar .ft-spacer{flex:1}
+/* E3: Die .editor-toolbar ist weg (Layout-Shift beim Moduswechsel) - die Buttons leben jetzt
+   im #edit-controls-Overlay an der Stelle des Bearbeiten-FABs (s.u. bei #note-edit-fab). */
 .ed-btn{font-size:12px;color:var(--dim);background:var(--panel2);border:1px solid var(--border);border-radius:7px;padding:5px 12px;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
 .ed-btn:hover{color:var(--text);border-color:var(--accent)}
-.ed-btn kbd{font-size:9.5px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--dim)}
 .ed-btn.ghost{background:transparent}
+.ed-dirty{font-size:11px;color:#febc2e;white-space:nowrap}
+.ed-dirty:not(:empty){margin-left:2px}
 /* CM6 scrollt selbst (.cm-scroller) -> der Host darf NICHT mitscrollen. */
 .editor-host{flex:1;min-height:0;overflow:hidden}
 /* E2: Breite/Padding EXAKT wie .note-content (Z.144) - dieselbe Formel, dasselbe Padding,
@@ -603,8 +602,11 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 /* Bearbeiten-Button fixiert: ganz rechts, auf gleicher Hoehe wie die Tabs (im Tab-Band, --tab-h).
    Liegt als Overlay in der .col (wie die .tabbar), bleibt also beim Scrollen oben rechts. Optik unveraendert. */
 #note-edit-fab{position:absolute;top:calc(var(--tab-h)/2);right:28px;transform:translateY(-50%);z-index:21;margin:0;transition:background-color .15s,border-color .15s;backdrop-filter:blur(8px) saturate(1.3);-webkit-backdrop-filter:blur(8px) saturate(1.3)}
+/* E3: Editiermodus-Cluster (Speichern/Vorschau/x) an EXAKT der FAB-Position - gleiches
+   Overlay, null Layout-Verschiebung beim Wechsel Lesen<->Bearbeiten. */
+#edit-controls{position:absolute;top:calc(var(--tab-h)/2);right:28px;transform:translateY(-50%);z-index:21;display:flex;gap:8px;align-items:center;backdrop-filter:blur(8px) saturate(1.3);-webkit-backdrop-filter:blur(8px) saturate(1.3)}
 /* Studio: rechtes Panel schwebt ueber der .col -> Button links davon halten */
-.app[data-layout="softdark"] #note-edit-fab{right:calc(var(--col-r,360px) + 38px)}
+.app[data-layout="softdark"] #note-edit-fab,.app[data-layout="softdark"] #edit-controls{right:calc(var(--col-r,360px) + 38px)}
 .ovl-msg{padding:18px;font-size:13.5px;line-height:1.5;white-space:pre-line;color:var(--text)}
 .pk-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:13.5px;color:var(--text)}
 .pk-item:hover{background:var(--panel2)}
@@ -899,6 +901,13 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
     <div class="col">
       <div class="tabbar" id="tabbar"></div>
       <button class="ed-edit-btn" id="note-edit-fab" title="Bearbeiten (Ctrl+E)" style="display:none">&#9998; Bearbeiten</button>
+      <!-- E3: Editiermodus-Overlay an EXAKT der FAB-Stelle - ersetzt die alte .editor-toolbar,
+           damit der Wechsel Lesen<->Bearbeiten keinen Layout-Shift erzeugt. -->
+      <span id="edit-controls" style="display:none">
+        <button class="ed-btn" id="ed-save" title="Speichern (Ctrl+S)">Speichern<span class="ed-dirty" id="ed-dirty"></span></button>
+        <button class="ed-btn" id="ed-preview" title="Gerenderte Vorschau">Vorschau</button>
+        <button class="ed-btn ghost" id="ed-cancel" title="Bearbeiten beenden">&#10005;</button>
+      </span>
       <div class="center-body" id="center-body">
         <div class="note-area" id="note-area">
           <div class="placeholder"><span class="big">&#9670;</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>
@@ -2582,38 +2591,54 @@ function noteLeseAnker(){
   return t?{text:t,off:Math.max(0,Math.round(r.top-aTop))}:null;
 }
 async function openEditor(path,isNew){
+  // Reentry-Guard: Doppelklick auf "Bearbeiten" waehrend fetch/loadCodeMirror laufen
+  // wuerde sonst zwei EditorViews bauen.
+  if(openEditor._busy)return;
+  openEditor._busy=true;
+  try{
   if(!(await maybeLeaveEditor()))return;
-  hideEditFab();
+  // E3: ALLES Asynchrone ZUERST - die Leseansicht bleibt bis zum fertigen Editor stehen
+  // (kein Frame Leerzustand; beim allerersten Aufruf laedt hier CM6 im Hintergrund).
   let raw='';
   if(!isNew){try{raw=await fetch(fileUrl(path)).then(r=>r.text());}catch(e){toast('Konnte Datei nicht laden','err');return;}}
+  const CM=await loadCodeMirror();
   selectedPath=path;
   if(!_silentRender)updateActiveTab(path,'editor');
   document.querySelectorAll('.tree-file.selected').forEach(e=>e.classList.remove('selected'));
   document.querySelector('.tree-file[data-path="'+cssAttr(path)+'"]')?.classList.add('selected');
   const area=document.getElementById('note-area');
-  // Position der Leseansicht merken, BEVOR sie ueberschrieben wird: der Block, der oben
-  // im Viewport steht, soll im Editor an derselben Stelle stehen.
+  // Leseposition ERST NACH den awaits lesen - der Nutzer kann waehrend des Ladens
+  // gescrollt haben; der Block oben im Viewport soll im Editor an derselben Stelle stehen.
   const _anker=noteLeseAnker();
-  area.scrollTop=0;
   const fname=path.split('/').pop();
-  area.innerHTML='<div class="editor-wrap">'
-    +'<div class="editor-toolbar"><span class="ed-name">✎ '+esc(fname)+'</span><span class="ed-dirty" id="ed-dirty"></span><span class="ft-spacer"></span>'
-    +'<button class="ed-btn" id="ed-save">Speichern <kbd>Ctrl S</kbd></button>'
-    +'<button class="ed-btn" id="ed-preview">Vorschau</button>'
-    +'<button class="ed-btn ghost" id="ed-cancel">Abbrechen</button></div>'
-    +'<div class="editor-host" id="editor-host"></div></div>';
+  // Ab hier EIN synchroner Block bis zum fertigen, richtig gescrollten Editor: der Browser
+  // paintet erst am Task-Ende genau einmal -> kein "erst oben, dann Sprung". Deshalb ist
+  // das Scrollziel Constructor-Config (config.scrollTo wirkt im ersten Measure-Zyklus VOR
+  // dem ersten Paint) und NICHT ein nachtraeglicher dispatch. Kein area.scrollTop=0 mehr:
+  // .editor-wrap{height:100%} -> der Browser clampt selbst.
+  setEditControls('edit');
+  area.innerHTML='<div class="editor-wrap"><div class="editor-host" id="editor-host"></div></div>';
   const host=document.getElementById('editor-host');
-  const CM=await loadCodeMirror();
   if(CM){
+    let selPos=0,yOff=0;
+    if(_anker){
+      const zeilen=raw.split('\n');
+      const z=lpLineForText(zeilen,_anker.text,stripInline);
+      if(z>=0){
+        // Zeilenindex -> Dokument-Offset ueber den Rohtext (der State existiert noch nicht).
+        let off=0;for(let i=0;i<z;i++)off+=zeilen[i].length+1;
+        selPos=Math.min(off,raw.length);yOff=_anker.off;
+      }
+    }
     // Paritaet zu CM5: CM5 brachte Basis-Keymap + Undo/Redo + Tab-Einrueckung von Haus aus mit,
     // CM6 NICHT - ohne history()/historyKeymap/defaultKeymap/indentWithTab waeren Strg+Z,
     // Pos1/Ende/Strg+Pfeil und Tab still tot. Ctrl+S wird bewusst NICHT gebunden: der globale
     // capture-Handler (s.u., Ctrl+S/Ctrl+E) faengt es schon ab - eine zweite Bindung wuerde
     // doppelt speichern.
-    // KEINE lineNumbers() mehr (E2/Paul 2026-07-19): die Leseansicht hat keine - der Editor
+    // KEINE lineNumbers() (E2/Paul 2026-07-19): die Leseansicht hat keine - der Editor
     // soll von ihr nicht unterscheidbar sein. Bei Bedarf spaeter als Setting via Compartment.
     const cm=new CM.V.EditorView({
-      state:CM.S.EditorState.create({doc:raw,extensions:[
+      state:CM.S.EditorState.create({doc:raw,selection:{anchor:selPos},extensions:[
         CM.C.history(),CM.V.drawSelection(),
         CM.V.keymap.of([...CM.C.defaultKeymap,...CM.C.historyKeymap,CM.C.indentWithTab]),
         CM.V.EditorView.lineWrapping,
@@ -2622,30 +2647,19 @@ async function openEditor(path,isNew){
         cm6LivePreview(CM),
         CM.V.EditorView.updateListener.of(u=>{if(u.docChanged)markDirty();}),
         cm6Theme(CM)
-      ]}),parent:host
+      ]}),parent:host,
+      scrollTo:CM.V.EditorView.scrollIntoView(selPos,{y:'start',yMargin:yOff})
     });
     cm.focus();
     // editorState-Shape unveraendert {path,original,getValue,isNew,cm} - daran haengen
     // maybeLeaveEditor, beforeunload, Ctrl+E, Tabs mode:"editor" und togglePreview.
     editorState={path,original:raw,getValue:()=>cm.state.doc.toString(),isNew:!!isNew,cm};
-    // Wheel-Ownership wie beim PDF- (Z. ~2534) und Office-Viewer (Z. ~2897): ohne
-    // stopPropagation laeuft die Geste zusaetzlich in onNoteWheel, dessen unbedingtes
-    // preventDefault() den nativen CM-Scroll abwuergt - und #note-area hat bei offenem
-    // Editor gar nichts zu scrollen (.editor-wrap{height:100%}). Genau deshalb scrollte
-    // der CM5-Editor per Mausrad bisher NICHT. onNoteWheel arbeitet mit e.currentTarget
-    // -> der .cm-scroller bekommt Achsen-Lock und Strg+Rad-Zoom, ohne onNoteWheel anzufassen.
+    // Wheel-Ownership wie beim PDF- und Office-Viewer: ohne stopPropagation laeuft die
+    // Geste zusaetzlich in onNoteWheel, dessen unbedingtes preventDefault() den nativen
+    // CM-Scroll abwuergt. onNoteWheel arbeitet mit e.currentTarget -> der .cm-scroller
+    // bekommt Achsen-Lock und Strg+Rad-Zoom, ohne onNoteWheel anzufassen.
     const sc=host.querySelector('.cm-scroller');
     if(sc)sc.addEventListener('wheel',e=>{e.stopPropagation();onNoteWheel(e);},{passive:false});
-    // Leseposition uebernehmen: dieselbe Zeile an dieselbe Viewport-Hoehe, Cursor gleich
-    // dorthin - sonst tippt man nach dem Klick auf "Bearbeiten" oben in der Datei weiter.
-    // Synchron, NICHT in rAF: im versteckten Tab feuert rAF nie (Technische-Tipps Nr. 35).
-    if(_anker){
-      const z=lpLineForText(raw.split('\n'),_anker.text,stripInline);
-      if(z>=0){
-        const pos=cm.state.doc.line(Math.min(z+1,cm.state.doc.lines)).from;
-        cm.dispatch({selection:{anchor:pos},effects:CM.V.EditorView.scrollIntoView(pos,{y:'start',yMargin:_anker.off})});
-      }
-    }
   }else{
     const ta=document.createElement('textarea');ta.className='ed-textarea';ta.value=raw;ta.spellcheck=false;host.appendChild(ta);
     ta.addEventListener('input',markDirty);
@@ -2653,15 +2667,14 @@ async function openEditor(path,isNew){
     editorState={path,original:raw,getValue:()=>ta.value,isNew:!!isNew,textarea:ta};
     ta.focus();
   }
-  document.getElementById('ed-save').onclick=()=>saveEditor();
-  document.getElementById('ed-preview').onclick=()=>togglePreview();
-  document.getElementById('ed-cancel').onclick=()=>cancelEditor();
   setCrumb(esc(activeVault)+' / <b>'+esc(fname)+'</b> &middot; bearbeiten');
   logActivity(folderColor((path.split('/')[0])||''),'edit &rarr; <b>'+esc(fname)+'</b>');
   markDirty();
+  }finally{openEditor._busy=false;}
 }
 function isDirty(){return !!(editorState&&editorState.getValue()!==editorState.original);}
-function markDirty(){const d=document.getElementById('ed-dirty');if(d)d.textContent=isDirty()?'● ungespeichert':'';}
+// E3: kompakter Dirty-Punkt im Speichern-Button des Overlays (statt "ungespeichert"-Text).
+function markDirty(){const d=document.getElementById('ed-dirty');if(d){const dirty=isDirty();d.textContent=dirty?'●':'';d.title=dirty?'ungespeicherte Änderungen':'';}}
 async function saveEditor(){
   if(!editorState)return;
   const content=editorState.getValue(),path=editorState.path;
@@ -2697,7 +2710,7 @@ async function cancelEditor(){
   // Bearbeiten-Modus wieder ganz oben in der Notiz (Paul, 2026-07-17).
   _editorLeaveAnker=editorLeseAnker();
   editorState=null;
-  if(wasNew||!path){document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';setCrumb(esc(activeVault));}
+  if(wasNew||!path){hideEditFab();document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';setCrumb(esc(activeVault));}
   else openFile(path);
 }
 async function maybeLeaveEditor(){
@@ -4385,8 +4398,24 @@ function onNoteWheel(e){
   smartAxisScroll(e.currentTarget,e);
 }
 // Bearbeiten-Button (Overlay im Tab-Band): nur in der Markdown-Leseansicht sichtbar.
-function showEditFab(path){const f=document.getElementById('note-edit-fab');if(!f)return;f.style.display='inline-block';f.onclick=()=>openEditor(path);const rt=document.getElementById('read-toggle');if(rt)rt.style.display='inline-block';updateReadToggle();}
-function hideEditFab(){const f=document.getElementById('note-edit-fab');if(f)f.style.display='none';const rt=document.getElementById('read-toggle');if(rt)rt.style.display='none';}
+function showEditFab(path){const f=document.getElementById('note-edit-fab');if(!f)return;f.style.display='inline-block';f.onclick=()=>openEditor(path);const ec=document.getElementById('edit-controls');if(ec)ec.style.display='none';const rt=document.getElementById('read-toggle');if(rt)rt.style.display='inline-block';updateReadToggle();}
+// Versteckt FAB UND Editier-Cluster: hideEditFab feuert auf jedem Ansichtswechsel (Tabs,
+// PDF, Placeholder ...) - das Cluster darf dort genauso wenig stehen bleiben wie der FAB.
+function hideEditFab(){const f=document.getElementById('note-edit-fab');if(f)f.style.display='none';const ec=document.getElementById('edit-controls');if(ec)ec.style.display='none';const rt=document.getElementById('read-toggle');if(rt)rt.style.display='none';}
+// E3: Editiermodus-Overlay an der FAB-Stelle (ersetzt die alte .editor-toolbar).
+// Bindet die Buttons bei jedem Aufruf neu - onclick-Zuweisung ist idempotent.
+function setEditControls(mode){
+  const f=document.getElementById('note-edit-fab'),ec=document.getElementById('edit-controls');
+  if(!ec)return;
+  if(mode==='edit'){
+    if(f)f.style.display='none';
+    const rt=document.getElementById('read-toggle');if(rt)rt.style.display='none';
+    ec.style.display='flex';
+    document.getElementById('ed-save').onclick=()=>saveEditor();
+    document.getElementById('ed-preview').onclick=()=>togglePreview();
+    document.getElementById('ed-cancel').onclick=()=>cancelEditor();
+  }else ec.style.display='none';
+}
 
 // ── Lesemodus: Vollbild-Fokus auf die aktuelle Notiz ──────────────────────────
 // withScrollAnchor haelt die Leseposition ueber den Layoutwechsel: Anker = erstes Element im
