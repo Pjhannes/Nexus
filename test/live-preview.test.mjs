@@ -13,8 +13,8 @@ const b = html.indexOf('//__LP_END__');
 if (a < 0 || b < 0) { console.error('Marker //__LP_START__/__LP_END__ nicht gefunden'); process.exit(1); }
 const core = html.slice(a, b);
 
-const mod = await import('data:text/javascript,' + encodeURIComponent(core + '\nexport {lpBuild,LP_HIDE,LP_MARK,LP_LINE,lpNorm,lpLineForText,lpBlockForLine};'));
-const { lpBuild, LP_HIDE, lpNorm, lpLineForText, lpBlockForLine } = mod;
+const mod = await import('data:text/javascript,' + encodeURIComponent(core + '\nexport {lpBuild,LP_HIDE,LP_MARK,LP_LINE,lpNorm,lpLineForText,lpBlockForLine,lpScanLine,lpFrontmatterEnd};'));
+const { lpBuild, LP_HIDE, lpNorm, lpLineForText, lpBlockForLine, lpScanLine, lpFrontmatterEnd } = mod;
 
 // Stub fuer stripInline. WICHTIG: bildet die ECHTE Funktion nach, die NUR Inline-Markdown
 // entfernt – Block-Marker ("## ", "> ", "- ") bleiben stehen. Ein frueherer Stub entfernte sie
@@ -369,6 +369,87 @@ console.log('\nE4a – Widgets\n');
   const r = lpBuild(doc, toks, [{ from: 3, to: 3 }]);   // Cursor in Zeile 1
   ok('E4a: Zeile 1 roh, Zeile 2 wird task-Widget {7,12}',
     r.widgets.length === 1 && r.widgets[0].type === 'task' && r.widgets[0].from === 7 && r.widgets[0].to === 12, r.widgets);
+}
+
+// ═══ E4b: Zeilen-Scanner (Wikilink/Highlight/Tag), Bild-Fix, Frontmatter-Guard ═══
+console.log('\nE4b – Scanner, Bild, Frontmatter\n');
+
+// ── 35) lpScanLine: alle drei Konstrukte, Offsets stimmen ─────────────────
+{
+  const t = 'Siehe [[Ziel|Alias]] und ==wichtig== mit #uni/mathe hier';
+  const toks = lpScanLine(t, 100);
+  const wiki = toks.find(x => x.name === 'Wikilink'), hi = toks.find(x => x.name === 'Highlight'), tag = toks.find(x => x.name === 'Tag');
+  ok('Scanner: Wikilink mit Alias, Range exakt', wiki && wiki.from === 106 && wiki.to === 120 && wiki.data.inner === 'Ziel|Alias' && !wiki.data.embed, wiki);
+  ok('Scanner: Highlight-Range exakt', hi && hi.from === 125 && hi.to === 136, hi);
+  ok('Scanner: Tag mit / erkannt', tag && tag.data.tag === 'uni/mathe' && t.slice(tag.from - 100, tag.to - 100) === '#uni/mathe', tag);
+  ok('Scanner: parentFrom/To = Konstrukt selbst (E1-Reveal gratis)', wiki.parentFrom === wiki.from && wiki.parentTo === wiki.to);
+}
+
+// ── 36) lpScanLine: Embed-Flag + Leerzeile ────────────────────────────────
+{
+  const e = lpScanLine('![[Bild.png]]', 0)[0];
+  ok('Scanner: ![[..]] -> embed:true, Range ab dem !', e && e.data.embed && e.from === 0 && e.to === 13, e);
+  ok('Scanner: leere Zeile -> keine Tokens', lpScanLine('', 0).length === 0);
+}
+
+// ── 37) Highlight in lpBuild: == verschwinden, Inhalt lp-mark ─────────────
+{
+  const t = 'a ==wichtig== b';
+  const r = lpBuild(mkDoc(t), lpScanLine(t, 0), []);
+  ok('E4b: beide ==-Paare versteckt', r.hide.length === 2 && r.hide[0].from === 2 && r.hide[0].to === 4 && r.hide[1].from === 11 && r.hide[1].to === 13, r.hide);
+  ok('E4b: Inhalt als lp-mark markiert', r.marks.some(m => m.cls === 'lp-mark' && m.from === 4 && m.to === 11), r.marks);
+  const rv = lpBuild(mkDoc(t), lpScanLine(t, 0), [{ from: 6, to: 6 }]);
+  ok('E4b: Cursor im Highlight -> == sichtbar, Styling bleibt', rv.hide.length === 0 && rv.marks.some(m => m.cls === 'lp-mark'), rv.hide);
+}
+
+// ── 38) Tag in lpBuild: nur Styling, nichts versteckt ─────────────────────
+{
+  const t = 'Text #projekt dazu';
+  const r = lpBuild(mkDoc(t), lpScanLine(t, 0), []);
+  ok('E4b: Tag -> lp-tag-Mark, hide leer', r.hide.length === 0 && r.marks.some(m => m.cls === 'lp-tag' && t.slice(m.from, m.to) === '#projekt'), r.marks);
+}
+
+// ── 39) Code-Schutz: Pseudo-Token im InlineCode-Bereich wird verworfen ────
+{
+  const t = 'Code: `==kein Highlight==` hier';
+  const toks = [{ name: 'InlineCode', from: 6, to: 26 }, ...lpScanLine(t, 0)];
+  const r = lpBuild(mkDoc(t), toks, []);
+  ok('E4b: ==..== im Code -> weder hide noch lp-mark', !r.marks.some(m => m.cls === 'lp-mark') && r.hide.length === 0, { marks: r.marks, hide: r.hide });
+}
+
+// ── 40) Bild-Fix: ![alt](url) versteckt auch die URL (parent Image) ──────
+{
+  const t = '![Logo](logo.png)';
+  const doc = mkDoc(t);
+  const toks = [
+    { name: 'Image', from: 0, to: 17 },
+    mtok('LinkMark', 0, 2, 'Image', 0, 17), mtok('LinkMark', 6, 7, 'Image', 0, 17),
+    mtok('LinkMark', 7, 8, 'Image', 0, 17), mtok('LinkMark', 16, 17, 'Image', 0, 17),
+    mtok('URL', 8, 16, 'Image', 0, 17),
+  ];
+  const r = lpBuild(doc, toks, []);
+  const versteckt = r.hide.reduce((n, h) => n + (h.to - h.from), 0);
+  ok('E4b: Marker+URL weg, sichtbar bleibt "Logo"', r.hide.length === 5 && versteckt === 13, r.hide);
+  ok('E4b: Image als lp-link gestylt', r.marks.some(m => m.cls === 'lp-link' && m.from === 0 && m.to === 17), r.marks);
+}
+
+// ── 41) Frontmatter-Guard ────────────────────────────────────────────────
+{
+  const fm = '---\ntitle: Test\ntags: [a]\n---\n\n# Titel\n\n---\n\nText';
+  const doc = mkDoc(fm);
+  ok('Guard: Ende = Position des schliessenden ---', lpFrontmatterEnd(doc) === 29, lpFrontmatterEnd(doc));
+  ok('Guard: ohne Frontmatter -> 0', lpFrontmatterEnd(mkDoc('# Titel\n---')) === 0);
+  ok('Guard: unge­schlossen -> 0', lpFrontmatterEnd(mkDoc('---\ntitle: x\nkein Ende')) === 0);
+  // Der SetextHeading-Fall: "title: Test" + "---" ergibt ein HeaderMark {26,29} - das MUSS
+  // roh bleiben (im Guard-Bereich), waehrend das --- NACH dem Frontmatter ({39,42}) ein
+  // HR-Widget werden darf.
+  const toks = [
+    mtok('HeaderMark', 26, 29, 'SetextHeading2', 4, 29),
+    { name: 'HorizontalRule', from: 39, to: 42 },
+  ];
+  const r = lpBuild(doc, toks, []);
+  ok('Guard: HeaderMark im Frontmatter bleibt sichtbar', r.hide.length === 0, r.hide);
+  ok('Guard: --- nach dem Frontmatter wird HR-Widget', r.widgets.length === 1 && r.widgets[0].type === 'hr' && r.widgets[0].from === 39, r.widgets);
 }
 
 // ═══ Anker Leseansicht <-> Editor (Paul, 2026-07-17: "wenn ich in Zeile 30 bin und auf

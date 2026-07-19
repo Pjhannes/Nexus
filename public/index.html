@@ -594,6 +594,10 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 .editor-host .lp-taskcb{display:inline-flex;vertical-align:-2px;margin:0 1px 0 0;cursor:pointer}
 .editor-host .lp-hr{display:inline-block;width:100%;border-top:1px solid var(--border);vertical-align:middle}
 .editor-host .cm-line.lp-task-done{color:var(--dim);text-decoration:line-through}
+/* E4b: Highlight + Tag im Look der Leseansicht (.md-body mark Z.224 / .md-tag Z.232;
+   ohne display:inline-block - eine Mark-Decoration darf mitten im Umbruch liegen). */
+.editor-host .lp-mark{background:rgba(234,179,8,.28);color:#ffe9a8;border-radius:3px;padding:0 3px}
+.editor-host .lp-tag{color:var(--accent-tx);background:var(--accent-12);border-radius:5px;padding:0 7px;font-size:.85em}
 /* Die Rohsyntax-Zeile (Cursor drin) bekommt KEINE Sonderfarbe – sie soll sich nicht
    bewegen, nur die Marker tauchen wieder auf. */
 /* CM6 bringt sein restliches CSS selbst mit (style-mod injiziert es zur Laufzeit) ->
@@ -2289,13 +2293,55 @@ async function loadBacklinks(path){
 // Namen aus @lezer/markdown. ACHTUNG: der Ueberschriften-Marker heisst HeaderMark –
 // "HeadingMark" gibt es NICHT. Ein Tippfehler hier greift still nie.
 const LP_HIDE=new Set(['HeaderMark','EmphasisMark','CodeMark','LinkMark','StrikethroughMark','QuoteMark']);
-const LP_MARK={StrongEmphasis:'lp-strong',Emphasis:'lp-em',InlineCode:'lp-code',Strikethrough:'lp-strike',Link:'lp-link'};
+// Image mit dabei (E4b): der Alt-Text eines ![alt](url) bleibt sichtbar und sieht aus wie
+// ein Link; URL+Klammern verschwinden (istLinkTeil unten prueft auch parent==='Image').
+const LP_MARK={StrongEmphasis:'lp-strong',Emphasis:'lp-em',InlineCode:'lp-code',Strikethrough:'lp-strike',Link:'lp-link',Image:'lp-link'};
 const LP_LINE={ATXHeading1:'lp-h1',ATXHeading2:'lp-h2',ATXHeading3:'lp-h3',ATXHeading4:'lp-h4',ATXHeading5:'lp-h5',ATXHeading6:'lp-h6'};
 // Marker, deren Reveal-Kontext die ZEILE ist (Marker steht am Zeilenanfang; ListMark/
 // TaskMarker schon jetzt gelistet - sie werden erst mit den Widgets (E4) versteckt).
 const LP_LINE_MARK=new Set(['HeaderMark','QuoteMark','ListMark','TaskMarker']);
 
 function lpRevealed(from,to,reveal){for(const r of reveal){if(from<=r.to&&to>=r.from)return true;}return false;}
+
+// E4b: Pseudo-Tokens fuer Konstrukte, die @lezer/markdown NICHT parst: Wikilinks [[..]],
+// ==Highlight== und #Tags. Reiner Zeilen-Scanner in Lezer-Token-Form; das ViewPlugin
+// scannt nur die Zeilen der visibleRanges (51-MB-sicher) und merged VOR lpBuild in die
+// Token-Liste. parentFrom/To zeigen aufs Konstrukt selbst -> Konstrukt-Reveal (E1) gratis.
+// Bewusst KEIN MatchDecorator (baut am puren Kern vorbei) und KEINE Lezer-Extension
+// (InlineContext fummelig, [[ kollidiert mit dem Link-Parser). Regexes fuer Tag und
+// Highlight sind 1:1 die der Leseansicht (mdInline) - gleiche Erkennung beider Seiten.
+function lpScanLine(text,off){
+  const out=[];let m;
+  const wiki=/(!?)\[\[([^\[\]\n]+?)\]\]/g;
+  while((m=wiki.exec(text))){const from=off+m.index,to=from+m[0].length;
+    out.push({name:'Wikilink',from,to,parent:null,parentFrom:from,parentTo:to,data:{embed:m[1]==='!',inner:m[2]}});}
+  const hi=/==([^=\n]+?)==/g;
+  while((m=hi.exec(text))){const from=off+m.index,to=from+m[0].length;
+    out.push({name:'Highlight',from,to,parent:null,parentFrom:from,parentTo:to,data:{}});}
+  const tag=/(^|\s)#([\p{L}\p{N}_][\p{L}\p{N}_/-]*)/gu;
+  while((m=tag.exec(text))){const from=off+m.index+m[1].length,to=from+1+m[2].length;
+    out.push({name:'Tag',from,to,parent:null,parentFrom:from,parentTo:to,data:{tag:m[2]}});}
+  return out;
+}
+
+// E4b: Frontmatter-Ende (0 = kein Frontmatter). Der Bereich zwischen den --- bleibt
+// IMMER roh: ohne Frontmatter-Extension parst Lezer "title: X" + "---" als Setext-
+// Ueberschrift, deren HeaderMark-"---" heute schon versteckt wird - und ein HR-Widget
+// (E4a) wuerde den Trenner ganz ersetzen. Nur der Dokumentanfang wird gescannt (Cap 100
+// Zeilen); der Fortschritts-Check faengt das Dokumentende in Stub UND CM6-Text ab.
+function lpFrontmatterEnd(doc){
+  const first=doc.lineAt(0);
+  if(doc.sliceString(first.from,first.to)!=='---')return 0;
+  let pos=first.to+1;
+  for(let i=0;i<100;i++){
+    let ln;try{ln=doc.lineAt(pos);}catch(e){return 0;}
+    if(ln.from<pos)return 0;                        // kein Fortschritt -> Dokumentende
+    const s=doc.sliceString(ln.from,ln.to);
+    if(/^(---|\.\.\.)\s*$/.test(s))return ln.to;
+    pos=ln.to+1;
+  }
+  return 0;
+}
 
 function lpBuild(doc,tokens,reveal){
   const hide=[],marks=[],lines=[],widgets=[];
@@ -2305,7 +2351,26 @@ function lpBuild(doc,tokens,reveal){
   // ViewPlugin (LpWidget) - so bleibt der Kern headless testbar.
   let pendingBullet=null;
   const flushBullet=()=>{if(pendingBullet){widgets.push({from:pendingBullet.from,to:pendingBullet.to,type:'bullet',data:{}});pendingBullet=null;}};
+  // E4b: Frontmatter bleibt komplett roh; in Code-Bereichen gilt kein Pseudo-Markdown
+  // (die Leseansicht rendert dort auch roh - lpScanLine kennt den Kontext nicht).
+  const fmEnd=lpFrontmatterEnd(doc);
+  const codeRanges=[];
+  for(const t of tokens)if(t.name==='InlineCode'||t.name==='FencedCode'||t.name==='CodeBlock'||t.name==='CodeText')codeRanges.push(t);
+  const inCode=(a,b)=>{for(const r of codeRanges)if(a<r.to&&b>r.from)return true;return false;};
   for(const t of tokens){
+    if(t.from<fmEnd)continue;
+    // E4b: Pseudo-Tokens aus lpScanLine (Wikilink kommt in E5 dran).
+    if(t.name==='Highlight'||t.name==='Tag'||t.name==='Wikilink'){
+      if(inCode(t.from,t.to))continue;
+      if(t.name==='Tag'){marks.push({from:t.from,to:t.to,cls:'lp-tag'});continue;}
+      if(t.name==='Highlight'){
+        // Styling bleibt auch bei Reveal (wie lp-strong); nur die == verschwinden.
+        marks.push({from:t.from+2,to:t.to-2,cls:'lp-mark'});
+        if(!lpRevealed(t.parentFrom,t.parentTo,reveal)){hide.push({from:t.from,to:t.from+2});hide.push({from:t.to-2,to:t.to});}
+        continue;
+      }
+      continue;
+    }
     const cls=LP_LINE[t.name];
     if(cls){lines.push({from:doc.lineAt(t.from).from,cls});continue;}
     if(t.name==='Blockquote'){
@@ -2336,9 +2401,10 @@ function lpBuild(doc,tokens,reveal){
     }
     const mc=LP_MARK[t.name];
     if(mc){marks.push({from:t.from,to:t.to,cls:mc});continue;}
-    // URL/Titel eines [Text](url) verschwinden mit den Klammern; der Link-Knoten selbst
-    // ist schon als lp-link markiert, uebrig bleibt sichtbar genau der Linktext.
-    const istLinkTeil=(t.name==='URL'||t.name==='LinkTitle')&&t.parent==='Link';
+    // URL/Titel eines [Text](url) bzw. ![alt](url) verschwinden mit den Klammern; der
+    // Link-/Image-Knoten selbst ist schon als lp-link markiert, sichtbar bleibt genau
+    // der Link-/Alt-Text. Ohne den Image-Zweig blieb die URL stehen: "![alt](u)" -> "altu".
+    const istLinkTeil=(t.name==='URL'||t.name==='LinkTitle')&&(t.parent==='Link'||t.parent==='Image');
     if(!LP_HIDE.has(t.name)&&!istLinkTeil)continue;
     // Reveal-Kontext (E1): Zeilen-Marker ("## ", "> ") zeigen sich, sobald der Cursor
     // irgendwo auf ihrer ZEILE steht - am Zeilenanfang waere ein Konstrukt-Reveal
@@ -2553,6 +2619,15 @@ function cm6LivePreview(m){
         tokens.push({name:n.name,from:n.from,to:n.to,parent:p?p.name:null,
                      parentFrom:p?p.from:null,parentTo:p?p.to:null});
       }});
+      // E4b: Pseudo-Tokens (Wikilink/Highlight/Tag) zeilenweise NUR im sichtbaren
+      // Bereich scannen und in die Token-Liste mergen; den Code-Schutz macht lpBuild.
+      let pos=from;
+      for(;;){
+        const ln=view.state.doc.lineAt(pos);
+        if(ln.length)tokens.push(...lpScanLine(ln.text,ln.from));
+        if(ln.to>=to)break;
+        pos=ln.to+1;
+      }
     }
     const r=lpBuild(view.state.doc,tokens,reveal);
     const deco=[],atom=[];
