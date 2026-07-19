@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nexus-src",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["src/ui-server.js"],
+      "port": 3002,
+      "env": { "NEXUS_PORT": "3002" }
+    }
+  ]
+}

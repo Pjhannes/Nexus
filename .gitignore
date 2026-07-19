@@ -31,3 +31,10 @@ aufgaben Nexus.txt
 # Design-Mockups (HTML-Entwuerfe + Logo-SVGs) – nicht Teil der App, enthalten Demo-Inhalt.
 # Bleiben lokal, raus aus dem Repo (Session 46).
 design-mockups/
+
+# --- Claude Code ---
+# .claude/launch.json IST im Repo (Dev-Server-Start, hilft auf jedem Rechner).
+# Persoenliches bleibt lokal: die Permission-Allowlist enthaelt eigene Pfade/Befehle,
+# worktrees/ sind temporaere Arbeitsverzeichnisse.
+.claude/settings.local.json
+.claude/worktrees/
