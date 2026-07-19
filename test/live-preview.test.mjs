@@ -13,8 +13,8 @@ const b = html.indexOf('//__LP_END__');
 if (a < 0 || b < 0) { console.error('Marker //__LP_START__/__LP_END__ nicht gefunden'); process.exit(1); }
 const core = html.slice(a, b);
 
-const mod = await import('data:text/javascript,' + encodeURIComponent(core + '\nexport {lpBuild,LP_HIDE,LP_MARK,LP_LINE,lpNorm,lpLineForText,lpBlockForLine,lpScanLine,lpFrontmatterEnd};'));
-const { lpBuild, LP_HIDE, lpNorm, lpLineForText, lpBlockForLine, lpScanLine, lpFrontmatterEnd } = mod;
+const mod = await import('data:text/javascript,' + encodeURIComponent(core + '\nexport {lpBuild,LP_HIDE,LP_MARK,LP_LINE,lpNorm,lpLineForText,lpBlockForLine,lpScanLine,lpFrontmatterEnd,lpPropsWidget};'));
+const { lpBuild, LP_HIDE, lpNorm, lpLineForText, lpBlockForLine, lpScanLine, lpFrontmatterEnd, lpPropsWidget } = mod;
 
 // Stub fuer stripInline. WICHTIG: bildet die ECHTE Funktion nach, die NUR Inline-Markdown
 // entfernt – Block-Marker ("## ", "> ", "- ") bleiben stehen. Ein frueherer Stub entfernte sie
@@ -449,7 +449,9 @@ console.log('\nE4b – Scanner, Bild, Frontmatter\n');
   ];
   const r = lpBuild(doc, toks, []);
   ok('Guard: HeaderMark im Frontmatter bleibt sichtbar', r.hide.length === 0, r.hide);
-  ok('Guard: --- nach dem Frontmatter wird HR-Widget', r.widgets.length === 1 && r.widgets[0].type === 'hr' && r.widgets[0].from === 39, r.widgets);
+  // Seit E6 kommt zusaetzlich das props-Widget ueber dem Frontmatter (Test 53).
+  const hr = r.widgets.filter(w => w.type === 'hr');
+  ok('Guard: --- nach dem Frontmatter wird HR-Widget', hr.length === 1 && hr[0].from === 39, r.widgets);
 }
 
 // ═══ E5: Wikilinks + Callouts ═══
@@ -523,6 +525,78 @@ console.log('\nE5 – Wikilinks & Callouts\n');
   const t = '> Ein normales Zitat';
   const r = lpBuild(mkDoc(t), [{ name: 'Blockquote', from: 0, to: t.length }], []);
   ok('E5: Zitat ohne [!..] -> lp-quote', r.lines.length === 1 && r.lines[0].cls === 'lp-quote', r.lines);
+}
+
+// ═══ E6: Codeblock, Tabelle, Properties, Bilder, Mathe ═══
+console.log('\nE6 – Codeblock, Tabelle, Props, Bild, Mathe\n');
+
+// ── 51) FencedCode: alle Zeilen lp-codeblock ──────────────────────────────
+{
+  const t = '```js\nconst x=1;\n```';
+  const r = lpBuild(mkDoc(t), [{ name: 'FencedCode', from: 0, to: t.length }], []);
+  ok('E6: 3 Zeilen lp-codeblock', r.lines.length === 3 && r.lines.every(l => l.cls === 'lp-codeblock'), r.lines);
+}
+
+// ── 52) Tabelle: Zeilen lp-table, Pipes lp-dim ────────────────────────────
+{
+  const t = '| a | b |\n|---|---|\n| 1 | 2 |';
+  const r = lpBuild(mkDoc(t), [{ name: 'Table', from: 0, to: t.length }], []);
+  ok('E6: 3 Zeilen lp-table', r.lines.length === 3 && r.lines.every(l => l.cls === 'lp-table'), r.lines);
+  ok('E6: alle 9 Pipes lp-dim', r.marks.filter(m => m.cls === 'lp-dim').length === 9, r.marks.length);
+}
+
+// ── 53) Properties-Widget: Frontmatter kollabiert, Reveal -> roh ──────────
+// lpPropsWidget ist BEWUSST nicht Teil von lpBuild: das Widget ersetzt Zeilenumbrueche,
+// was CM6 aus ViewPlugins verbietet - es kommt aus einem StateField (live gecrasht:
+// "Decorations that replace line breaks may not be specified via plugins").
+{
+  const fm = '---\ntitle: Test\ntags: [a]\n---\n\nText';
+  const doc = mkDoc(fm);
+  const w = lpPropsWidget(doc, []);
+  ok('E6: props-Widget {0,29} mit n=2', w && w.type === 'props' && w.from === 0 && w.to === 29 && w.data.n === 2, w);
+  ok('E6: Cursor im Frontmatter -> null (roh)', lpPropsWidget(doc, [{ from: 8, to: 8 }]) === null);
+  ok('E6: ohne Frontmatter -> null', lpPropsWidget(mkDoc('# Titel'), []) === null);
+}
+
+// ── 54) Markdown-Bild: Punkt-Widget am Zeilenende mit roher src ───────────
+{
+  const t = 'Ein Bild: ![Logo](logo.png)';
+  const doc = mkDoc(t);
+  const toks = [
+    { name: 'Image', from: 10, to: 27 },
+    mtok('URL', 18, 26, 'Image', 10, 27),
+  ];
+  const r = lpBuild(doc, toks, []);
+  const img = r.widgets.find(w => w.type === 'img');
+  ok('E6: img-Widget als Punkt am Zeilenende ({27,27}, src roh)', img && img.from === 27 && img.to === 27 && img.data.src === 'logo.png', img);
+  // Reveal aendert am Bild nichts (Obsidian-Verhalten):
+  const rv = lpBuild(doc, toks, [{ from: 12, to: 12 }]);
+  ok('E6: Bild-Widget bleibt bei Reveal', rv.widgets.some(w => w.type === 'img'), rv.widgets);
+}
+
+// ── 55) Wiki-Embed: nur Bild-Endungen bekommen eine Vorschau ──────────────
+{
+  const t = 'Foto: ![[urlaub.jpg]]';
+  const r = lpBuild(mkDoc(t), lpScanLine(t, 0), []);
+  const img = r.widgets.find(w => w.type === 'img');
+  ok('E6: ![[x.jpg]] -> img-Widget mit data.wiki', img && img.data.wiki === 'urlaub.jpg' && img.from === t.length, img);
+  const r2 = lpBuild(mkDoc('![[Notiz]]'), lpScanLine('![[Notiz]]', 0), []);
+  ok('E6: ![[Notiz]] (kein Bild) -> kein img-Widget', !r2.widgets.some(w => w.type === 'img'), r2.widgets);
+}
+
+// ── 56) Mathe: $tex$ -> math-Widget; Reveal/Code -> roh ───────────────────
+{
+  const t = 'Inline $a^2+b^2=c^2$ dazu';
+  const toks = lpScanLine(t, 0);
+  ok('E6: Scanner findet MathInline mit tex', toks.some(x => x.name === 'MathInline' && x.data.tex === 'a^2+b^2=c^2'), toks);
+  const r = lpBuild(mkDoc(t), toks, []);
+  const mw = r.widgets.find(w => w.type === 'math');
+  ok('E6: math-Widget ersetzt $..$ ({7,20})', mw && mw.from === 7 && mw.to === 20, mw);
+  ok('E6: Cursor im Tex -> kein Widget', lpBuild(mkDoc(t), toks, [{ from: 10, to: 10 }]).widgets.length === 0);
+  const tc = 'Code `$x$` hier';
+  const r3 = lpBuild(mkDoc(tc), [{ name: 'InlineCode', from: 5, to: 10 }, ...lpScanLine(tc, 0)], []);
+  ok('E6: $..$ im Code -> kein Widget', !r3.widgets.some(w => w.type === 'math'), r3.widgets);
+  ok('E6: "$5 und $10" -> kein Fehlalarm', lpScanLine('Kostet $5 und $10 heute', 0).filter(x => x.name === 'MathInline').length === 0);
 }
 
 // ═══ Anker Leseansicht <-> Editor (Paul, 2026-07-17: "wenn ich in Zeile 30 bin und auf

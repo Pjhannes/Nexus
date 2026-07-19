@@ -606,6 +606,16 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 .editor-host .cm-line.lp-callout{border-left:3px solid var(--accent);background:var(--panel);padding-left:16px}
 .editor-host .cm-line.lp-callout:has(.lp-callout-icon){font-weight:600}
 .editor-host .lp-callout-icon{display:inline-block;width:18px;text-align:center}
+/* E6: Codeblock-Zeilen im .code-block-Look (Z.239/244), Tabellen mono + Pipes gedimmt,
+   Properties-Chip, Bildvorschau (width:100% wrappt das Punkt-Widget auf eine eigene
+   visuelle Zeile), Mathe. */
+.editor-host .cm-line.lp-codeblock{background:rgba(0,0,0,.22);font-family:Consolas,'SF Mono',monospace;font-size:12.5px;line-height:1.55;color:var(--accent-tx)}
+.editor-host .cm-line.lp-table{font-family:Consolas,'SF Mono',monospace;font-size:.92em}
+.editor-host .lp-dim{color:var(--dim)}
+.editor-host .lp-props{display:inline-block;color:var(--dim);background:var(--panel2);border:1px solid var(--border);border-radius:7px;padding:2px 10px;font-size:12px;cursor:pointer;margin:4px 0}
+.editor-host .lp-img-widget{display:inline-block;width:100%}
+.editor-host .lp-img{max-width:min(480px,100%);border-radius:10px;border:1px solid var(--border);margin:6px 0;display:block}
+.editor-host .lp-math{color:#e6d6a8}
 /* Die Rohsyntax-Zeile (Cursor drin) bekommt KEINE Sonderfarbe – sie soll sich nicht
    bewegen, nur die Marker tauchen wieder auf. */
 /* CM6 bringt sein restliches CSS selbst mit (style-mod injiziert es zur Laufzeit) ->
@@ -2329,6 +2339,11 @@ function lpScanLine(text,off){
   const tag=/(^|\s)#([\p{L}\p{N}_][\p{L}\p{N}_/-]*)/gu;
   while((m=tag.exec(text))){const from=off+m.index+m[1].length,to=from+1+m[2].length;
     out.push({name:'Tag',from,to,parent:null,parentFrom:from,parentTo:to,data:{tag:m[2]}});}
+  // E6: Inline-Mathe - Regex 1:1 aus mdInline ($ nicht neben Whitespace, kein $5-und-$10-
+  // Fehlalarm). Block-$$ ueber mehrere Zeilen bleibt bewusst roh (Zeilen-Scanner).
+  const math=/\$(?!\s)([^$\n]+?)(?<!\s)\$/g;
+  while((m=math.exec(text))){const from=off+m.index,to=from+m[0].length;
+    out.push({name:'MathInline',from,to,parent:null,parentFrom:from,parentTo:to,data:{tex:m[1]}});}
   return out;
 }
 
@@ -2351,6 +2366,18 @@ function lpFrontmatterEnd(doc){
   return 0;
 }
 
+// E6: Beschreibung des kollabierten Eigenschaften-Widgets (null = keins: kein Frontmatter
+// oder Cursor drin -> roh). NICHT Teil von lpBuild: das Widget ersetzt Zeilenumbrueche,
+// und solche Decorations verbietet CM6 aus ViewPlugins - es kommt deshalb aus einem
+// StateField (cm6LivePreview), das diese pure Funktion aufruft. n = ":"-Zeilen.
+function lpPropsWidget(doc,reveal){
+  const fmEnd=lpFrontmatterEnd(doc);
+  if(!fmEnd||lpRevealed(0,fmEnd,reveal))return null;
+  let n=0,pos=doc.lineAt(0).to+1;
+  for(let i=0;i<100;i++){const ln=doc.lineAt(pos);if(ln.to>=fmEnd)break;if(doc.sliceString(ln.from,ln.to).includes(':'))n++;pos=ln.to+1;}
+  return {from:0,to:fmEnd,type:'props',data:{n}};
+}
+
 function lpBuild(doc,tokens,reveal){
   const hide=[],marks=[],lines=[],widgets=[];
   // E4a: ListMark ("-") wartet, ob auf derselben Zeile ein TaskMarker ("[x]") folgt -
@@ -2367,10 +2394,34 @@ function lpBuild(doc,tokens,reveal){
   const inCode=(a,b)=>{for(const r of codeRanges)if(a<r.to&&b>r.from)return true;return false;};
   for(const t of tokens){
     if(t.from<fmEnd)continue;
+    // E6: Codeblock-Zeilen bekommen den .code-block-Look; die ```-Fences versteckt schon
+    // das generische CodeMark-hide (Reveal-Kontext = ganzer Block).
+    if(t.name==='FencedCode'){
+      let p=t.from;
+      for(;;){const ln=doc.lineAt(p);lines.push({from:ln.from,cls:'lp-codeblock'});if(ln.to>=t.to)break;p=ln.to+1;}
+      continue;
+    }
+    // E6: Tabellen-Zeilen in Mono (Spalten stehen buendig), Pipes gedimmt. BEWUSST kein
+    // editierbares Tabellen-Widget (Mehrwochenprojekt, kollidiert mit atomicRanges) -
+    // echte Tabellenbearbeitung bleibt Leseansicht/Vorschau.
+    if(t.name==='Table'){
+      let p=t.from;
+      for(;;){const ln=doc.lineAt(p);lines.push({from:ln.from,cls:'lp-table'});
+        const s=doc.sliceString(ln.from,ln.to);
+        for(let i=0;i<s.length;i++)if(s[i]==='|')marks.push({from:ln.from+i,to:ln.from+i+1,cls:'lp-dim'});
+        if(ln.to>=t.to)break;p=ln.to+1;}
+      continue;
+    }
     // E4b: Pseudo-Tokens aus lpScanLine (Wikilink kommt in E5 dran).
-    if(t.name==='Highlight'||t.name==='Tag'||t.name==='Wikilink'){
+    if(t.name==='Highlight'||t.name==='Tag'||t.name==='Wikilink'||t.name==='MathInline'){
       if(inCode(t.from,t.to))continue;
       if(t.name==='Tag'){marks.push({from:t.from,to:t.to,cls:'lp-tag'});continue;}
+      // E6: $tex$ wird ein KaTeX-Widget (Rendering async im ViewPlugin); Cursor im
+      // Konstrukt -> roher Quelltext.
+      if(t.name==='MathInline'){
+        if(!lpRevealed(t.parentFrom,t.parentTo,reveal))widgets.push({from:t.from,to:t.to,type:'math',data:{tex:t.data.tex}});
+        continue;
+      }
       if(t.name==='Highlight'){
         // Styling bleibt auch bei Reveal (wie lp-strong); nur die == verschwinden.
         marks.push({from:t.from+2,to:t.to-2,cls:'lp-mark'});
@@ -2385,6 +2436,14 @@ function lpBuild(doc,tokens,reveal){
       const inner=(t.data&&t.data.inner)||'';
       const emb=!!(t.data&&t.data.embed);
       const wOpen=t.from+(emb?3:2),wClose=t.to-2;
+      // E6: Bild-Embeds (![[x.png]]) bekommen eine echte Vorschau als Punkt-Widget am
+      // Zeilenende - sie bleibt AUCH bei Reveal stehen (wie Obsidian: beim Editieren
+      // der Zeile sieht man das Bild weiter). Endungsliste = IMG_EXT der Leseansicht;
+      // hier als Regex, der Kern kennt keine App-Konstanten.
+      if(emb&&/\.(png|jpe?g|gif|webp|svg|bmp|avif|ico)$/i.test(inner.split('|')[0].trim())){
+        const ln=doc.lineAt(t.to);
+        widgets.push({from:ln.to,to:ln.to,type:'img',data:{wiki:inner.split('|')[0].trim()}});
+      }
       if(lpRevealed(t.parentFrom,t.parentTo,reveal)){marks.push({from:wOpen,to:wClose,cls:'lp-wikilink'});continue;}
       const pipe=inner.indexOf('|');
       if(emb)widgets.push({from:t.from,to:wOpen,type:'embed',data:{}});
@@ -2435,6 +2494,13 @@ function lpBuild(doc,tokens,reveal){
     }
     const mc=LP_MARK[t.name];
     if(mc){marks.push({from:t.from,to:t.to,cls:mc});continue;}
+    // E6: Markdown-Bild ![alt](url) -> Vorschau-Widget am Zeilenende, unabhaengig vom
+    // Reveal (s. Wiki-Embed oben). src ROH wie in mdInline (dort wird die URL auch
+    // unaufgeloest ins <img src> geschrieben - identisches Verhalten beider Seiten).
+    if(t.name==='URL'&&t.parent==='Image'){
+      const ln=doc.lineAt(t.to);
+      widgets.push({from:ln.to,to:ln.to,type:'img',data:{src:doc.sliceString(t.from,t.to)}});
+    }
     // URL/Titel eines [Text](url) bzw. ![alt](url) verschwinden mit den Klammern; der
     // Link-/Image-Knoten selbst ist schon als lp-link markiert, sichtbar bleibt genau
     // der Link-/Alt-Text. Ohne den Image-Zweig blieb die URL stehen: "![alt](u)" -> "altu".
@@ -2633,7 +2699,33 @@ function cm6LivePreview(m){
     // der Leseansicht (hier, nicht im Kern - der bleibt headless).
     callout:(spec)=>{const s=document.createElement('span');s.className='lp-callout-icon';
       const c=(typeof CALLOUTS!=='undefined')?CALLOUTS[spec.data.typ]:null;
-      s.textContent=(c?c.i:'✎')+' ';if(c)s.style.color=c.c;s.title='[!'+spec.data.typ+']';return s;}
+      s.textContent=(c?c.i:'✎')+' ';if(c)s.style.color=c.c;s.title='[!'+spec.data.typ+']';return s;},
+    // E6: Frontmatter kollabiert; Klick setzt den Cursor an den Anfang (CM behandelt
+    // mousedown, ignoreEvent false) -> Reveal -> Rohtext zum Bearbeiten.
+    props:(spec)=>{const s=document.createElement('span');s.className='lp-props';
+      s.textContent='⚙ Eigenschaften ('+spec.data.n+')';s.title='Frontmatter – klicken zum Bearbeiten';return s;},
+    // E6: Bildvorschau (Punkt-Widget am Zeilenende; width:100% wrappt es auf eine eigene
+    // visuelle Zeile - Block-Decorations sind aus ViewPlugins verboten). Nachgeladenes
+    // Bild -> requestMeasure, sonst stimmt CM6s Hoehenschaetzung nicht.
+    img:(spec,view)=>{
+      const w=document.createElement('span');w.className='lp-img-widget';
+      let src=null;
+      if(spec.data.wiki){const p=(typeof resolveAssetPath==='function')?resolveAssetPath(spec.data.wiki):null;if(p)src=fileUrl(p);}
+      else src=spec.data.src;
+      if(!src)return w;
+      const img=document.createElement('img');img.className='lp-img';img.alt='';img.src=src;
+      img.onload=()=>view.requestMeasure();
+      img.onerror=()=>{img.remove();view.requestMeasure();};
+      w.appendChild(img);return w;
+    },
+    // E6: Inline-Mathe. Erst der rohe TeX (Fallback offline/CDN-Fehler - wie die
+    // Leseansicht, KaTeX ist CDN), dann async gerendert + neu vermessen.
+    math:(spec,view)=>{
+      const s=document.createElement('span');s.className='lp-math';s.textContent=spec.data.tex;
+      loadKatex().then(k=>{if(!k||!s.isConnected)return;
+        try{s.innerHTML=k.renderToString(spec.data.tex,{throwOnError:false});view.requestMeasure();}catch(e){}});
+      return s;
+    }
   };
   class LpWidget extends WidgetType{
     constructor(spec){super();this.spec=spec;this.key=spec.type+'|'+JSON.stringify(spec.data);}
@@ -2677,7 +2769,12 @@ function cm6LivePreview(m){
     for(const h of r.hide)if(h.to>h.from){const d=versteckt.range(h.from,h.to);deco.push(d);atom.push(d);}
     // Widgets ersetzen ihre Quellzeichen und sind atomar (Pfeiltasten ueberspringen sie
     // als Einheit; Backspace dahinter loescht das ganze Konstrukt - Obsidian-Verhalten).
-    for(const w of r.widgets||[])if(w.to>w.from){const d=Decoration.replace({widget:new LpWidget(w)}).range(w.from,w.to);deco.push(d);atom.push(d);}
+    // E6: Punkt-Widgets (from==to, z.B. Bildvorschau) ersetzen nichts - Decoration.widget
+    // inline mit side:1, NICHT atomar (der Cursor laeuft normal daran vorbei).
+    for(const w of r.widgets||[]){
+      if(w.to>w.from){const d=Decoration.replace({widget:new LpWidget(w)}).range(w.from,w.to);deco.push(d);atom.push(d);}
+      else deco.push(Decoration.widget({widget:new LpWidget(w),side:1}).range(w.from));
+    }
     // true = CM6 sortiert selbst; ohne das wirft RangeSet bei ueberlappenden Marks.
     return {deco:Decoration.set(deco,true),atom:Decoration.set(atom,true)};
   }
@@ -2715,7 +2812,22 @@ function cm6LivePreview(m){
     }
     return false;
   }});
-  return [plugin,linkKlick];
+  // E6: Properties-Widget als StateField - es ersetzt Zeilenumbrueche (das ganze
+  // Frontmatter), was CM6 aus ViewPlugins verbietet ("Decorations that replace line
+  // breaks may not be specified via plugins"). Frontmatter haengt nicht am Viewport,
+  // ein Feld ueber Doc+Selektion reicht. Atomar, damit der Cursor nicht unsichtbar
+  // durch die versteckten Zeilen wandert.
+  function propsDeco(st){
+    const reveal=[];for(const r of st.selection.ranges)reveal.push({from:r.from,to:r.to});
+    const w=lpPropsWidget(st.doc,reveal);
+    return w?Decoration.set([Decoration.replace({widget:new LpWidget(w)}).range(w.from,w.to)]):Decoration.none;
+  }
+  const propsField=m.S.StateField.define({
+    create:st=>propsDeco(st),
+    update:(v,tr)=>(tr.docChanged||tr.selection)?propsDeco(tr.state):v,
+    provide:f=>[EditorView.decorations.from(f),EditorView.atomicRanges.of(view=>view.state.field(f))]
+  });
+  return [plugin,linkKlick,propsField];
 }
 // Liest die aktuelle Leseposition: erster Block, dessen Unterkante noch im Viewport liegt,
 // plus sein Abstand zur Viewport-Oberkante. Gleiche Idee wie withScrollAnchor (Lesemodus R17),
