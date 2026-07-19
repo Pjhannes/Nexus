@@ -680,6 +680,28 @@ ok('Anker: Zitat "Ein Zitat hier" -> Quellzeile mit "> "',
     lpLineForText(N, 'ein Punkt im Zitat hier', strip));
 }
 
+// ── 18f) Bild-Zeile: die Bild-Syntax gehoert nicht in den Anker-Vergleich ──
+// Live an der LP-Testkarte aufgefallen (Rundlauf Scroll 900): der gerenderte Absatz
+// "Ein Bild: " hat keinen alt-Text (Attribut!), stripInline machte aus der Quellzeile
+// aber "Ein Bild: !Logo" -> beide Richtungen ohne Treffer -> Sprung an den Anfang.
+{
+  const N = ['Ein Bild: ![Logo](logo.png)', 'Foto: ![[urlaub.jpg]] fertig'];
+  ok('Anker: Bild-Zeile via "Ein Bild:" gefunden', lpLineForText(N, 'Ein Bild:', strip) === 0,
+    lpLineForText(N, 'Ein Bild:', strip));
+  ok('Anker: Embed-Zeile via "Foto: fertig" gefunden', lpLineForText(N, 'Foto: fertig', strip) === 1,
+    lpLineForText(N, 'Foto: fertig', strip));
+}
+
+// ── 18g) Alias-Wikilink: die Leseansicht zeigt den ALIAS, stripInline das ZIEL ──
+// Live (Rundlauf 1400): Editor-Anker "…mit Alias: START…" traf nie den gerenderten
+// Block "…mit Alias: zum Anfang…" -> Ruecksprung 0. lpStripMedia ersetzt [[Z|A]]->A.
+{
+  const N = ['einer mit Alias: [[START|zum Anfang]], ein kaputter Rest'];
+  ok('Anker: Alias-Zeile via Sichttext gefunden',
+    lpLineForText(N, 'einer mit Alias: zum Anfang, ein kaputter Rest', strip) === 0,
+    lpLineForText(N, 'einer mit Alias: zum Anfang, ein kaputter Rest', strip));
+}
+
 // ── 19) Kein Treffer -> -1, kein falscher Sprung an den Anfang ────────────
 ok('Anker: unbekannter Text -> -1 (Aufrufer laesst die Position dann in Ruhe)',
   lpLineForText(NOTIZ, 'Diesen Text gibt es nirgends', strip) === -1);

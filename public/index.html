@@ -2564,13 +2564,23 @@ function lpStripBlock(l){
   // rendert es als .task-cb-Kaestchen, im DOM steht es nicht mehr drin.
   return l.replace(/^\s{0,3}(#{1,6}\s+|(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?)/,"");
 }
+// Quelltext fuer den Anker-Vergleich auf SICHTTEXT bringen: (1) Bild-/Embed-Syntax weg -
+// der gerenderte Block hat weder alt-Text (Attribut) noch Embed-Inhalt (eigener
+// .transclude-Block) als Text; stripInline liesse "!Logo" stehen. (2) [[Ziel|Alias]] ->
+// Alias - die Leseansicht zeigt den ALIAS, stripInline nimmt aber das ZIEL ($1); ohne
+// die Ersetzung platzte der Vergleich an jeder Alias-Zeile (live: Rueckweg fiel auf 0).
+function lpStripMedia(l){return (l||'')
+  .replace(/!\[[^\]]*\]\([^)]*\)/g,'')
+  .replace(/!\[\[[^\]]+\]\]/g,'')
+  .replace(/\[\[([^\]|#]+)\|([^\]]+)\]\]/g,'$2');}
 function lpLineForText(zeilen,text,strip){
   const ziel=lpNorm(text);
   if(!ziel)return -1;
   for(let i=0;i<zeilen.length;i++){
     const roh=zeilen[i];
     if(!roh||!roh.trim())continue;
-    const s=lpNorm(strip?strip(lpStripBlock(roh)):lpStripBlock(roh));
+    const m=lpStripMedia(roh);
+    const s=lpNorm(strip?strip(lpStripBlock(m)):lpStripBlock(m));
     // Zu kurze Zeilen ("-", "|", "---") treffen sonst irgendwo zufaellig.
     if(s.length<4)continue;
     if(ziel.startsWith(s.slice(0,Math.min(s.length,44))))return i;
@@ -2581,7 +2591,8 @@ function lpLineForText(zeilen,text,strip){
 // Umgekehrte Richtung: welcher gerenderte Block gehoert zu dieser Quellzeile?
 // bloecke = [{text}] in Dokumentreihenfolge.
 function lpBlockForLine(bloecke,zeile,strip){
-  const s=lpNorm(strip?strip(lpStripBlock(zeile)):lpStripBlock(zeile));
+  const m=lpStripMedia(zeile);
+  const s=lpNorm(strip?strip(lpStripBlock(m)):lpStripBlock(m));
   if(s.length<4)return -1;
   for(let i=0;i<bloecke.length;i++){
     if(lpNorm(bloecke[i].text).startsWith(s.slice(0,Math.min(s.length,44))))return i;
@@ -2841,7 +2852,10 @@ function cm6LivePreview(m){
 function noteElFuerText(wurzel,text){
   const pre=text.slice(0,Math.min(text.length,44));
   for(const c of wurzel.children){
-    if(/^(UL|OL|BLOCKQUOTE)$/.test(c.tagName)&&c.children.length){
+    // LI mit dabei: verschachtelte Listen liegen als UL IM <li> - ohne den Abstieg war
+    // ein Editor-Anker auf "  - verschachtelt" rueckwaerts nie aufloesbar und der
+    // Ruecksprung fiel auf 0 (live am 600er-Rundlauf der LP-Testkarte).
+    if(/^(UL|OL|BLOCKQUOTE|LI)$/.test(c.tagName)&&c.children.length){
       const tief=noteElFuerText(c,text); if(tief)return tief;
     }
     if(noteBlockText(c).startsWith(pre))return c;
@@ -2857,10 +2871,19 @@ function editorLeseAnker(){
   const pos=cm.posAtCoords({x:r.left+30,y:r.top+6});
   if(pos==null)return null;
   const doc=cm.state.doc;
+  // Frontmatter ueberspringen: die Leseansicht rendert es nie als Textblock (nur als
+  // .props-Details) - ein Anker "typ: testkarte" faende dort nichts und der Ruecksprung
+  // fiele auf 0 zurueck. Seit dem Properties-Widget (E6) steht der Editor-Anfang
+  // andauernd auf diesen Zeilen.
+  const fmEnd=lpFrontmatterEnd(doc);
   let n=doc.lineAt(pos).number;
   for(let i=0;i<60&&n<=doc.lines;i++,n++){
     const ln=doc.line(n);
-    const t=lpNorm(stripInline(lpStripBlock(ln.text)));
+    if(ln.from<fmEnd)continue;
+    // Bild-/Embed-Syntax raus, BEVOR der Anker entsteht (lpStripMedia, s. Kern):
+    // "![Logo](x.png)" wuerde im stripInline zu "!Logo", der gerenderte Block hat aber
+    // nur "Ein Bild: " (alt ist Attribut, kein Text) - der Ruecksprung faende nichts.
+    const t=lpNorm(stripInline(lpStripBlock(lpStripMedia(ln.text))));
     if(t.length<4)continue;
     const c=cm.coordsAtPos(ln.from);
     return {text:t,off:Math.max(0,Math.round((c?c.top:r.top)-r.top)),path:editorState.path};
@@ -2886,7 +2909,17 @@ function noteBlockText(el){
 // Abstieg waere der Anker immer der erste Punkt und man landete am Abschnittsanfang.
 function noteAnkerEl(wurzel,aTop){
   let el=null;
-  for(const c of wurzel.children){const r=c.getBoundingClientRect();if(r.bottom>aTop+4){el=c;break;}}
+  for(const c of wurzel.children){
+    const r=c.getBoundingClientRect();if(r.bottom<=aTop+4)continue;
+    // Transklusionen ueberspringen: ihr Text (fremde Notiz + "oeffnen"-UI) kommt im
+    // eigenen Quelltext nicht vor - ein Anker darauf faende nie eine Zeile und der
+    // Editor spraenge an den Anfang (live an der LP-Testkarte mit ![[START]] passiert).
+    if(c.classList&&(c.classList.contains('transclude')||c.querySelector&&c.querySelector(':scope > .transclude')))continue;
+    // Leere Elemente ueberspringen: ein Block-Embed IM Absatz splittet das <p> beim
+    // HTML-Parsen - das leere Rest-<p> wuerde sonst Anker und noteLeseAnker gaebe null.
+    if(!noteBlockText(c))continue;
+    el=c;break;
+  }
   if(!el)return null;
   if(/^(UL|OL|BLOCKQUOTE)$/.test(el.tagName)&&el.children.length){
     const tiefer=noteAnkerEl(el,aTop);
@@ -2962,9 +2995,50 @@ async function openEditor(path,isNew){
         cm6LivePreview(CM),
         CM.V.EditorView.updateListener.of(u=>{if(u.docChanged)markDirty();}),
         cm6Theme(CM)
-      ]}),parent:host,
-      scrollTo:CM.V.EditorView.scrollIntoView(selPos,{y:'start',yMargin:yOff})
+      ]}),parent:host
     });
+    // Scrollziel DIREKT setzen, im SELBEN Task - der Browser paintet erst am Task-Ende,
+    // also ohne sichtbaren Sprung. NICHT scrollIntoView: sowohl config.scrollTo des
+    // Konstruktors als auch der Effekt-dispatch greifen seit den Widget-/Atomic-
+    // Extensions (E4-E6) nicht mehr (live verifiziert: Ziel Zeile 28, yMargin 0..379,
+    // scrollTop blieb immer 0 - direktes scrollTop haelt dagegen zuverlaessig).
+    // Zweistufig: lineBlockAt (Hoehen-SCHAETZUNG) positioniert grob, damit die Zielzeile
+    // im Render-Fenster liegt; die Feinkorrektur laeuft im ersten requestMeasure-read
+    // (echte Geometrie: kollabiertes Frontmatter, Heading-Paddings) - measure laeuft im
+    // rAF VOR dem ersten Paint, der Nutzer sieht nur die fertige Position.
+    if(selPos>0){
+      // Zweistufig, weil CM6s ERSTER measure-Zyklus (rAF) jeden im Mount-Task gesetzten
+      // scrollTop mit seinem gecachten 0 ueberschreibt (live nachgemessen; ein Set
+      // NACH dem ersten Zyklus haelt dagegen). Stufe 1 setzt sofort (deckt den ersten
+      // Paint und den versteckten Tab ab, wo rAF nie feuert - Technische-Tipps Nr. 35);
+      // Stufe 2 laeuft im eigenen rAF NACH CM6s measure-rAF (Anmeldereihenfolge) und
+      // damit weiterhin VOR dem ersten sichtbaren Frame: coordsAtPos liefert dann die
+      // ECHTE Geometrie (kollabiertes Frontmatter, Heading-Paddings), Fallback ist
+      // lineBlockAt mit den nun gemessenen Hoehen.
+      const setzGrob=()=>{const blk=cm.lineBlockAt(selPos);cm.scrollDOM.scrollTop=Math.max(0,Math.round(blk.top-yOff));};
+      const setzFein=()=>{
+        if(!cm.scrollDOM.isConnected)return;
+        const c=cm.coordsAtPos(selPos);
+        if(c){const r=cm.scrollDOM.getBoundingClientRect();cm.scrollDOM.scrollTop+=Math.round((c.top-r.top)-yOff);}
+        else setzGrob();
+      };
+      setzGrob();
+      // Stufe 3-Guard: nur NUTZER-Gesten stoppen die Nachfuehrung. Ein scrollTop-
+      // Differenz-Vergleich taugt nicht - genau die Hoehenaenderung, die wir
+      // korrigieren wollen, verschiebt selbst den scrollTop.
+      let userMoved=false;
+      const markUser=()=>{userMoved=true;};
+      cm.scrollDOM.addEventListener('wheel',markUser,{once:true,passive:true});
+      cm.scrollDOM.addEventListener('mousedown',markUser,{once:true});
+      cm.contentDOM.addEventListener('keydown',markUser,{once:true});
+      requestAnimationFrame(()=>{
+        setzFein();
+        // Stufe 3: KaTeX-/Bild-Widgets aendern die Hoehen NACH dem ersten Frame
+        // (renderToString/onload/onerror -> requestMeasure) und verschieben die
+        // Zeile wieder. Einmal nachfuehren.
+        setTimeout(()=>{if(!userMoved)setzFein();},400);
+      });
+    }
     cm.focus();
     // editorState-Shape unveraendert {path,original,getValue,isNew,cm} - daran haengen
     // maybeLeaveEditor, beforeunload, Ctrl+E, Tabs mode:"editor" und togglePreview.
