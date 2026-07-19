@@ -2264,6 +2264,9 @@ async function loadBacklinks(path){
 const LP_HIDE=new Set(['HeaderMark','EmphasisMark','CodeMark','LinkMark','StrikethroughMark','QuoteMark']);
 const LP_MARK={StrongEmphasis:'lp-strong',Emphasis:'lp-em',InlineCode:'lp-code',Strikethrough:'lp-strike',Link:'lp-link'};
 const LP_LINE={ATXHeading1:'lp-h1',ATXHeading2:'lp-h2',ATXHeading3:'lp-h3',ATXHeading4:'lp-h4',ATXHeading5:'lp-h5',ATXHeading6:'lp-h6'};
+// Marker, deren Reveal-Kontext die ZEILE ist (Marker steht am Zeilenanfang; ListMark/
+// TaskMarker schon jetzt gelistet - sie werden erst mit den Widgets (E4) versteckt).
+const LP_LINE_MARK=new Set(['HeaderMark','QuoteMark','ListMark','TaskMarker']);
 
 function lpRevealed(from,to,reveal){for(const r of reveal){if(from<=r.to&&to>=r.from)return true;}return false;}
 
@@ -2284,7 +2287,15 @@ function lpBuild(doc,tokens,reveal){
     // ist schon als lp-link markiert, uebrig bleibt sichtbar genau der Linktext.
     const istLinkTeil=(t.name==='URL'||t.name==='LinkTitle')&&t.parent==='Link';
     if(!LP_HIDE.has(t.name)&&!istLinkTeil)continue;
-    if(lpRevealed(t.from,t.to,reveal))continue;   // Cursor in der Zeile -> Rohsyntax zeigen
+    // Reveal-Kontext (E1): Zeilen-Marker ("## ", "> ") zeigen sich, sobald der Cursor
+    // irgendwo auf ihrer ZEILE steht - am Zeilenanfang waere ein Konstrukt-Reveal
+    // unerreichbar klein. Inline-Marker (**, *, `, ~~, []()) zeigen sich nur, wenn der
+    // Cursor ihr KONSTRUKT beruehrt (Eltern-Range: StrongEmphasis/Emphasis/InlineCode/
+    // Link/...). Ohne Eltern-Range -> Rueckfall auf die Zeile (defensiv, alte Semantik).
+    let cf,ct;
+    if(!LP_LINE_MARK.has(t.name)&&t.parentFrom!=null){cf=t.parentFrom;ct=t.parentTo;}
+    else{const ln=doc.lineAt(t.from);cf=ln.from;ct=ln.to;}
+    if(lpRevealed(cf,ct,reveal))continue;         // Cursor im Kontext -> Rohsyntax zeigen
     let to=t.to;
     if(t.name==='HeaderMark'||t.name==='QuoteMark'){
       // "## " / "> " – das Leerzeichen dahinter muss mit weg, sonst rueckt die Zeile ein.
@@ -2439,13 +2450,20 @@ function cm6LivePreview(m){
   const versteckt=Decoration.replace({});
   function baue(view){
     const tokens=[],reveal=[];
-    // Rohsyntax auf den Zeilen JEDER Selektion (nicht nur der Cursorzeile).
+    // Rohsyntax pro KONSTRUKT, nicht pro Zeile (E1): die Selektion geht ROH an lpBuild;
+    // dort entscheidet der Kontext (Eltern-Range bei Inline, Zeile bei Zeilen-Markern),
+    // ob ein Marker auftaucht. So oeffnet sich nur das **fett**, in dem der Cursor steht,
+    // nicht jede Formatierung der Zeile.
     for(const r of view.state.selection.ranges){
-      reveal.push({from:view.state.doc.lineAt(r.from).from,to:view.state.doc.lineAt(r.to).to});
+      reveal.push({from:r.from,to:r.to});
     }
     for(const {from,to} of view.visibleRanges){
       syntaxTree(view.state).iterate({from,to,enter:n=>{
-        tokens.push({name:n.name,from:n.from,to:n.to,parent:n.node.parent?n.node.parent.name:null});
+        // Eltern-Range mitgeben: lpBuild braucht sie als Reveal-Kontext der Inline-Marker
+        // (der EmphasisMark allein ist 2 Zeichen breit - der Cursor steht aber im Konstrukt).
+        const p=n.node.parent;
+        tokens.push({name:n.name,from:n.from,to:n.to,parent:p?p.name:null,
+                     parentFrom:p?p.from:null,parentTo:p?p.to:null});
       }});
     }
     const r=lpBuild(view.state.doc,tokens,reveal);

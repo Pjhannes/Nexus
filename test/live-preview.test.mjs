@@ -231,6 +231,85 @@ console.log('\nLive-Preview-Kern (R22 Phase 1)\n');
   ok('Mehrfachselektion – Zeile 1 und 3 roh, nur Zeile 2 versteckt', r.hide.length === 2 && r.hide.every(h => h.from >= 6 && h.to <= 11), r.hide);
 }
 
+// ═══ E1: Reveal pro KONSTRUKT statt pro Zeile (Paul, 2026-07-19: "Extrazeichen erst,
+//     wenn ich mit dem Cursor auf diesen Bereich gehe oder auf dieses Wort") ═══
+// Inline-Marker tragen jetzt die Range ihres Eltern-Konstrukts (parentFrom/To); lpBuild
+// revealt sie nur, wenn die Selektion DIESE Range beruehrt. Zeilen-Marker (##, >) behalten
+// den Zeilen-Kontext. Das ViewPlugin liefert die Selektion seit E1 ROH (Punkt-Ranges).
+console.log('\nE1 – Konstrukt-Reveal\n');
+
+// Helfer: Marker-Token MIT Eltern-Range (wie das ViewPlugin sie seit E1 liefert).
+const mtok = (name, from, to, parent, pf, pt) => ({ name, from, to, parent, parentFrom: pf, parentTo: pt });
+
+// ── 24) Kernfall: Cursor IM Konstrukt -> nur DESSEN Marker erscheinen ─────
+{
+  const t = 'Ein **fett** und *kursiv* dazu';   // fett: 4-12, kursiv: 17-25
+  const doc = mkDoc(t);
+  const toks = [
+    { name: 'StrongEmphasis', from: 4, to: 12 },
+    mtok('EmphasisMark', 4, 6, 'StrongEmphasis', 4, 12), mtok('EmphasisMark', 10, 12, 'StrongEmphasis', 4, 12),
+    { name: 'Emphasis', from: 17, to: 25 },
+    mtok('EmphasisMark', 17, 18, 'Emphasis', 17, 25), mtok('EmphasisMark', 24, 25, 'Emphasis', 17, 25),
+  ];
+  const rIn = lpBuild(doc, toks, [{ from: 8, to: 8 }]);          // Cursor mitten in "fett"
+  ok('E1: Cursor in **fett** -> dessen ** sichtbar', rIn.hide.every(h => h.from >= 17), rIn.hide);
+  ok('E1: ...aber *kursiv* daneben bleibt zu', rIn.hide.length === 2, rIn.hide);
+  const rOut = lpBuild(doc, toks, [{ from: 14, to: 14 }]);       // Cursor auf der Zeile, AUSSERHALB beider
+  ok('E1: Cursor auf Zeile ausserhalb -> alle 4 Marker versteckt', rOut.hide.length === 4, rOut.hide);
+}
+
+// ── 25) Konstrukt-Grenzen: Cursor direkt vor/hinter dem Konstrukt revealt ──
+// (lpRevealed nutzt <=/>=; wichtig beim Tippen: nach dem Schliessen von **fett** steht der
+// Cursor hinter dem Marker und die Zeichen sollen noch sichtbar sein.)
+{
+  const t = '**fett**';
+  const doc = mkDoc(t);
+  const toks = [
+    { name: 'StrongEmphasis', from: 0, to: 8 },
+    mtok('EmphasisMark', 0, 2, 'StrongEmphasis', 0, 8), mtok('EmphasisMark', 6, 8, 'StrongEmphasis', 0, 8),
+  ];
+  ok('E1: Cursor an from-Grenze -> reveal', lpBuild(doc, toks, [{ from: 0, to: 0 }]).hide.length === 0);
+  ok('E1: Cursor an to-Grenze -> reveal', lpBuild(doc, toks, [{ from: 8, to: 8 }]).hide.length === 0);
+}
+
+// ── 26) Zeilen-Marker behalten Zeilen-Kontext: ## zeigt sich bei Cursor irgendwo ──
+{
+  const t = '## Titel hier';
+  const doc = mkDoc(t);
+  // HeaderMark hat als Eltern die ATXHeading2-Range - der Kontext MUSS trotzdem die Zeile
+  // sein (LP_LINE_MARK), sonst waere der Marker bei einem Cursor am Zeilenende unerreichbar,
+  // wenn das Heading-Token enger gefasst ist.
+  const toks = [mtok('HeaderMark', 0, 2, 'ATXHeading2', 0, 13)];
+  ok('E1: Cursor am Zeilenende -> "## " sichtbar (Zeilen-Kontext)',
+    lpBuild(doc, toks, [{ from: 13, to: 13 }]).hide.length === 0);
+  ok('E1: ohne Cursor auf der Zeile -> "## " versteckt',
+    lpBuild(doc, toks, []).hide.length === 1);
+}
+
+// ── 27) Link: Cursor im Linktext -> URL+Klammern erscheinen (Kontext = Link-Range) ──
+{
+  const t = 'Siehe [Text](https://x.de) dazu';  // Link: 6-26
+  const doc = mkDoc(t);
+  const toks = [
+    { name: 'Link', from: 6, to: 26 },
+    mtok('LinkMark', 6, 7, 'Link', 6, 26), mtok('LinkMark', 11, 12, 'Link', 6, 26),
+    mtok('LinkMark', 12, 13, 'Link', 6, 26), mtok('LinkMark', 25, 26, 'Link', 6, 26),
+    mtok('URL', 13, 25, 'Link', 6, 26),
+  ];
+  ok('E1: Cursor im Linktext -> nichts versteckt', lpBuild(doc, toks, [{ from: 9, to: 9 }]).hide.length === 0);
+  ok('E1: Cursor hinter dem Link -> Marker+URL versteckt (5 Ranges)',
+    lpBuild(doc, toks, [{ from: 29, to: 29 }]).hide.length === 5);
+}
+
+// ── 28) Tokens OHNE Eltern-Range (alte Aufrufer/Tests) -> Zeilen-Fallback ──
+{
+  const t = 'a **b** c';
+  const doc = mkDoc(t);
+  const toks = [{ name: 'EmphasisMark', from: 2, to: 4 }, { name: 'EmphasisMark', from: 5, to: 7 }];
+  ok('E1: ohne parentFrom -> Reveal wie frueher zeilenweise',
+    lpBuild(doc, toks, [{ from: 9, to: 9 }]).hide.length === 0);
+}
+
 // ═══ Anker Leseansicht <-> Editor (Paul, 2026-07-17: "wenn ich in Zeile 30 bin und auf
 //     Bearbeiten klicke, soll Zeile 30 an derselben Stelle stehen") ═══
 console.log('\nAnker Leseansicht <-> Editor\n');
