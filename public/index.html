@@ -556,25 +556,36 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 .ed-btn.ghost{background:transparent}
 /* CM6 scrollt selbst (.cm-scroller) -> der Host darf NICHT mitscrollen. */
 .editor-host{flex:1;min-height:0;overflow:hidden}
-/* Breite an die Notiz koppeln: gleiche Spaltenbreite wie die Leseansicht, und Strg+Rad
-   (bumpNoteW -> --note-w) zoomt den Editor genauso wie jede Notiz. Begrenzt wird der
-   GANZE .cm-editor (Zeilennummern + Text wandern zusammen), nicht .cm-content - eine
-   width/margin-Formel auf .cm-content wuerde CM6s Umbruch-Messung stoeren. */
-.editor-host .cm-editor{height:100%;background:transparent;color:var(--text);max-width:var(--note-w,min(1000px,100%));margin-inline:auto}
+/* E2: Breite/Padding EXAKT wie .note-content (Z.144) - dieselbe Formel, dasselbe Padding,
+   auf .cm-content. margin am .cm-content ist das offizielle CM6-Zentrier-Rezept (die
+   fruehere Warnung hier war Vorsicht aus Phase 0, im Browser widerlegt: posAtCoords,
+   Klick-Positionierung und Umbruch-Messung arbeiten mit margins am Content korrekt).
+   Ohne Gutter (Zeilennummern seit E2 weg) wandert damit der Textanfang pixelgleich
+   zur Leseansicht, und Strg+Rad (bumpNoteW -> --note-w) zoomt weiter beide gleich. */
+.editor-host .cm-editor{height:100%;background:transparent;color:var(--text)}
+/* flex:none ist PFLICHT: .cm-content ist Flex-Item im .cm-scroller und CM6s
+   .cm-lineWrapping setzt flex-shrink:1 - ohne flex:none wird die width-Formel als
+   flex-basis auf Containerbreite geschrumpft und Strg+Rad-Zoom griffe nicht. */
+.editor-host .cm-content{flex:none;width:var(--note-w,min(1000px,100%));max-width:none;margin-inline:max(0px,100% - var(--note-w,min(1000px,100%)));padding:16px 46px 90px}
 .editor-host .cm-scroller::-webkit-scrollbar{width:6px}
-/* ── R22 Phase 1: Live-Preview ──
-   Absichtlich an die .md-body-Werte angelehnt (code/strong/em/blockquote oben), damit
-   Editor und Leseansicht gleich aussehen. Groessen in em, nicht px: der Editor haengt an
-   --editor-fs und Strg+Rad. */
-.editor-host .cm-line.lp-h1{font-size:1.75em;font-weight:700;color:var(--accent-tx);line-height:1.3}
-.editor-host .cm-line.lp-h2{font-size:1.45em;font-weight:700;color:var(--accent-tx);line-height:1.35}
-.editor-host .cm-line.lp-h3{font-size:1.22em;font-weight:650;color:var(--accent-tx)}
-.editor-host .cm-line.lp-h4{font-size:1.08em;font-weight:650;color:var(--accent-tx)}
-.editor-host .cm-line.lp-h5,.editor-host .cm-line.lp-h6{font-weight:650;color:var(--accent-tx)}
-.editor-host .cm-line.lp-quote{border-left:3px solid var(--accent);background:var(--accent-04);padding-left:12px}
-.editor-host .lp-strong{color:var(--text);font-weight:650}
+/* ── R22 Live-Preview (E2: 1:1 die .md-body-Werte, Z.201-229) ──
+   Groessen/Farben/Gewicht EXAKT wie die Leseansicht (h1-h6: .md-h Z.203-206), damit der
+   Editor von der Notiz nicht unterscheidbar ist. Abstaende als PADDING, nie margin:
+   CM6s Hoehen-Schaetzung ignoriert vertikale margins auf Zeilen -> die Scrollmath
+   springt; padding/border gehen in die gemessene Hoehe ein. Der .5em-Abstand NACH
+   einer Ueberschrift (margin-bottom der Leseansicht) ist konzeptbedingt nicht abbildbar
+   (die Folgezeile ist eine eigene cm-line) - im Quelltext folgt dort ohnehin meist
+   eine Leerzeile. */
+.editor-host .cm-line.lp-h1{font-size:24px;font-weight:650;line-height:1.3;border-bottom:1px solid var(--border);padding-top:1.5em;padding-bottom:.3em}
+.editor-host .cm-line.lp-h2{font-size:20px;font-weight:650;line-height:1.3;border-bottom:1px solid rgba(255,255,255,.05);padding-top:1.5em;padding-bottom:.25em}
+.editor-host .cm-line.lp-h3{font-size:17px;font-weight:650;line-height:1.3;padding-top:1.5em}
+.editor-host .cm-line.lp-h4{font-size:15px;font-weight:650;line-height:1.3;padding-top:1.5em}
+.editor-host .cm-line.lp-h5{font-size:13.5px;font-weight:650;line-height:1.3;color:var(--dim);padding-top:1.5em}
+.editor-host .cm-line.lp-h6{font-size:12.5px;font-weight:650;line-height:1.3;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;padding-top:1.5em}
+.editor-host .cm-line.lp-quote{border-left:3px solid var(--accent);background:var(--accent-04);padding-left:16px}
+.editor-host .lp-strong{color:#fff;font-weight:650}
 .editor-host .lp-em{color:#e6e9f2;font-style:italic}
-.editor-host .lp-code{background:rgba(255,255,255,.07);border-radius:5px;padding:.12em .4em;font-size:.86em;color:#e6d6a8}
+.editor-host .lp-code{background:rgba(255,255,255,.07);border-radius:5px;padding:.12em .4em;font-family:Consolas,'SF Mono',monospace;font-size:.86em;color:#e6d6a8}
 .editor-host .lp-link{color:var(--accent-tx);border-bottom:1px solid var(--accent-30);cursor:pointer}
 .editor-host .lp-strike{text-decoration:line-through;color:var(--dim)}
 /* Die Rohsyntax-Zeile (Cursor drin) bekommt KEINE Sonderfarbe – sie soll sich nicht
@@ -2434,10 +2445,13 @@ function cm6Theme(m){
   return m.V.EditorView.theme({
     '&':{height:'100%',backgroundColor:'transparent',color:'var(--text)'},
     '&.cm-focused':{outline:'none'},
-    '.cm-scroller':{fontFamily:"Consolas,'SF Mono',monospace",fontSize:'var(--editor-fs,13.5px)',lineHeight:'1.65'},
+    // E2 Typografie-Paritaet: exakt die Werte der Leseansicht (.md-body, Z.201 + --reader-font),
+    // damit Zeilenumbrueche im Editor an denselben Woertern sitzen wie in der Notiz.
+    // --editor-fs (Settings-Slider) gilt nur noch fuer den Textarea-Fallback; Mono bleibt
+    // gezielt auf .lp-code/Codebloecken.
+    '.cm-scroller':{fontFamily:'var(--reader-font)',fontSize:'var(--reader-fs,14.5px)',lineHeight:'1.72'},
     '.cm-content':{caretColor:'var(--accent)'},
     '.cm-cursor,.cm-dropCursor':{borderLeftColor:'var(--accent)',borderLeftWidth:'1.7px'},
-    '.cm-gutters':{backgroundColor:'rgba(8,10,18,.5)',borderRight:'1px solid var(--border)',color:'var(--dim)'},
     '.cm-activeLine,.cm-activeLineGutter':{backgroundColor:'transparent'},
     '&.cm-focused .cm-selectionBackground,.cm-selectionBackground,.cm-content ::selection':{backgroundColor:'var(--accent-20)'},
     '.cm-scroller::-webkit-scrollbar-thumb':{background:'var(--sb-thumb)',borderRadius:'3px'}
@@ -2596,9 +2610,11 @@ async function openEditor(path,isNew){
     // Pos1/Ende/Strg+Pfeil und Tab still tot. Ctrl+S wird bewusst NICHT gebunden: der globale
     // capture-Handler (s.u., Ctrl+S/Ctrl+E) faengt es schon ab - eine zweite Bindung wuerde
     // doppelt speichern.
+    // KEINE lineNumbers() mehr (E2/Paul 2026-07-19): die Leseansicht hat keine - der Editor
+    // soll von ihr nicht unterscheidbar sein. Bei Bedarf spaeter als Setting via Compartment.
     const cm=new CM.V.EditorView({
       state:CM.S.EditorState.create({doc:raw,extensions:[
-        CM.V.lineNumbers(),CM.C.history(),CM.V.drawSelection(),
+        CM.C.history(),CM.V.drawSelection(),
         CM.V.keymap.of([...CM.C.defaultKeymap,...CM.C.historyKeymap,CM.C.indentWithTab]),
         CM.V.EditorView.lineWrapping,
         new CM.L.LanguageSupport(cm6Markdown(CM)),
@@ -4091,7 +4107,7 @@ function onPanelFsInput(v){const px=parseFloat(v)||12;localStorage.setItem('nexu
 function currentNoteW(){const n=parseInt(localStorage.getItem('nexus.noteW')||'',10);return (n>=300&&n<=4000)?n:0;}
 function applyNoteW(px){const s=document.documentElement.style;if(px>0)s.setProperty('--note-w',px+'px');else s.removeProperty('--note-w');}
 function setNoteW(px){px=Math.max(300,Math.min(4000,Math.round(px)));localStorage.setItem('nexus.noteW',String(px));applyNoteW(px);}
-function bumpNoteW(deltaY){let base=currentNoteW();if(!base){const el=document.querySelector('#note-area .note-content, #note-area .cm-editor');base=el?el.offsetWidth:(document.getElementById('note-area')?.clientWidth||900);}setNoteW(base-deltaY*1.1);}
+function bumpNoteW(deltaY){let base=currentNoteW();if(!base){const el=document.querySelector('#note-area .note-content, #note-area .cm-content');base=el?el.offsetWidth:(document.getElementById('note-area')?.clientWidth||900);}setNoteW(base-deltaY*1.1);}
 // Horizontale Notiz-Position (global, wie --note-w): als Bruchteil 0..1 des Scroll-Spielraums gespeichert
 // (0 = buendig rechts, 1 = buendig links, 0.5 = mittig). Bruchteil statt Pixel -> robust gegen Breiten-/Fenster-
 // aenderungen. Default 0.5 = mittig (bisheriges Verhalten beim allerersten Oeffnen).
