@@ -210,12 +210,13 @@ console.log('\nLive-Preview-Kern (R22 Phase 1)\n');
   ok('unbekannte Knoten – nichts versteckt, kein Absturz', r.hide.length === 0 && r.marks.length === 0 && r.lines.length === 0);
 }
 
-// ── 13) ListMark bleibt bewusst sichtbar (Phase 1 hat keine Bullet-Widgets) ─
+// ── 13) ListMark: seit E4a Bullet-WIDGET statt hide (Phase 2 der Roadmap) ──
 {
-  ok('ListMark steht NICHT auf der Verstecken-Liste (braucht ein Widget, Phase 2)', !LP_HIDE.has('ListMark'));
+  ok('ListMark steht NICHT auf der Verstecken-Liste (er wird ein Widget, E4a)', !LP_HIDE.has('ListMark'));
   const t = '- ein Punkt';
   const r = lpBuild(mkDoc(t), [{ name: 'ListMark', from: 0, to: 1 }], []);
-  ok('ListMark – "-" bleibt sichtbar', sichtbar(t, r) === t, sichtbar(t, r));
+  ok('ListMark – kein hide, dafuer 1 Bullet-Widget {0,1}',
+    r.hide.length === 0 && r.widgets.length === 1 && r.widgets[0].type === 'bullet' && r.widgets[0].from === 0 && r.widgets[0].to === 1, r.widgets);
 }
 
 // ── 14) Mehrfachselektion: alle betroffenen Zeilen zeigen Rohsyntax ────────
@@ -308,6 +309,66 @@ const mtok = (name, from, to, parent, pf, pt) => ({ name, from, to, parent, pare
   const toks = [{ name: 'EmphasisMark', from: 2, to: 4 }, { name: 'EmphasisMark', from: 5, to: 7 }];
   ok('E1: ohne parentFrom -> Reveal wie frueher zeilenweise',
     lpBuild(doc, toks, [{ from: 9, to: 9 }]).hide.length === 0);
+}
+
+// ═══ E4a: Widget-Schicht (Bullets, Checkboxen, HR) - reine Daten aus lpBuild ═══
+console.log('\nE4a – Widgets\n');
+
+// ── 29) Checkbox: ListMark + TaskMarker derselben Zeile -> EIN task-Widget ──
+{
+  const t = '- [x] erledigt hier\n- [ ] offen hier';
+  const doc = mkDoc(t);
+  const toks = [
+    { name: 'ListMark', from: 0, to: 1 }, { name: 'TaskMarker', from: 2, to: 5 },
+    { name: 'ListMark', from: 20, to: 21 }, { name: 'TaskMarker', from: 22, to: 25 },
+  ];
+  const r = lpBuild(doc, toks, []);
+  ok('E4a: 2 task-Widgets, KEIN separates Bullet', r.widgets.length === 2 && r.widgets.every(w => w.type === 'task'), r.widgets);
+  ok('E4a: Widget 1 spannt Bullet+Marker ({0,5}, checked)', r.widgets[0].from === 0 && r.widgets[0].to === 5 && r.widgets[0].data.checked === true, r.widgets[0]);
+  ok('E4a: Widget 2 unchecked', r.widgets[1].data.checked === false, r.widgets[1]);
+  ok('E4a: nur die erledigte Zeile bekommt lp-task-done', r.lines.length === 1 && r.lines[0].cls === 'lp-task-done' && r.lines[0].from === 0, r.lines);
+}
+
+// ── 30) Nummerierte Liste: "1." bleibt sichtbar (kein Widget, wie Obsidian) ──
+{
+  const t = '1. erster';
+  const r = lpBuild(mkDoc(t), [{ name: 'ListMark', from: 0, to: 2 }], []);
+  ok('E4a: "1." -> kein Widget', r.widgets.length === 0, r.widgets);
+}
+
+// ── 31) HR: die "---"-Zeile wird ein hr-Widget ────────────────────────────
+{
+  const t = 'davor\n\n---\n\ndanach';
+  const r = lpBuild(mkDoc(t), [{ name: 'HorizontalRule', from: 7, to: 10 }], []);
+  ok('E4a: HR-Widget {7,10}', r.widgets.length === 1 && r.widgets[0].type === 'hr' && r.widgets[0].from === 7 && r.widgets[0].to === 10, r.widgets);
+}
+
+// ── 32) Reveal unterdrueckt das Widget: Cursor auf der Zeile -> Rohtext ────
+{
+  const t = '- [x] erledigt hier';
+  const doc = mkDoc(t);
+  const toks = [{ name: 'ListMark', from: 0, to: 1 }, { name: 'TaskMarker', from: 2, to: 5 }];
+  const r = lpBuild(doc, toks, [{ from: 8, to: 8 }]);
+  ok('E4a: Cursor auf der Task-Zeile -> kein Widget, keine done-Klasse', r.widgets.length === 0 && r.lines.length === 0, r.widgets);
+}
+
+// ── 33) Zwei einfache Bullets auf zwei Zeilen -> zwei Bullet-Widgets ──────
+{
+  const t = '- eins\n- zwei';
+  const doc = mkDoc(t);
+  const toks = [{ name: 'ListMark', from: 0, to: 1 }, { name: 'ListMark', from: 7, to: 8 }];
+  const r = lpBuild(doc, toks, []);
+  ok('E4a: 2 Bullet-Widgets {0,1}/{7,8}', r.widgets.length === 2 && r.widgets[0].from === 0 && r.widgets[1].from === 7 && r.widgets.every(w => w.type === 'bullet'), r.widgets);
+}
+
+// ── 34) Gemischte Zeile: Bullet-Zeile revealed, Task-Zeile nicht ──────────
+{
+  const t = '- eins\n- [ ] zwei';
+  const doc = mkDoc(t);
+  const toks = [{ name: 'ListMark', from: 0, to: 1 }, { name: 'ListMark', from: 7, to: 8 }, { name: 'TaskMarker', from: 9, to: 12 }];
+  const r = lpBuild(doc, toks, [{ from: 3, to: 3 }]);   // Cursor in Zeile 1
+  ok('E4a: Zeile 1 roh, Zeile 2 wird task-Widget {7,12}',
+    r.widgets.length === 1 && r.widgets[0].type === 'task' && r.widgets[0].from === 7 && r.widgets[0].to === 12, r.widgets);
 }
 
 // ═══ Anker Leseansicht <-> Editor (Paul, 2026-07-17: "wenn ich in Zeile 30 bin und auf

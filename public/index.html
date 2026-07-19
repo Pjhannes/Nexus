@@ -587,6 +587,13 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 .editor-host .lp-code{background:rgba(255,255,255,.07);border-radius:5px;padding:.12em .4em;font-family:Consolas,'SF Mono',monospace;font-size:.86em;color:#e6d6a8}
 .editor-host .lp-link{color:var(--accent-tx);border-bottom:1px solid var(--accent-30);cursor:pointer}
 .editor-host .lp-strike{text-decoration:line-through;color:var(--dim)}
+/* E4a: Widgets. lp-taskcb erbt den .task-cb-Look der Leseansicht (Z.215); inline-flex
+   verhindert zugleich, dass das line-through der Done-Zeile durchs Kaestchen laeuft
+   (text-decoration propagiert nicht in atomare Inline-Boxen). */
+.editor-host .lp-bullet{color:var(--text)}
+.editor-host .lp-taskcb{display:inline-flex;vertical-align:-2px;margin:0 1px 0 0;cursor:pointer}
+.editor-host .lp-hr{display:inline-block;width:100%;border-top:1px solid var(--border);vertical-align:middle}
+.editor-host .cm-line.lp-task-done{color:var(--dim);text-decoration:line-through}
 /* Die Rohsyntax-Zeile (Cursor drin) bekommt KEINE Sonderfarbe – sie soll sich nicht
    bewegen, nur die Marker tauchen wieder auf. */
 /* CM6 bringt sein restliches CSS selbst mit (style-mod injiziert es zur Laufzeit) ->
@@ -2291,7 +2298,13 @@ const LP_LINE_MARK=new Set(['HeaderMark','QuoteMark','ListMark','TaskMarker']);
 function lpRevealed(from,to,reveal){for(const r of reveal){if(from<=r.to&&to>=r.from)return true;}return false;}
 
 function lpBuild(doc,tokens,reveal){
-  const hide=[],marks=[],lines=[];
+  const hide=[],marks=[],lines=[],widgets=[];
+  // E4a: ListMark ("-") wartet, ob auf derselben Zeile ein TaskMarker ("[x]") folgt -
+  // dann werden beide zusammen EIN Checkbox-Widget; sonst wird der Marker ein Bullet.
+  // widgets = reine DATEN ({from,to,type,data}); zu DOM materialisiert sie erst das
+  // ViewPlugin (LpWidget) - so bleibt der Kern headless testbar.
+  let pendingBullet=null;
+  const flushBullet=()=>{if(pendingBullet){widgets.push({from:pendingBullet.from,to:pendingBullet.to,type:'bullet',data:{}});pendingBullet=null;}};
   for(const t of tokens){
     const cls=LP_LINE[t.name];
     if(cls){lines.push({from:doc.lineAt(t.from).from,cls});continue;}
@@ -2299,6 +2312,26 @@ function lpBuild(doc,tokens,reveal){
       // Blockquote kann mehrzeilig sein -> jede Zeile bekommt die Klasse.
       let p=t.from;
       for(;;){const ln=doc.lineAt(p);lines.push({from:ln.from,cls:'lp-quote'});if(ln.to>=t.to)break;p=ln.to+1;}
+      continue;
+    }
+    // E4a: Zeilen-Widgets Bullet/Checkbox/HR. Reveal ZEILENWEISE (wie ##/> in E1):
+    // Cursor auf der Zeile -> kein Widget, der Rohtext bleibt direkt editierbar.
+    if(t.name==='ListMark'||t.name==='TaskMarker'||t.name==='HorizontalRule'){
+      const ln=doc.lineAt(t.from);
+      if(pendingBullet&&pendingBullet.line!==ln.from)flushBullet();
+      if(lpRevealed(ln.from,ln.to,reveal)){pendingBullet=null;continue;}
+      if(t.name==='ListMark'){
+        // Nur [-*+]-Bullets werden Punkte; Nummern ("1.") bleiben sichtbar (wie Obsidian).
+        if(/^[-*+]$/.test(doc.sliceString(t.from,t.to)))pendingBullet={from:t.from,to:t.to,line:ln.from};
+        continue;
+      }
+      if(t.name==='TaskMarker'){
+        const checked=/x/i.test(doc.sliceString(t.from,t.to));
+        widgets.push({from:pendingBullet?pendingBullet.from:t.from,to:t.to,type:'task',data:{checked}});
+        if(checked)lines.push({from:ln.from,cls:'lp-task-done'});
+        pendingBullet=null;continue;
+      }
+      widgets.push({from:t.from,to:t.to,type:'hr',data:{}});
       continue;
     }
     const mc=LP_MARK[t.name];
@@ -2325,7 +2358,8 @@ function lpBuild(doc,tokens,reveal){
     }
     hide.push({from:t.from,to});
   }
-  return {hide,marks,lines};
+  flushBullet();
+  return {hide,marks,lines,widgets};
 }
 
 // ── Anker beim Wechsel Leseansicht <-> Editor ──────────────────────────────
@@ -2469,8 +2503,39 @@ function cm6Theme(m){
 // Verdrahtet lpBuild mit CM6. Baut Decorations NUR ueber view.visibleRanges – bei Pauls
 // 51-MB-Notiz waere alles andere aussichtslos.
 function cm6LivePreview(m){
-  const {Decoration,ViewPlugin,EditorView}=m.V, {syntaxTree}=m.L;
+  const {Decoration,ViewPlugin,EditorView,WidgetType}=m.V, {syntaxTree}=m.L;
   const versteckt=Decoration.replace({});
+  // E4a: Materialisierung der lpBuild-widgets (reine Daten) zu DOM. Pro Typ ein Erzeuger;
+  // toDOM bekommt die View von CM6 mitgereicht.
+  const LP_DOM={
+    bullet:()=>{const s=document.createElement('span');s.className='lp-bullet';s.textContent='•';return s;},
+    task:(spec,view)=>{
+      const s=document.createElement('span');
+      s.className='task-cb lp-taskcb'+(spec.data.checked?' done':'');
+      s.textContent=spec.data.checked?'✓':'';
+      // Toggle im DOKUMENT (nicht via /api - der Editor hat evtl. ungespeicherte
+      // Aenderungen; gespeichert wird wie immer per Ctrl+S/Speichern). posAtDOM statt
+      // gemerkter Offsets: die veralten nach jedem Tastendruck davor.
+      // MOUSEDOWN, nicht click: CM ignoriert das Event (ignoreEvent true), und ein
+      // click kaeme nie an, weil der Rebuild nach dem dispatch das DOM ersetzt.
+      s.addEventListener('mousedown',e=>{
+        e.preventDefault();e.stopPropagation();
+        const pos=view.posAtDOM(s),ln=view.state.doc.lineAt(pos);
+        const mm=/^([ \t]*(?:[-*+]|\d+[.)])\s+\[)([ xX])\]/.exec(ln.text);
+        if(mm)view.dispatch({changes:{from:ln.from+mm[1].length,to:ln.from+mm[1].length+1,insert:mm[2].trim()?' ':'x'}});
+      });
+      return s;
+    },
+    hr:()=>{const s=document.createElement('span');s.className='lp-hr';return s;}
+  };
+  class LpWidget extends WidgetType{
+    constructor(spec){super();this.spec=spec;this.key=spec.type+'|'+JSON.stringify(spec.data);}
+    eq(o){return o.key===this.key;}                  // gleicher Typ+Zustand -> DOM wiederverwenden
+    toDOM(view){return LP_DOM[this.spec.type](this.spec,view);}
+    // task faengt mousedown selbst (Toggle); Bullet/HR lassen CM ran -> Klick setzt den
+    // Cursor in die Zeile, die Zeile revealt, der Rohtext ist editierbar.
+    ignoreEvent(){return this.spec.type==='task';}
+  }
   function baue(view){
     const tokens=[],reveal=[];
     // Rohsyntax pro KONSTRUKT, nicht pro Zeile (E1): die Selektion geht ROH an lpBuild;
@@ -2494,6 +2559,9 @@ function cm6LivePreview(m){
     for(const l of r.lines)deco.push(Decoration.line({class:l.cls}).range(l.from));
     for(const k of r.marks)if(k.to>k.from)deco.push(Decoration.mark({class:k.cls}).range(k.from,k.to));
     for(const h of r.hide)if(h.to>h.from){const d=versteckt.range(h.from,h.to);deco.push(d);atom.push(d);}
+    // Widgets ersetzen ihre Quellzeichen und sind atomar (Pfeiltasten ueberspringen sie
+    // als Einheit; Backspace dahinter loescht das ganze Konstrukt - Obsidian-Verhalten).
+    for(const w of r.widgets||[])if(w.to>w.from){const d=Decoration.replace({widget:new LpWidget(w)}).range(w.from,w.to);deco.push(d);atom.push(d);}
     // true = CM6 sortiert selbst; ohne das wirft RangeSet bei ueberlappenden Marks.
     return {deco:Decoration.set(deco,true),atom:Decoration.set(atom,true)};
   }
