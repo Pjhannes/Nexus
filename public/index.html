@@ -2440,9 +2440,18 @@ function lpBuild(doc,tokens,reveal){
       // Zeilenende - sie bleibt AUCH bei Reveal stehen (wie Obsidian: beim Editieren
       // der Zeile sieht man das Bild weiter). Endungsliste = IMG_EXT der Leseansicht;
       // hier als Regex, der Kern kennt keine App-Konstanten.
-      if(emb&&/\.(png|jpe?g|gif|webp|svg|bmp|avif|ico)$/i.test(inner.split('|')[0].trim())){
+      if(emb){
+        const ziel=inner.split('|')[0].trim();
         const ln=doc.lineAt(t.to);
-        widgets.push({from:ln.to,to:ln.to,type:'img',data:{wiki:inner.split('|')[0].trim()}});
+        if(/\.(png|jpe?g|gif|webp|svg|bmp|avif|ico)$/i.test(ziel)){
+          widgets.push({from:ln.to,to:ln.to,type:'img',data:{wiki:ziel}});
+        }else{
+          // Notiz-Embed: echte Transklusions-Vorschau (wie die Leseansicht). Ohne sie
+          // kollabierte der grosse .transclude-Block beim Wechsel in den Editor zu einer
+          // Zeile und ALLES darunter ruckte hoch - genau der "Sprung", den Paul am
+          // 2026-07-19-Screenshot gezeigt hat. Aufloesung/Fetch macht das ViewPlugin.
+          widgets.push({from:ln.to,to:ln.to,type:'transclude',data:{ziel}});
+        }
       }
       if(lpRevealed(t.parentFrom,t.parentTo,reveal)){marks.push({from:wOpen,to:wClose,cls:'lp-wikilink'});continue;}
       const pipe=inner.indexOf('|');
@@ -2728,6 +2737,24 @@ function cm6LivePreview(m){
       img.onload=()=>view.requestMeasure();
       img.onerror=()=>{img.remove();view.requestMeasure();};
       w.appendChild(img);return w;
+    },
+    // E7: Notiz-Embed als ECHTE Transklusions-Vorschau - exakt die DOM-Struktur der
+    // Leseansicht (.transclude/.tc-head/.tc-body, globales CSS), befuellt von
+    // loadTransclude (dieselbe Funktion inkl. #Anker-Extraktion). .md-body am tc-body
+    // ist noetig: im Editor fehlt der .md-body-Vorfahre der Leseansicht, ohne die
+    // Klasse blieben die Markdown-Styles im Embed nackt.
+    transclude:(spec,view)=>{
+      const w=document.createElement('span');w.className='lp-img-widget';
+      const ziel=spec.data.ziel,hi=ziel.indexOf('#');
+      const file=hi>=0?ziel.slice(0,hi):ziel,anchor=hi>=0?ziel.slice(hi+1):'';
+      const p=(typeof resolveWiki==='function')?resolveWiki(file):null;
+      const tc=document.createElement('div');
+      if(!p){tc.className='transclude broken';tc.innerHTML='<div class="tc-head">⧉ '+esc(file)+' — nicht gefunden</div>';w.appendChild(tc);return w;}
+      tc.className='transclude';tc.dataset.embed=p;if(anchor)tc.dataset.anchor=anchor;
+      tc.innerHTML='<div class="tc-head">⧉ '+esc(file)+(anchor?' › '+esc(anchor):'')+'</div><div class="tc-body md-body">…</div>';
+      w.appendChild(tc);
+      loadTransclude(tc).then(()=>view.requestMeasure());
+      return w;
     },
     // E6: Inline-Mathe. Erst der rohe TeX (Fallback offline/CDN-Fehler - wie die
     // Leseansicht, KaTeX ist CDN), dann async gerendert + neu vermessen.
@@ -3033,10 +3060,14 @@ async function openEditor(path,isNew){
       cm.contentDOM.addEventListener('keydown',markUser,{once:true});
       requestAnimationFrame(()=>{
         setzFein();
-        // Stufe 3: KaTeX-/Bild-Widgets aendern die Hoehen NACH dem ersten Frame
-        // (renderToString/onload/onerror -> requestMeasure) und verschieben die
-        // Zeile wieder. Einmal nachfuehren.
-        setTimeout(()=>{if(!userMoved)setzFein();},400);
+        // Stufe 3: KaTeX-/Bild-/Transklusions-Widgets aendern die Content-Hoehe NACH
+        // dem ersten Frame (fetch/renderToString/onload -> requestMeasure) - je nach
+        // Netz/CDN auch mehrfach und spaet. Ein ResizeObserver fuehrt die Ankerzeile
+        // bei JEDER Hoehenaenderung nach (2.5s Fenster), solange der Nutzer nicht
+        // selbst eingreift. setzFein aendert nur scrollTop -> kein Observer-Loop.
+        const ro=new ResizeObserver(()=>{if(!userMoved)setzFein();});
+        ro.observe(cm.contentDOM);
+        setTimeout(()=>ro.disconnect(),2500);
       });
     }
     cm.focus();
