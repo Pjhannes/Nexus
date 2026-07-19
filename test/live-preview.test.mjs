@@ -20,10 +20,16 @@ const { lpBuild, LP_HIDE, lpNorm, lpLineForText, lpBlockForLine } = mod;
 // entfernt – Block-Marker ("## ", "> ", "- ") bleiben stehen. Ein frueherer Stub entfernte sie
 // auch und war damit maechtiger als das Original: die Tests waren gruen, live fand der Anker
 // keine einzige Ueberschrift. Block-Marker abzuraeumen ist Aufgabe von lpStripBlock().
+// Der abschliessende /[*_~`=]/-Sweep MUSS mit dabei sein: das echte stripInline entfernt
+// diese Marker roh (Zeile "return …replace(/[*_~`=]/g,'')"). Ohne ihn war der Stub schwaecher
+// als das Original – ein literaler "_" (Wikilink-Ziel, snake_case) blieb im Stub stehen, sodass
+// Anker- und Quelltext scheinbar passten. Genau diese Luecke liess den Unterstrich-Bug live
+// durchrutschen, obwohl die Suite gruen war (Regressionstest 18e unten).
 const strip = (l) => l
   .replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1')
   .replace(/`(.+?)`/g, '$1').replace(/\[(.+?)\]\(.+?\)/g, '$1')
-  .replace(/\[\[(.+?)\]\]/g, '$1');
+  .replace(/\[\[(.+?)\]\]/g, '$1')
+  .replace(/[*_~`=]/g, '');
 
 let pass = 0, fail = 0;
 function ok(label, cond, detail) {
@@ -282,6 +288,21 @@ ok('Anker: Zitat "Ein Zitat hier" -> Quellzeile mit "> "',
     lpLineForText(N, '30.04. 08:00 UT VL Upload Metallkunde', strip));
   ok('Anker: "- [x] …" (erledigt) -> Zeile 1', lpLineForText(N, '23.04. erledigter Punkt hier', strip) === 1,
     lpLineForText(N, '23.04. erledigter Punkt hier', strip));
+}
+
+// ── 18e) Literaler Unterstrich (Wikilink-Ziel/Pfad): darf den Anker nicht killen ──
+// Live an Nexus Muster-Vault/START.md aufgefallen: die Zeile
+//   "- [[_System/Session-Start-Nexus]] – Schnellreferenz (Tools, Routinen)"
+// rendert als Text "_System/Session-Start-Nexus – …" (der Renderer kursiviert das "_" NICHT).
+// stripInline fraesst am Quelltext aber jeden "_" ("_System" -> "System") -> "_System/…" (Anker)
+// traf nie "System/…" (Quelle), z=-1, der Editor sprang an den Dateianfang. lpNorm raeumt die
+// Marker jetzt auf BEIDEN Seiten weg -> Treffer. (Reproduziert nur mit dem originalgetreuen
+// strip-Stub oben; ohne dessen /[*_~`=]/-Sweep war der Test faelschlich gruen.)
+{
+  const N = ['- [[_System/Session-Start-Nexus]] – Schnellreferenz (Tools, Routinen)'];
+  const rendered = '_System/Session-Start-Nexus – Schnellreferenz (Tools, Routinen)';
+  ok('Anker: "_System/…"-Wikilink -> Zeile 0 trotz stripInline-Unterstrich', lpLineForText(N, rendered, strip) === 0,
+    lpLineForText(N, rendered, strip));
 }
 
 // ── 18c) Verschachteltes Zitat mit Liste: beide Marker muessen weg ────────

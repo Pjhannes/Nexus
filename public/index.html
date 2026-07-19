@@ -2305,9 +2305,16 @@ function lpBuild(doc,tokens,reveal){
 // Der Renderer kennt keine Zeilennummern (kein data-line) und darf laut Plan nicht
 // angefasst werden - er bedient auch Lesemodus/Split/Transklusion/Office. Also der Weg
 // ueber den TEXT: der sichtbare Text eines Blocks beginnt mit dem markdown-befreiten Text
-// seiner ersten Quellzeile. lpNorm vereinheitlicht Whitespace, lpLineForText sucht sie.
-// Reine Funktionen -> headless testbar.
-function lpNorm(t){return (t||'').replace(/\s+/g,' ').trim();}
+// seiner ersten Quellzeile. lpNorm vereinheitlicht Whitespace UND raeumt Inline-Marker weg,
+// lpLineForText sucht sie. Reine Funktionen -> headless testbar.
+// Warum die Marker HIER (und nicht nur in stripInline): stripInline laeuft nur auf der
+// QUELL-Seite. Der gerenderte Block behaelt literale Marker, die kein Markdown waren -
+// z.B. der "_" in einem Wikilink-Ziel [[_System/...]] oder in snake_case. Der Renderer
+// kursiviert die ja nicht. stripInline entfernt am Quelltext aber JEDEN "_" ("_System" ->
+// "System"), sodass "_System/..." (Anker) nie auf "System/..." (Quelle) passte und der
+// Sprung an den Dateianfang zurueckfiel. lpNorm trifft BEIDE Seiten -> symmetrisch, der
+// Vergleich ist gegen ueberlebende Marker robust. Zeichenklasse identisch zu stripInline.
+function lpNorm(t){return (t||'').replace(/[*_~`=]/g,'').replace(/\s+/g,' ').trim();}
 
 // strip = Funktion, die Markdown aus EINER Zeile entfernt (in der App: stripInline).
 // Rueckgabe: 0-basierter Zeilenindex oder -1.
