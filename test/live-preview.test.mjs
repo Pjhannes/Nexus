@@ -484,7 +484,9 @@ console.log('\nE5 – Wikilinks & Callouts\n');
 {
   const t = 'Ein Embed: ![[START]]';
   const r = lpBuild(mkDoc(t), lpScanLine(t, 0), []);
-  ok('E5: embed-Widget ersetzt "![[" ({11,14})', r.widgets.length === 1 && r.widgets[0].type === 'embed' && r.widgets[0].from === 11 && r.widgets[0].to === 14, r.widgets);
+  // Seit E7 kommt zusaetzlich das transclude-Widget am Zeilenende (Test 55).
+  const em = r.widgets.filter(w => w.type === 'embed');
+  ok('E5: embed-Widget ersetzt "![[" ({11,14})', em.length === 1 && em[0].from === 11 && em[0].to === 14, r.widgets);
   ok('E5: "]]" versteckt, "START" lp-wikilink', r.hide.length === 1 && r.marks.some(m => m.cls === 'lp-wikilink' && t.slice(m.from, m.to) === 'START'), { hide: r.hide, marks: r.marks });
 }
 
@@ -574,14 +576,25 @@ console.log('\nE6 – Codeblock, Tabelle, Props, Bild, Mathe\n');
   ok('E6: Bild-Widget bleibt bei Reveal', rv.widgets.some(w => w.type === 'img'), rv.widgets);
 }
 
-// ── 55) Wiki-Embed: nur Bild-Endungen bekommen eine Vorschau ──────────────
+// ── 55) Wiki-Embed: Bild-Endungen -> Bildvorschau, Notizen -> Transklusion ──
 {
   const t = 'Foto: ![[urlaub.jpg]]';
   const r = lpBuild(mkDoc(t), lpScanLine(t, 0), []);
   const img = r.widgets.find(w => w.type === 'img');
   ok('E6: ![[x.jpg]] -> img-Widget mit data.wiki', img && img.data.wiki === 'urlaub.jpg' && img.from === t.length, img);
   const r2 = lpBuild(mkDoc('![[Notiz]]'), lpScanLine('![[Notiz]]', 0), []);
-  ok('E6: ![[Notiz]] (kein Bild) -> kein img-Widget', !r2.widgets.some(w => w.type === 'img'), r2.widgets);
+  ok('E6: ![[Notiz]] (kein Bild) -> KEIN img-Widget', !r2.widgets.some(w => w.type === 'img'), r2.widgets);
+  // E7: Notiz-Embeds bekommen stattdessen eine echte Transklusions-Vorschau -
+  // ohne sie kollabierte der .transclude-Block beim Wechsel und alles darunter
+  // ruckte hoch (Pauls Screenshot 2026-07-19).
+  const tc = r2.widgets.find(w => w.type === 'transclude');
+  ok('E7: ![[Notiz]] -> transclude-Widget am Zeilenende (ziel roh)', tc && tc.data.ziel === 'Notiz' && tc.from === 10, tc);
+  ok('E7: Bild-Embed bekommt KEIN transclude-Widget', !r.widgets.some(w => w.type === 'transclude'), r.widgets);
+  const r3 = lpBuild(mkDoc('![[Notiz#Abschnitt]]'), lpScanLine('![[Notiz#Abschnitt]]', 0), []);
+  ok('E7: #Anker wird roh durchgereicht', r3.widgets.some(w => w.type === 'transclude' && w.data.ziel === 'Notiz#Abschnitt'), r3.widgets);
+  // Reveal-unabhaengig (wie Bild): Cursor in der Zeile -> Vorschau bleibt.
+  const r4 = lpBuild(mkDoc('![[Notiz]]'), lpScanLine('![[Notiz]]', 0), [{ from: 3, to: 3 }]);
+  ok('E7: transclude-Widget bleibt bei Reveal', r4.widgets.some(w => w.type === 'transclude'), r4.widgets);
 }
 
 // ── 56) Mathe: $tex$ -> math-Widget; Reveal/Code -> roh ───────────────────
