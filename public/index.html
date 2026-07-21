@@ -4959,6 +4959,18 @@ function vtSprechtext(art,text,meta){
   if(art==='code')return 'Ein Codeblock mit '+(meta.zeilen!=null?meta.zeilen:'mehreren')+' Zeilen – uebersprungen.';
   return text||'';
 }
+// "Test (auto)" -> "Test, in Klammern: auto" – Einschuebe sollen hoerbar sein,
+// aber nicht als "Klammer auf ... Klammer zu" buchstabiert werden (Paul 2026-07-21).
+// Nur runde Klammern; verschachtelte ersetzen den innersten Einschub, uebrige
+// Klammerzeichen spricht keine Stimme mit. Satzzeichen-Kollisionen (",:" ",.")
+// werden bereinigt, ein Trailing-Komma entfernt.
+function vtKlammern(t){
+  return (t||'')
+    .replace(/\(\s*([^()]{1,200}?)\s*\)/g,', in Klammern: $1,')
+    .replace(/\s+,/g,',')
+    .replace(/,\s*([.,:;!?])/g,'$1')
+    .replace(/,\s*$/,'');
+}
 //__VT_END__
 // ── Einstellungen (localStorage 'nexus.vortrag*', Muster wie Graph-Glow) ──
 function vtVoices(){return window.speechSynthesis?speechSynthesis.getVoices():[];}
@@ -5022,8 +5034,11 @@ async function initVortragSettings(){
           return '<option value="'+esc(val)+'"'+(val===cur?' selected':'')+'>'+esc(k.name)+'</option>';
         }).join('')+'</optgroup>';
         renderPiperList(st);
+      }else{
+        const el=document.getElementById('set-piper-list');
+        if(el)el.textContent='Piper-Status-Fehler: '+((st&&st.error)||'keine Antwort');
       }
-    }catch(e){}
+    }catch(e){const el=document.getElementById('set-piper-list');if(el)el.textContent='Piper-Bruecke nicht erreichbar: '+e.message;}
   }
   s.innerHTML='<option value="">Automatisch (erste deutsche Stimme)</option>'+piperOpts+
     (vs.length?('<optgroup label="System (Windows)">'+sysOpts+'</optgroup>'):'');
@@ -5245,10 +5260,10 @@ async function vtSpielSegmentPiper(){
     if(p.idx===myIdx)url=await p.promise;
     else Promise.resolve(p.promise).then(u=>{if(u)try{URL.revokeObjectURL(u);}catch(e){}});
   }
-  if(!url)url=await vtPiperSynthWav(s.sprich);
+  if(!url)url=await vtPiperSynthWav(vtKlammern(s.sprich));
   if(!_vt.aktiv||_vt.idx!==myIdx){if(url)try{URL.revokeObjectURL(url);}catch(e){}return;}   // waehrend Synthese gestoppt/gesprungen
   if(!url){_vt.idx++;vtSpielSegment();return;}   // Synthese-Fehler: Segment ueberspringen
-  if(myIdx+1<_vt.seg.length)_vt.prefetch={idx:myIdx+1,promise:vtPiperSynthWav(_vt.seg[myIdx+1].sprich)};
+  if(myIdx+1<_vt.seg.length)_vt.prefetch={idx:myIdx+1,promise:vtPiperSynthWav(vtKlammern(_vt.seg[myIdx+1].sprich))};
   const a=new Audio(url);_vt.audio=a;
   a.onended=()=>{
     try{URL.revokeObjectURL(url);}catch(e){}
@@ -5267,7 +5282,7 @@ function vtSpielSegmentSystem(){
   clearTimeout(_vt.timer);_vt.timer=null;
   vtFocus(s.el,s.art,s.anker);
   vtUpdateBar();
-  const chunks=vtChunkSaetze(s.sprich,220);
+  const chunks=vtChunkSaetze(vtKlammern(s.sprich),220);
   if(!chunks.length){_vt.idx++;vtSpielSegment();return;}
   speechSynthesis.cancel();   // Queue leeren (Prev/Next-Spruenge); onend-Guards fangen das Echo
   let ci=0;
