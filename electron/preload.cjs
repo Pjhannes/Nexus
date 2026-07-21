@@ -20,4 +20,10 @@ contextBridge.exposeInMainWorld('nexusAPI', {
   // Auto-Update-Fenster (update.html): Main steuert die Ansicht, Renderer meldet den Klick zurueck.
   onUpdateView:     (cb)   => ipcRenderer.on('update:view', (_e, data) => cb(data)),
   updateAction:     (index)=> ipcRenderer.send('update:action', index),
+  // R24b: Piper-Neural-TTS fuer den Vortrag-Button (Status, Download, Synthese).
+  piperStatus:      ()          => ipcRenderer.invoke('piper:status'),
+  piperInstall:     (id)        => ipcRenderer.invoke('piper:install', id),
+  piperDelete:      (id)        => ipcRenderer.invoke('piper:delete', id),
+  piperSynth:       (text,opts) => ipcRenderer.invoke('piper:synth', text, opts),
+  onPiperProgress:  (cb)        => ipcRenderer.on('piper:progress', (_e, p) => cb(p)),
 });

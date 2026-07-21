@@ -4973,7 +4973,23 @@ function currentVtPause(){const n=parseInt(localStorage.getItem('nexus.vortragPa
 function onVtPauseInput(v){const n=Math.max(0,Math.min(1500,parseInt(v,10)||0));localStorage.setItem('nexus.vortragPause',String(n));const e=document.getElementById('set-vt-pause-val');if(e)e.textContent=n+' ms';}
 // Gewuenschte Stimme aufloesen; Fallback: erste deutsche, sonst erste ueberhaupt.
 function vtPickVoice(){const want=currentVtVoice();const vs=vtVoices();if(want){const v=vs.find(x=>x.voiceURI===want||x.name===want);if(v)return v;}return vs.find(v=>/^de/i.test(v.lang))||vs[0]||null;}
-function vtTestSatz(){if(_vt.aktiv)vtStop();if(!window.speechSynthesis)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance('So klingt der Nexus-Vortrag mit dieser Stimme.');const v=vtPickVoice();if(v){u.voice=v;u.lang=v.lang;}else u.lang='de-DE';u.rate=currentVtRate();u.pitch=currentVtPitch();speechSynthesis.speak(u);}
+async function vtTestSatz(){
+  if(_vt.aktiv)vtStop();
+  const text='So klingt der Nexus-Vortrag mit dieser Stimme.';
+  if(vtIsPiper()){
+    const el=document.getElementById('set-piper-progress');if(el)el.textContent='Synthese laeuft ...';
+    const u=await vtPiperSynthWav(text);
+    if(el)el.textContent=u?'':'Synthese fehlgeschlagen - Stimme installiert?';
+    if(u){const a=new Audio(u);a.onended=()=>{try{URL.revokeObjectURL(u);}catch(e){}};a.play().catch(()=>{});}
+    return;
+  }
+  if(!window.speechSynthesis)return;
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  const v=vtPickVoice();if(v){u.voice=v;u.lang=v.lang;}else u.lang='de-DE';
+  u.rate=currentVtRate();u.pitch=currentVtPitch();
+  speechSynthesis.speak(u);
+}
 function settingsVortragHtml(){
   if(!window.speechSynthesis)return '<div class="set-section"><div class="set-label">Vortrag</div><div class="set-hint">Sprachausgabe wird von dieser Umgebung nicht unterstützt.</div></div>';
   let h='<div class="set-section"><div class="set-label">Stimme</div><select class="set-select" id="set-vt-voice" onchange="setVtVoice(this.value)"></select>';
@@ -4981,19 +4997,96 @@ function settingsVortragHtml(){
   h+='<div class="set-section"><div class="set-label">Tempo <span class="set-val" id="set-vt-rate-val">'+currentVtRate().toFixed(2).replace(/\.?0+$/,'')+'×</span></div><input type="range" class="set-range" id="set-vt-rate" min="0.6" max="1.4" step="0.05" value="'+currentVtRate()+'" oninput="onVtRateInput(this.value)"></div>';
   h+='<div class="set-section"><div class="set-label">Tonhöhe <span class="set-val" id="set-vt-pitch-val">'+currentVtPitch().toFixed(2).replace(/\.?0+$/,'')+'×</span></div><input type="range" class="set-range" id="set-vt-pitch" min="0.7" max="1.3" step="0.05" value="'+currentVtPitch()+'" oninput="onVtPitchInput(this.value)"></div>';
   h+='<div class="set-section"><div class="set-label">Pause zwischen Segmenten <span class="set-val" id="set-vt-pause-val">'+currentVtPause()+' ms</span></div><input type="range" class="set-range" id="set-vt-pause" min="0" max="1500" step="50" value="'+currentVtPause()+'" oninput="onVtPauseInput(this.value)"></div>';
+  if(window.nexusAPI&&window.nexusAPI.piperStatus){
+    h+='<div class="set-section"><div class="set-label">Neural-Stimmen (Piper, offline)</div>';
+    h+='<div id="set-piper-list" class="set-hint">Lade Stimmen-Status ...</div>';
+    h+='<div class="set-hint" id="set-piper-progress" style="min-height:16px"></div>';
+    h+='<div class="set-hint">Einmaliger Download je Stimme (plus ~21 MB Engine beim ersten Mal), danach komplett offline. Tonh&ouml;he wirkt nur bei System-Stimmen.</div></div>';
+  }
   h+='<div class="set-section"><div class="set-label">Test</div><button class="ft-btn" style="padding:8px 14px" onclick="vtTestSatz()">Testsatz vorlesen</button>';
   h+='<div class="set-hint">Der Vortrag-Button (&#127908;) neben &bdquo;Lesen&ldquo; trägt die offene Notiz vor. Liegt ein Vortragsskript daneben (&lt;Notiz&gt;.vortrag.json, per Claude-Tool write_vortrag erzeugt), wird moderiert vorgetragen &ndash; sonst linear Abschnitt für Abschnitt.</div></div>';
   return h;
 }
-function initVortragSettings(){
+async function initVortragSettings(){
   const s=document.getElementById('set-vt-voice');if(!s)return;
   const cur=currentVtVoice();const vs=vtVoicesSortiert();
-  s.innerHTML='<option value="">Automatisch (erste deutsche Stimme)</option>'+vs.map(v=>'<option value="'+esc(v.voiceURI||v.name)+'"'+((v.voiceURI===cur||v.name===cur)?' selected':'')+'>'+esc(v.name+' ('+v.lang+')')+'</option>').join('');
+  const sysOpts=vs.map(v=>'<option value="'+esc(v.voiceURI||v.name)+'"'+((v.voiceURI===cur||v.name===cur)?' selected':'')+'>'+esc(v.name+' ('+v.lang+')')+'</option>').join('');
+  let piperOpts='';
+  if(window.nexusAPI&&window.nexusAPI.piperStatus){
+    try{
+      const st=await window.nexusAPI.piperStatus();
+      if(st&&!st.error){
+        _piperStatus=st;
+        if(st.voices.length)piperOpts='<optgroup label="Neural (Piper)">'+st.voices.map(id=>{
+          const k=(st.katalog&&st.katalog[id])||{name:id};const val='piper:'+id;
+          return '<option value="'+esc(val)+'"'+(val===cur?' selected':'')+'>'+esc(k.name)+'</option>';
+        }).join('')+'</optgroup>';
+        renderPiperList(st);
+      }
+    }catch(e){}
+  }
+  s.innerHTML='<option value="">Automatisch (erste deutsche Stimme)</option>'+piperOpts+
+    (vs.length?('<optgroup label="System (Windows)">'+sysOpts+'</optgroup>'):'');
+}
+let _piperStatus=null,_piperBusy=false,_piperProgressWired=false;
+function renderPiperList(st){
+  const host=document.getElementById('set-piper-list');if(!host)return;
+  if(!_piperProgressWired&&window.nexusAPI&&window.nexusAPI.onPiperProgress){
+    _piperProgressWired=true;
+    window.nexusAPI.onPiperProgress(p=>{
+      const el=document.getElementById('set-piper-progress');if(!el||!p)return;
+      const mb=x=>(x/1048576).toFixed(1);
+      el.textContent=p.fertig?(p.label+' - fertig ('+mb(p.received)+' MB)')
+        :(p.label+' ... '+mb(p.received)+(p.total?(' / '+mb(p.total)):'')+' MB');
+    });
+  }
+  const rows=Object.keys(st.katalog||{}).map(id=>{
+    const k=st.katalog[id];const da=st.voices.indexOf(id)>=0;
+    return '<div style="display:flex;align-items:center;gap:10px;margin:4px 0">'+
+      '<span style="min-width:150px;color:var(--text)">'+esc(k.name)+'</span>'+
+      '<span style="color:var(--dim);font-size:11px">&approx; '+k.groesseMB+' MB</span>'+
+      (da
+        ?'<span style="color:var(--accent)">&#10003; installiert</span><button class="ft-btn" style="padding:4px 10px" onclick="vtPiperDelete(&quot;'+id+'&quot;)">L&ouml;schen</button>'
+        :'<button class="ft-btn" style="padding:4px 10px" onclick="vtPiperInstall(&quot;'+id+'&quot;)">Installieren</button>')+
+      '</div>';
+  }).join('');
+  host.innerHTML=rows+(st.engine?'':'<div style="margin-top:4px">Engine (&approx; 21 MB) wird mit der ersten Stimme automatisch geladen.</div>');
+}
+async function vtPiperInstall(id){
+  if(_piperBusy)return;_piperBusy=true;
+  const el=document.getElementById('set-piper-progress');if(el)el.textContent='Starte Download ...';
+  try{
+    const r=await window.nexusAPI.piperInstall(id);
+    if(el)el.textContent=(r&&r.error)?('Fehler: '+r.error):'';
+    if(r&&r.ok&&!currentVtVoice())setVtVoice('piper:'+id);   // erste Neural-Stimme direkt aktivieren
+  }catch(e){if(el)el.textContent='Fehler: '+e.message;}
+  _piperBusy=false;
+  initVortragSettings();
+}
+async function vtPiperDelete(id){
+  if(_piperBusy)return;_piperBusy=true;
+  try{
+    await window.nexusAPI.piperDelete(id);
+    if(currentVtVoice()==='piper:'+id)setVtVoice('');
+  }catch(e){}
+  _piperBusy=false;
+  initVortragSettings();
 }
 // Stimmenliste laedt asynchron (beim ersten getVoices() oft leer) -> Dropdown nachziehen.
 if(window.speechSynthesis){try{speechSynthesis.onvoiceschanged=()=>{if(document.getElementById('set-vt-voice'))initVortragSettings();};}catch(e){}}
 // ── Player-State + Segmentaufbau ──
-const _vt={aktiv:false,pause:false,nextPending:false,seg:[],idx:0,modus:'linear',stale:false,utter:null,timer:null,focusEls:[],liftEls:[],wortMarks:[]};
+const _vt={aktiv:false,pause:false,nextPending:false,seg:[],idx:0,modus:'linear',stale:false,utter:null,timer:null,audio:null,prefetch:null,focusEls:[],liftEls:[],wortMarks:[]};
+// Sprech-Text eines Blocks: wie textContent, aber OHNE die #-Kopierlinks in
+// Ueberschriften (<a class="h-anchor">#</a> steht IM h-Element -> TTS las
+// sonst "Raute" vor jeder Ueberschrift). Whitespace normalisiert.
+function vtSpeakText(el){
+  const w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT,{acceptNode:n=>{
+    let p=n.parentElement;
+    while(p&&p!==el){if(p.classList&&p.classList.contains('h-anchor'))return NodeFilter.FILTER_REJECT;p=p.parentElement;}
+    return NodeFilter.FILTER_ACCEPT;}});
+  let t='',x;while((x=w.nextNode()))t+=x.nodeValue+' ';
+  return t.replace(/\s+/g,' ').trim();
+}
 // Linearer Modus: Segmente aus dem gerenderten DOM (Titel, Bloecke, Listenpunkte einzeln).
 function vtLinearSegmente(area){
   const body=area.querySelector('.md-body');if(!body)return [];
@@ -5004,7 +5097,7 @@ function vtLinearSegmente(area){
     const tag=el.tagName;
     if(el.classList.contains('mermaid-block')||el.classList.contains('dataview-block')){seg.push({sprich:'Ein Diagramm – siehe Anzeige.',el,art:'absatz'});continue;}
     if(el.classList.contains('transclude')){seg.push({sprich:'Eine eingebettete Notiz – siehe Anzeige.',el,art:'absatz'});continue;}
-    if(/^H[1-6]$/.test(tag)){const t=el.textContent.trim();if(t)seg.push({sprich:t,el,art:'ueberschrift'});continue;}
+    if(/^H[1-6]$/.test(tag)){const t=vtSpeakText(el);if(t)seg.push({sprich:t,el,art:'ueberschrift'});continue;}
     // Renderer wickelt Tabellen in div.md-table-wrap und Code in div.code-block:
     // deshalb per :scope>-Blick hinein, statt nur auf TABLE/PRE-Tags zu pruefen.
     const tbl=(tag==='TABLE')?el:(el.querySelector?el.querySelector(':scope>table'):null);
@@ -5016,8 +5109,14 @@ function vtLinearSegmente(area){
     }
     const pre=(tag==='PRE')?el:(el.querySelector?el.querySelector(':scope>pre'):null);
     if(pre){seg.push({sprich:vtSprechtext('code','',{zeilen:(pre.textContent.match(/\n/g)||[]).length+1}),el,art:'absatz'});continue;}
-    if(tag==='UL'||tag==='OL'){for(const li of el.children){const t=li.textContent.replace(/\s+/g,' ').trim();if(t)seg.push({sprich:t,el:li,art:'absatz'});}continue;}
-    const t=el.textContent.replace(/\s+/g,' ').trim();
+    if(tag==='UL'||tag==='OL'){
+      // OL: die sichtbare Nummer ist CSS-generiert und steht NICHT im textContent –
+      // fuer den Vortrag explizit voranstellen ("1. ...", beruecksichtigt start-Attribut).
+      const olStart=parseInt(el.getAttribute('start')||'1',10)||1;let liIx=0;
+      for(const li of el.children){const t=vtSpeakText(li);if(t)seg.push({sprich:(tag==='OL'?((olStart+liIx)+'. '):'')+t,el:li,art:'absatz'});liIx++;}
+      continue;
+    }
+    const t=vtSpeakText(el);
     if(t)seg.push({sprich:t,el,art:'absatz'});
   }
   return seg;
@@ -5117,7 +5216,51 @@ async function startVortrag(){
   vtUpdateBar();
   vtSpielSegment();
 }
-function vtSpielSegment(){
+// R24b: Piper-Neural-TTS (lokal, via Electron-IPC). Aktiv, wenn die gewaehlte
+// Stimme 'piper:<id>' ist UND die App-Bruecke existiert (im Dev-Browser ohne
+// nexusAPI faellt alles automatisch auf die System-Stimmen zurueck).
+function vtIsPiper(){return currentVtVoice().indexOf('piper:')===0&&!!(window.nexusAPI&&window.nexusAPI.piperSynth);}
+async function vtPiperSynthWav(text){
+  try{
+    const id=currentVtVoice().slice(6);
+    const r=await window.nexusAPI.piperSynth(text,{voice:id,lengthScale:Math.max(0.5,Math.min(2,1/currentVtRate()))});
+    if(!r||r.error||!r.wavBase64){if(r&&r.error)console.warn('Piper:',r.error);return null;}
+    const bin=atob(r.wavBase64);const u8=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
+    return URL.createObjectURL(new Blob([u8],{type:'audio/wav'}));
+  }catch(e){return null;}
+}
+function vtSpielSegment(){if(vtIsPiper()){vtSpielSegmentPiper();return;}vtSpielSegmentSystem();}
+async function vtSpielSegmentPiper(){
+  if(!_vt.aktiv)return;
+  if(_vt.idx>=_vt.seg.length){vtStop();return;}
+  const myIdx=_vt.idx,s=_vt.seg[myIdx];
+  clearTimeout(_vt.timer);_vt.timer=null;
+  vtFocus(s.el,s.art,s.anker);
+  vtUpdateBar();
+  // Prefetch verwenden (Latenz verstecken) bzw. veralteten Prefetch aufraeumen
+  let url=null;
+  if(_vt.prefetch){
+    const p=_vt.prefetch;_vt.prefetch=null;
+    if(p.idx===myIdx)url=await p.promise;
+    else Promise.resolve(p.promise).then(u=>{if(u)try{URL.revokeObjectURL(u);}catch(e){}});
+  }
+  if(!url)url=await vtPiperSynthWav(s.sprich);
+  if(!_vt.aktiv||_vt.idx!==myIdx){if(url)try{URL.revokeObjectURL(url);}catch(e){}return;}   // waehrend Synthese gestoppt/gesprungen
+  if(!url){_vt.idx++;vtSpielSegment();return;}   // Synthese-Fehler: Segment ueberspringen
+  if(myIdx+1<_vt.seg.length)_vt.prefetch={idx:myIdx+1,promise:vtPiperSynthWav(_vt.seg[myIdx+1].sprich)};
+  const a=new Audio(url);_vt.audio=a;
+  a.onended=()=>{
+    try{URL.revokeObjectURL(url);}catch(e){}
+    if(!_vt.aktiv||_vt.audio!==a)return;
+    _vt.audio=null;
+    _vt.timer=setTimeout(()=>{if(!_vt.aktiv)return;if(_vt.pause){_vt.nextPending=true;return;}_vt.idx++;vtSpielSegment();},currentVtPause());
+  };
+  a.onerror=()=>{try{URL.revokeObjectURL(url);}catch(e){}if(!_vt.aktiv||_vt.audio!==a)return;_vt.audio=null;_vt.idx++;vtSpielSegment();};
+  if(_vt.pause)return;   // pausiert waehrend Synthese: Audio liegt bereit, Resume startet es
+  try{await a.play();}catch(e){_vt.audio=null;_vt.idx++;vtSpielSegment();}
+}
+function vtSpielSegmentSystem(){
   if(!_vt.aktiv)return;
   if(_vt.idx>=_vt.seg.length){vtStop();return;}
   const s=_vt.seg[_vt.idx];
@@ -5154,17 +5297,24 @@ function vtPlayPause(){
   if(_vt.pause){
     _vt.pause=false;
     if(_vt.nextPending){_vt.nextPending=false;_vt.idx++;vtSpielSegment();}
+    else if(_vt.audio){try{_vt.audio.play();}catch(e){}}
     else try{speechSynthesis.resume();}catch(e){}
-  }else{_vt.pause=true;try{speechSynthesis.pause();}catch(e){}}
+  }else{
+    _vt.pause=true;
+    if(_vt.audio){try{_vt.audio.pause();}catch(e){}}
+    else try{speechSynthesis.pause();}catch(e){}
+  }
   vtUpdateBar();
 }
-function vtNext(){if(!_vt.aktiv)return;clearTimeout(_vt.timer);_vt.nextPending=false;_vt.pause=false;try{speechSynthesis.resume();}catch(e){}if(_vt.idx<_vt.seg.length-1){_vt.idx++;vtSpielSegment();}else vtStop();}
-function vtPrev(){if(!_vt.aktiv)return;clearTimeout(_vt.timer);_vt.nextPending=false;_vt.pause=false;try{speechSynthesis.resume();}catch(e){}_vt.idx=Math.max(0,_vt.idx-1);vtSpielSegment();}
+function vtNext(){if(!_vt.aktiv)return;clearTimeout(_vt.timer);_vt.nextPending=false;_vt.pause=false;try{speechSynthesis.resume();}catch(e){}if(_vt.audio){try{_vt.audio.pause();}catch(e){}_vt.audio=null;}if(_vt.idx<_vt.seg.length-1){_vt.idx++;vtSpielSegment();}else vtStop();}
+function vtPrev(){if(!_vt.aktiv)return;clearTimeout(_vt.timer);_vt.nextPending=false;_vt.pause=false;try{speechSynthesis.resume();}catch(e){}if(_vt.audio){try{_vt.audio.pause();}catch(e){}_vt.audio=null;}_vt.idx=Math.max(0,_vt.idx-1);vtSpielSegment();}
 function vtStop(){
   if(!_vt.aktiv&&!_vt.utter)return;   // idle: hideEditFab ruft bei jedem Ansichtswechsel
   _vt.aktiv=false;_vt.pause=false;_vt.nextPending=false;
   clearTimeout(_vt.timer);_vt.timer=null;_vt.utter=null;_vt.seg=[];_vt.idx=0;_vt.stale=false;
   if(window.speechSynthesis)try{speechSynthesis.cancel();}catch(e){}
+  if(_vt.audio){try{_vt.audio.pause();}catch(e){}_vt.audio=null;}
+  if(_vt.prefetch){const p=_vt.prefetch;_vt.prefetch=null;Promise.resolve(p.promise).then(u=>{if(u)try{URL.revokeObjectURL(u);}catch(e){}});}
   vtClearFocus();
   document.querySelectorAll('.md-body.vortrag-dim').forEach(b=>b.classList.remove('vortrag-dim'));
   vtUpdateBar();

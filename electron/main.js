@@ -23,6 +23,8 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { createServer } from 'net';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, appendFileSync } from 'fs';
 import { setupAutoUpdate } from './updater.js';
+// R24b: lokale Neural-TTS (Piper) fuer den Vortrag-Button – Download/Verwaltung/Synthese.
+import { piperStatus, piperInstallVoice, piperDeleteVoice, piperSynth } from './piper.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const APP_ROOT   = join(__dir, '..');
@@ -416,6 +418,19 @@ function registerIpc() {
   });
 
   ipcMain.handle('app:version', () => app.getVersion());
+
+  // R24b: Piper-Neural-TTS. Downloads sind IMMER nutzerinitiiert (Button in den
+  // Einstellungen); Fortschritt geht als 'piper:progress'-Events an das Fenster.
+  ipcMain.handle('piper:status', () => {
+    try { return piperStatus(); }
+    catch (e) { return { error: String(e && e.message ? e.message : e) }; }
+  });
+  ipcMain.handle('piper:install', async (e, id) => {
+    const send = (p) => { try { if (!e.sender.isDestroyed()) e.sender.send('piper:progress', p); } catch {} };
+    return piperInstallVoice(id, send);
+  });
+  ipcMain.handle('piper:delete', (_e, id) => piperDeleteVoice(id));
+  ipcMain.handle('piper:synth', (_e, text, opts) => piperSynth(text, opts || {}));
 }
 
 // --- Start --------------------------------------------------------------------
