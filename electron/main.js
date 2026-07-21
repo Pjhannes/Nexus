@@ -24,7 +24,17 @@ import { createServer } from 'net';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, appendFileSync } from 'fs';
 import { setupAutoUpdate } from './updater.js';
 // R24b: lokale Neural-TTS (Piper) fuer den Vortrag-Button – Download/Verwaltung/Synthese.
-import { piperStatus, piperInstallVoice, piperDeleteVoice, piperSynth } from './piper.js';
+// WICHTIG: bewusst KEIN statischer Top-Level-Import. piper.js importiert seinerseits
+// src/paths.js, dessen DATA_DIR/CONFIG_PATH als const beim ERSTEN Import fest einfriert.
+// Ein statischer Import hier wuerde src/paths.js schon beim Modul-Start von main.js laden -
+// VOR ensureDataDir() (laeuft erst in app.whenReady()), das NEXUS_DATA_DIR erst setzt.
+// Ergebnis waere ein dauerhaft falscher, in den read-only asar zeigender Pfad fuer
+// ALLE Module, die paths.js spaeter importieren (ui-server.js, server.js, ...) -
+// die gepackte App würde beim Start (Config "nicht gefunden") sofort und lautlos
+// abbrechen (app.quit() ohne Dialog). Der dynamische Import unten laedt piper.js
+// daher lazy, erst wenn tatsaechlich ein IPC-Aufruf kommt (also sicher nach ensureDataDir()).
+let _piperModP = null;
+function piperMod() { return _piperModP || (_piperModP = import('./piper.js')); }
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const APP_ROOT   = join(__dir, '..');
@@ -421,16 +431,16 @@ function registerIpc() {
 
   // R24b: Piper-Neural-TTS. Downloads sind IMMER nutzerinitiiert (Button in den
   // Einstellungen); Fortschritt geht als 'piper:progress'-Events an das Fenster.
-  ipcMain.handle('piper:status', () => {
-    try { return piperStatus(); }
+  ipcMain.handle('piper:status', async () => {
+    try { return (await piperMod()).piperStatus(); }
     catch (e) { return { error: String(e && e.message ? e.message : e) }; }
   });
   ipcMain.handle('piper:install', async (e, id) => {
     const send = (p) => { try { if (!e.sender.isDestroyed()) e.sender.send('piper:progress', p); } catch {} };
-    return piperInstallVoice(id, send);
+    return (await piperMod()).piperInstallVoice(id, send);
   });
-  ipcMain.handle('piper:delete', (_e, id) => piperDeleteVoice(id));
-  ipcMain.handle('piper:synth', (_e, text, opts) => piperSynth(text, opts || {}));
+  ipcMain.handle('piper:delete', async (_e, id) => (await piperMod()).piperDeleteVoice(id));
+  ipcMain.handle('piper:synth', async (_e, text, opts) => (await piperMod()).piperSynth(text, opts || {}));
 }
 
 // --- Start --------------------------------------------------------------------
