@@ -70,9 +70,10 @@ function buildTree(root, relBase, ignoreSet, depth = 0) {
       result.push({ name: e.name, path: rel, type: 'folder', children: buildTree(root, rel, ignoreSet, depth + 1) });
     } else {
       // R24: Vortragsskript-Sidecars sind Maschinen-Dateien – nicht im Baum zeigen.
+      // Auch .vortrag.json.nexustmp (Crash-Leiche des atomaren Writes) mitfiltern.
       // (Gleiche Regel in treeSignature spiegeln, sonst feuert das SSE-Polling
       // tree-changed-Events fuer unsichtbare Dateien.)
-      if (e.name.endsWith('.vortrag.json')) continue;
+      if (e.name.endsWith('.vortrag.json') || e.name.endsWith('.vortrag.json.nexustmp')) continue;
       const ext = extname(e.name).toLowerCase();
       result.push({ name: e.name, path: rel, type: 'file', ext });
     }
@@ -96,7 +97,7 @@ function treeSignature(root, ignoreSet, depth = 0, rel = '', state = { h: 0x811c
   catch { return state; }
   for (const e of entries) {
     if (ignoreSet.has(e.name) || e.name.startsWith('.')) continue;
-    if (!e.isDirectory() && e.name.endsWith('.vortrag.json')) continue; // R24: wie buildTree
+    if (!e.isDirectory() && (e.name.endsWith('.vortrag.json') || e.name.endsWith('.vortrag.json.nexustmp'))) continue; // R24: wie buildTree
     const r = rel ? rel + '/' + e.name : e.name;
     state.n++;
     for (let i = 0; i < r.length; i++) { state.h ^= r.charCodeAt(i); state.h = Math.imul(state.h, 0x01000193) >>> 0; }

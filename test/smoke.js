@@ -263,6 +263,17 @@ tools.reindex();
 assert('R24: Sidecar landet NICHT im Index', !tools.listNotes({ prefix: 'Uni/' }).some(n => n.path.endsWith('.vortrag.json')),
   JSON.stringify(tools.listNotes({ prefix: 'Uni/' }).map(n => n.path)));
 
+// move/delete ziehen den Sidecar mit (sonst unsichtbare Waisen-Datei)
+const vtMv = tools.move({ from: 'Uni/Thermodynamik.md', to: 'Uni/Thermo-Umbenannt.md' });
+assert('R24: move der Notiz ok', vtMv.ok === true, JSON.stringify(vtMv));
+assert('R24: move zieht Sidecar mit', existsSync(join(vault, 'Uni', 'Thermo-Umbenannt.vortrag.json')) && !existsSync(vtFull));
+const vtDel = tools.delete({ path: 'Uni/Thermo-Umbenannt.md' });
+assert('R24: delete der Notiz ok', vtDel.ok === true, JSON.stringify(vtDel));
+assert('R24: delete entfernt Sidecar mit', !existsSync(join(vault, 'Uni', 'Thermo-Umbenannt.vortrag.json')));
+// Notiz fuer nachfolgende Tests wiederherstellen (Originalinhalt nach patch-Tests)
+const vtRestore = tools.writeNote({ path: 'Uni/Thermodynamik.md', content: vtNoteRaw, create: true });
+assert('R24: Notiz wiederhergestellt', vtRestore.ok === true, JSON.stringify(vtRestore).slice(0, 120));
+
 // ═════════════════════════════════════════════════════════════════════════════
 console.log(B('\n── 3a. R14: Schreib-Integrität (keine stille Trunkierung) ────'));
 // ═════════════════════════════════════════════════════════════════════════════

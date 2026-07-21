@@ -15,8 +15,11 @@ const SNIPPET_LINES = 30;
 // MUSS identisch bleiben, Paritaets-Test in test/vortrag.test.mjs) gefunden wird.
 // Inline-Marker (*_~`=) -> '' (Rendern entfernt sie ersatzlos, auch mitten im Wort);
 // Struktur-Marker (# > |) -> ' ' (Ueberschriften-/Zitat-/Tabellenzeichen trennen Woerter).
+// NFC vorweg: sonst lehnt die Validierung visuell identische Anker in NFD ab
+// (z. B. von macOS kopierte Umlaute: 'ä' als 'a'+Kombinationszeichen).
 export function vortragNorm(t) {
   return (t || '')
+    .normalize('NFC')
     .replace(/!\[\[[^\]]+\]\]/g, ' ')                            // Embeds weg
     .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')                       // Bilder weg
     .replace(/\[\[([^\]#|]+)(?:#[^\]|]*)?\|([^\]]+)\]\]/g, '$2') // [[Ziel|Alias]] -> Alias
@@ -33,10 +36,20 @@ export const VORTRAG_ARTEN = ['absatz', 'wort', 'tabelle', 'ueberschrift', 'kein
 // Prueft ein Segment-Array gegen den rohen Notiz-Inhalt. Gibt eine Fehlerliste
 // zurueck (leer = gueltig) – jede Meldung nennt das Segment, damit das LLM den
 // Anker gezielt korrigieren kann.
+// Obergrenzen: kein Sicherheitsthema (lokaler Client), aber ein LLM-Ausreisser soll
+// keine Monster-JSON erzeugen, die der Player dann minutenlang abspielt.
+const VORTRAG_MAX_SEGMENTE = 200;
+const VORTRAG_MAX_SPRICH = 2000;
+const VORTRAG_MAX_ANKER = 400;
+
 export function validateVortragSegmente(segmente, noteContent) {
   const errors = [];
   if (!Array.isArray(segmente) || segmente.length === 0) {
     errors.push('segmente fehlt oder ist leer');
+    return errors;
+  }
+  if (segmente.length > VORTRAG_MAX_SEGMENTE) {
+    errors.push(`zu viele Segmente (${segmente.length}, max ${VORTRAG_MAX_SEGMENTE})`);
     return errors;
   }
   const arten = new Set(VORTRAG_ARTEN);
@@ -45,6 +58,10 @@ export function validateVortragSegmente(segmente, noteContent) {
     const nr = `Segment ${i + 1}`;
     if (!s || typeof s.sprich !== 'string' || !s.sprich.trim()) {
       errors.push(`${nr}: "sprich" fehlt oder ist leer`);
+      return;
+    }
+    if (s.sprich.length > VORTRAG_MAX_SPRICH) {
+      errors.push(`${nr}: "sprich" zu lang (${s.sprich.length} Zeichen, max ${VORTRAG_MAX_SPRICH}) – in mehrere Segmente aufteilen`);
       return;
     }
     const art = s.art ?? (s.anker ? 'absatz' : 'keine');
@@ -57,7 +74,18 @@ export function validateVortragSegmente(segmente, noteContent) {
       errors.push(`${nr}: "anker" fehlt (oder art:"keine" setzen)`);
       return;
     }
-    if (!norm.includes(vortragNorm(s.anker)))
+    if (s.anker.length > VORTRAG_MAX_ANKER) {
+      errors.push(`${nr}: "anker" zu lang (${s.anker.length} Zeichen, max ${VORTRAG_MAX_ANKER}) – kurzen, eindeutigen Ausschnitt waehlen`);
+      return;
+    }
+    const na = vortragNorm(s.anker);
+    if (!na) {
+      // '' waere in JEDEM Text enthalten – ein nur aus Markern bestehender Anker
+      // ("**", "---") wuerde sonst still validieren und nie ein Highlight liefern.
+      errors.push(`${nr}: anker besteht nur aus Markdown-Markern/Leerraum: "${s.anker.slice(0, 40)}"`);
+      return;
+    }
+    if (!norm.includes(na))
       errors.push(`${nr}: anker nicht woertlich in der Notiz gefunden: "${s.anker.slice(0, 80)}"`);
   });
   return errors;
@@ -218,13 +246,21 @@ export function makeTools(indexer, vaultPath) {
     if (!existsSync(full)) return { error: 'Notiz existiert nicht: ' + path };
     let raw;
     try { raw = readFileSync(full, 'utf8'); } catch (e) { return { error: e.message }; }
-    const errors = validateVortragSegmente(segmente, raw);
+    // BOM strippen: fetch().text() im Player entfernt die UTF-8-BOM per Spec –
+    // ein Hash ueber den BOM-behafteten String waere client-seitig NIE reproduzierbar
+    // (Skript stuende dauerhaft auf "veraltet").
+    const ohneBom = raw.replace(/^﻿/, '');
+    // Frontmatter fuer die ANKER-Validierung ausblenden: die Leseansicht rendert es
+    // als Chip, ein Anker daraus waere serverseitig "gueltig", aber im Player nie
+    // auffindbar. Der Hash laeuft weiter ueber den vollen Inhalt (ohne BOM).
+    const rumpf = ohneBom.replace(/^---\r?\n[\s\S]*?\r?\n---(\r?\n|$)/, '');
+    const errors = validateVortragSegmente(segmente, rumpf);
     if (errors.length)
       return { error: 'Vortragsskript ungueltig:\n- ' + errors.join('\n- ') };
     const skript = {
       version: 1,
       notiz: path.replace(/\\/g, '/'),
-      notizHash: 'sha256:' + createHash('sha256').update(raw, 'utf8').digest('hex'),
+      notizHash: 'sha256:' + createHash('sha256').update(ohneBom, 'utf8').digest('hex'),
       erstellt: new Date().toISOString().slice(0, 10),
       ...(titel && String(titel).trim() ? { titel: String(titel).trim() } : {}),
       segmente: segmente.map(s => {
@@ -324,6 +360,13 @@ export function makeTools(indexer, vaultPath) {
     try {
       mkdirSync(dirname(dst), { recursive: true });
       renameSync(src, dst);
+      // R24: Vortragsskript-Sidecar der Notiz mitziehen (im Baum unsichtbar, wuerde
+      // sonst als Waisen-Datei zurueckbleiben). Hash haengt am Inhalt -> bleibt gueltig.
+      if (/\.md$/i.test(src) && /\.md$/i.test(dst)) {
+        const scSrc = src.replace(/\.md$/i, '.vortrag.json');
+        const scDst = dst.replace(/\.md$/i, '.vortrag.json');
+        if (existsSync(scSrc) && !existsSync(scDst)) { try { renameSync(scSrc, scDst); } catch {} }
+      }
     } catch (e) { return { error: e.message }; }
     const n = indexer.reindex();
     return { ok: true, from, to, indexed: n };
@@ -334,7 +377,14 @@ export function makeTools(indexer, vaultPath) {
     const full = safeFull(path);
     if (!full || full === resolve(vaultPath)) return { error: 'Ungueltiger Pfad' };
     if (!existsSync(full)) return { error: 'Nicht gefunden: ' + path };
-    try { rmSync(full, { recursive: true, force: true }); } catch (e) { return { error: e.message }; }
+    try {
+      rmSync(full, { recursive: true, force: true });
+      // R24: Sidecar der geloeschten Notiz mit entfernen (unsichtbarer Zombie sonst).
+      if (/\.md$/i.test(full)) {
+        const sc = full.replace(/\.md$/i, '.vortrag.json');
+        if (existsSync(sc)) { try { rmSync(sc, { force: true }); } catch {} }
+      }
+    } catch (e) { return { error: e.message }; }
     const n = indexer.reindex();
     return { ok: true, path, indexed: n };
   }

@@ -29,6 +29,7 @@ ok('Bild-Syntax verschwindet', vortragNorm('![alt](url) Text') === 'text');
 ok('Embed-Syntax verschwindet', vortragNorm('![[Bild.png]] Text') === 'text');
 ok('Whitespace kollabiert + lowercase', vortragNorm('  A \t  B ') === 'a b');
 ok('Leer/undefined -> ""', vortragNorm() === '' && vortragNorm('') === '');
+ok('NFC-Normalisierung: NFD-Umlaut == NFC-Umlaut', vortragNorm('Wärme') === vortragNorm('Wärme'), JSON.stringify([vortragNorm('Wärme'),vortragNorm('Wärme')]));
 
 console.log('\n── A2. Containment: Klartext-Anker findet dekorierten Rohtext ──');
 const roh = [
@@ -66,6 +67,14 @@ const e5 = validateVortragSegmente([
   { sprich: 'y', anker: 'FEHLT_99' },
 ], roh);
 ok('mehrere Fehler werden alle gemeldet', e5.length === 2 && e5[0].includes('Segment 2') && e5[1].includes('Segment 3'), e5.join(';'));
+const e6 = validateVortragSegmente([{ sprich: 'x', anker: '**' }], roh);
+ok('nur-Marker-anker ("**") -> Fehler statt stilles Durchrutschen', e6.length === 1 && e6[0].includes('Markdown-Markern'), e6.join(';'));
+const e7 = validateVortragSegmente([{ sprich: 'S'.repeat(2001), anker: 'erste Hauptsatz' }], roh);
+ok('sprich > 2000 Zeichen -> Fehler', e7.length === 1 && e7[0].includes('zu lang'), e7.join(';'));
+const e8 = validateVortragSegmente([{ sprich: 'x', anker: 'A'.repeat(401) }], roh);
+ok('anker > 400 Zeichen -> Fehler', e8.length === 1 && e8[0].includes('zu lang'), e8.join(';'));
+const e9 = validateVortragSegmente(Array.from({ length: 201 }, () => ({ sprich: 'x', art: 'keine' })), roh);
+ok('mehr als 200 Segmente -> Fehler', e9.length === 1 && e9[0].includes('zu viele'), e9.join(';'));
 
 console.log('\n── A4. vortragSidecarPath ──');
 ok('Uni/A.md -> Uni/A.vortrag.json', vortragSidecarPath('Uni/A.md') === 'Uni/A.vortrag.json');

@@ -4920,6 +4920,7 @@ function toggleReading(){const app=document.querySelector('.app');if(!app)return
 // Struktur-Marker (# > |) -> ' ' (Ueberschriften-/Zitat-/Tabellenzeichen trennen Woerter).
 function vtNorm(t){
   return (t||'')
+    .normalize('NFC')
     .replace(/!\[\[[^\]]+\]\]/g,' ')
     .replace(/!\[[^\]]*\]\([^)]*\)/g,' ')
     .replace(/\[\[([^\]#|]+)(?:#[^\]|]*)?\|([^\]]+)\]\]/g,'$2')
