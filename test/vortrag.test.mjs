@@ -87,7 +87,7 @@ const b = html.indexOf('//__VT_END__');
 ok('VT-Marker in index.html vorhanden', a !== -1 && b !== -1 && b > a, `a=${a} b=${b}`);
 if (a !== -1 && b !== -1 && b > a) {
   const core = html.slice(a, b);
-  const mod = await import('data:text/javascript,' + encodeURIComponent(core + '\nexport {vtNorm, vtChunkSaetze, vtSprechtext};'));
+  const mod = await import('data:text/javascript,' + encodeURIComponent(core + '\nexport {vtNorm, vtChunkSaetze, vtSprechtext, vtKlammern};'));
   const corpus = [
     '**Wort**mitte', '==markiert==', 'ein `code`wort',
     'siehe [[Ziel|Alias]]', '[[Uni/Thermo]]', '[[Datei#Abschnitt]]', '[Text](http://x.de)',
@@ -117,6 +117,16 @@ if (a !== -1 && b !== -1 && b > a) {
   ok('vtSprechtext: Codeblock wird uebersprungen-Ansage',
      mod.vtSprechtext('code', 'const x=1', { zeilen: 3 }).toLowerCase().includes('code'));
   ok('vtSprechtext: Absatz gibt Text unveraendert', mod.vtSprechtext('absatz', 'Hallo Welt.', {}) === 'Hallo Welt.');
+
+  // vtKlammern: "(x)" hoerbar machen ohne "Klammer auf/zu" (Paul 2026-07-21)
+  ok('vtKlammern: Basisfall', mod.vtKlammern('test (auto)') === 'test, in Klammern: auto', mod.vtKlammern('test (auto)'));
+  ok('vtKlammern: mitten im Satz', mod.vtKlammern('a (b) c') === 'a, in Klammern: b, c', mod.vtKlammern('a (b) c'));
+  ok('vtKlammern: vor Doppelpunkt kein ",:"', mod.vtKlammern('Datei (PDF): gross') === 'Datei, in Klammern: PDF: gross', mod.vtKlammern('Datei (PDF): gross'));
+  ok('vtKlammern: vor Punkt kein ",."', mod.vtKlammern('Ende (fast).') === 'Ende, in Klammern: fast.', mod.vtKlammern('Ende (fast).'));
+  ok('vtKlammern: mehrere Einschuebe', mod.vtKlammern('x (a) y (b)') === 'x, in Klammern: a, y, in Klammern: b', mod.vtKlammern('x (a) y (b)'));
+  ok('vtKlammern: ohne Klammern unveraendert', mod.vtKlammern('Nur Text.') === 'Nur Text.');
+  ok('vtKlammern: leere Klammern bleiben', mod.vtKlammern('leer ()') === 'leer ()');
+  ok('vtKlammern: verschachtelt ersetzt den inneren Einschub', mod.vtKlammern('(a (b) c)').includes('in Klammern: b'), mod.vtKlammern('(a (b) c)'));
 }
 
 console.log(`\n${pass} bestanden, ${fail} fehlgeschlagen`);
