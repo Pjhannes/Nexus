@@ -2,6 +2,7 @@
 // Läuft in der Sandbox: node test/smoke.js (aus D:\Nexus)
 import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
+import { createHash } from 'node:crypto';
 import { parseNote } from '../src/parse.js';
 import { buildIndexer } from '../src/indexer.js';
 import { makeTools } from '../src/tools.js';
@@ -218,6 +219,49 @@ const p3 = tools.patch({
 });
 assert('patch: unbekannter old_str gibt error', !!p3.error);
 assert('patch: missed enthält old_str',         p3.missed?.some(m => m.includes('EXISTIERT_NICHT')));
+
+// ═════════════════════════════════════════════════════════════════════════════
+console.log(B('\n── 3b. R24: write_vortrag (Vortragsskript-Sidecar) ───────────'));
+// ═════════════════════════════════════════════════════════════════════════════
+// Notiz-Stand nach den patch-Tests oben: "Erster Hauptsatz (Thermodynamik): dU = …",
+// Heading "## Carnot-Wirkungsgrad (eta)".
+const vt1 = tools.writeVortrag({
+  path: 'Uni/Thermodynamik.md',
+  titel: 'Vortrag: Thermodynamik kompakt',
+  segmente: [
+    { sprich: 'Willkommen zur Thermodynamik – zwei Kernideen in zwei Minuten.', art: 'keine' },
+    { sprich: 'Kernidee eins: Energie ist eine Bilanzgroesse.', anker: 'dU = deltaQ minus deltaW' },
+    { sprich: 'Kernidee zwei: kein Wirkungsgrad schlaegt Carnot.', anker: 'Carnot-Wirkungsgrad (eta)', art: 'ueberschrift' },
+  ],
+});
+assert('R24: writeVortrag ok=true', vt1.ok === true, JSON.stringify(vt1).slice(0, 200));
+assert('R24: Sidecar-Pfad korrekt', vt1.path === 'Uni/Thermodynamik.vortrag.json', vt1.path);
+const vtFull = join(vault, 'Uni', 'Thermodynamik.vortrag.json');
+assert('R24: Sidecar existiert auf Platte', existsSync(vtFull));
+const vtJson = JSON.parse(readFileSync(vtFull, 'utf8'));
+assert('R24: version=1 + 3 Segmente', vtJson.version === 1 && vtJson.segmente.length === 3);
+assert('R24: titel uebernommen', vtJson.titel === 'Vortrag: Thermodynamik kompakt');
+const vtNoteRaw = readFileSync(join(vault, 'Uni', 'Thermodynamik.md'), 'utf8');
+const vtHash = 'sha256:' + createHash('sha256').update(vtNoteRaw, 'utf8').digest('hex');
+assert('R24: notizHash = sha256 des Notiz-Inhalts', vtJson.notizHash === vtHash, vtJson.notizHash);
+assert('R24: art-Defaults (keine/absatz/ueberschrift)',
+  vtJson.segmente[0].art === 'keine' && !('anker' in vtJson.segmente[0]) &&
+  vtJson.segmente[1].art === 'absatz' && vtJson.segmente[2].art === 'ueberschrift',
+  JSON.stringify(vtJson.segmente.map(s => s.art)));
+
+const vt2 = tools.writeVortrag({ path: 'Uni/Thermodynamik.md', segmente: [{ sprich: 'x', anker: 'GIBT ES NICHT XYZ' }] });
+assert('R24: falscher anker -> error nennt Segment + anker', !!vt2.error && vt2.error.includes('Segment 1') && vt2.error.includes('GIBT ES NICHT XYZ'), vt2.error);
+const vt3 = tools.writeVortrag({ path: '../evil.md', segmente: [{ sprich: 'x' }] });
+assert('R24: Traversal-Pfad -> error', !!vt3.error && vt3.error.includes('ausserhalb'), vt3.error);
+const vt4 = tools.writeVortrag({ path: 'Uni/Thermodynamik.vortrag.json', segmente: [{ sprich: 'x' }] });
+assert('R24: Nicht-.md-Ziel -> error', !!vt4.error, vt4.error);
+const vt5 = tools.writeVortrag({ path: 'Nicht-Da.md', segmente: [{ sprich: 'x' }] });
+assert('R24: fehlende Notiz -> error', !!vt5.error && vt5.error.includes('existiert nicht'), vt5.error);
+const vt6 = tools.writeVortrag({ path: 'Uni/Thermodynamik.md', segmente: [{ sprich: 'Neu.', art: 'keine' }] });
+assert('R24: Ueberschreiben ohne create-Flag ok', vt6.ok === true && JSON.parse(readFileSync(vtFull, 'utf8')).segmente.length === 1);
+tools.reindex();
+assert('R24: Sidecar landet NICHT im Index', !tools.listNotes({ prefix: 'Uni/' }).some(n => n.path.endsWith('.vortrag.json')),
+  JSON.stringify(tools.listNotes({ prefix: 'Uni/' }).map(n => n.path)));
 
 // ═════════════════════════════════════════════════════════════════════════════
 console.log(B('\n── 3a. R14: Schreib-Integrität (keine stille Trunkierung) ────'));

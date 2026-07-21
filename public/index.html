@@ -143,8 +143,8 @@ body.col-resizing{cursor:col-resize;user-select:none}
    Notiz >= Fenster -> Raender 0 (max(0px,..)) -> normaler Overflow-Scroll wie gehabt. */
 .note-content{padding:16px 46px 90px;width:var(--note-w,min(1000px,100%));max-width:none;margin-inline:max(0px,100% - var(--note-w,min(1000px,100%)))}
 /* ── Lesemodus (Vollbild-Fokus auf die aktuelle Notiz) ───────────────────────── */
-#read-toggle{-webkit-app-region:no-drag;background:var(--panel2);border:1px solid var(--border);color:var(--dim);border-radius:99px;padding:5px 13px;font-size:12.5px;cursor:pointer;transition:.18s;white-space:nowrap;flex-shrink:0}
-#read-toggle:hover{border-color:var(--accent);color:var(--text);box-shadow:0 0 18px var(--accent-20)}
+#read-toggle,#vortrag-toggle{-webkit-app-region:no-drag;background:var(--panel2);border:1px solid var(--border);color:var(--dim);border-radius:99px;padding:5px 13px;font-size:12.5px;cursor:pointer;transition:.18s;white-space:nowrap;flex-shrink:0}
+#read-toggle:hover,#vortrag-toggle:hover{border-color:var(--accent);color:var(--text);box-shadow:0 0 18px var(--accent-20)}
 .app.reading #read-toggle{background:var(--accent-14);border-color:var(--accent);color:var(--text)}
 /* Chrom ausblenden, Mitte auf volle Fensterbreite, Schrift +2px. !important schlaegt die
    layout-spezifischen Regeln (classic/softdark) unabhaengig von der Quellreihenfolge. */
@@ -401,6 +401,26 @@ table.dataview-table tr:hover td{background:var(--accent-08)}
 .search-hit-block{outline:1px solid var(--accent-30);outline-offset:3px;box-shadow:0 0 18px var(--accent-20);transition:outline-color .6s ease,box-shadow .6s ease}
 .search-hit-block.fade{outline-color:transparent;box-shadow:none}
 @media (prefers-reduced-motion:reduce){.md-body mark.search-hit,.md-body mark.search-hit.primary{animation:none}}
+/* ── R24: Vortrag – Player-Leiste + Spotlight ─────────────────────────────────
+   Leiste lebt AUSSERHALB von #note-area (renderMarkdownView ersetzt dessen innerHTML
+   bei jedem Notizwechsel). Farben ausschliesslich aus Theme-Variablen (Cream-sicher). */
+.app.vortragend #vortrag-toggle{background:var(--accent-14);border-color:var(--accent);color:var(--text)}
+#vortrag-bar{display:none;position:absolute;left:50%;transform:translateX(-50%);bottom:26px;z-index:40;align-items:center;gap:10px;padding:10px 14px;border-radius:16px;background:var(--pop,var(--panel));border:1px solid var(--border);box-shadow:0 12px 40px rgba(0,0,0,.35),0 0 0 1px var(--accent-08);backdrop-filter:blur(14px)}
+#vortrag-bar.show{display:flex}
+#vortrag-bar .vt-btn{background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:6px 12px;font-size:13px;cursor:pointer;transition:.15s;line-height:1}
+#vortrag-bar .vt-btn:hover{border-color:var(--accent);box-shadow:0 0 14px var(--accent-20)}
+#vortrag-bar .vt-btn.primary{background:var(--accent-14);border-color:var(--accent)}
+#vortrag-bar .vt-info{font-size:12px;color:var(--dim);min-width:56px;text-align:center;font-variant-numeric:tabular-nums}
+#vortrag-bar .vt-mode{font-size:11px;color:var(--dim);border:1px solid var(--border);border-radius:99px;padding:2px 8px;white-space:nowrap}
+#vortrag-bar .vt-mode.stale{color:#e2b93b;border-color:#e2b93b}
+/* Spotlight: alle Top-Level-Bloecke dimmen, aktives Segment anleuchten. Opacity ist
+   multiplikativ – ein fokussiertes li in gedimmter Liste braeuchte >1: deshalb bekommt
+   der Top-Level-Vorfahr eines verschachtelten Fokus-Elements .vortrag-lift (opacity 1). */
+.md-body.vortrag-dim>*{opacity:.32;transition:opacity .4s ease}
+.md-body.vortrag-dim>.vortrag-focus,.md-body.vortrag-dim>.vortrag-lift{opacity:1}
+.vortrag-focus{outline:1px solid var(--accent-30);outline-offset:4px;border-radius:6px;box-shadow:0 0 22px var(--accent-20);background:var(--accent-04)}
+.md-body mark.vortrag-wort{background:var(--accent-20);color:var(--accent-tx);border-radius:4px;padding:0 3px;box-shadow:0 0 0 1px var(--accent-30),0 0 16px var(--accent-20)}
+@media (prefers-reduced-motion:reduce){.md-body.vortrag-dim>*{transition:none}}
 .cr-sep{opacity:.55}
 
 /* Right panel */
@@ -908,6 +928,7 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
     <div class="logo">&#9670; NEXUS</div>
     <div class="crumb" id="crumb">&mdash;</div>
     <button id="read-toggle" title="Lesemodus – Vollbild-Fokus (Esc beendet)" style="display:none" onclick="toggleReading()">&#128214; Lesen</button>
+    <button id="vortrag-toggle" title="Vortrag &ndash; Notiz vorlesen &amp; mitzeigen (Esc stoppt)" style="display:none" onclick="toggleVortrag()">&#127908; Vortrag</button>
     <div class="search-btn" onclick="openPalette()">&#8981; &nbsp;Suchen oder Befehl&hellip; <kbd>Ctrl K</kbd></div>
   </div>
 
@@ -937,6 +958,15 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
         <button class="ed-btn" id="ed-preview" title="Gerenderte Vorschau">Vorschau</button>
         <button class="ed-btn ghost" id="ed-cancel" title="Bearbeiten beenden">&#10005;</button>
       </span>
+      <!-- R24: Vortrag-Player - schwebende Leiste unten in der Mittelspalte -->
+      <div id="vortrag-bar">
+        <button class="vt-btn" id="vt-prev" title="Voriges Segment" onclick="vtPrev()">&#9198;</button>
+        <button class="vt-btn primary" id="vt-play" title="Pause / Weiter" onclick="vtPlayPause()">&#9208;</button>
+        <button class="vt-btn" id="vt-next" title="N&auml;chstes Segment" onclick="vtNext()">&#9197;</button>
+        <span class="vt-info" id="vt-info">&ndash;</span>
+        <span class="vt-mode" id="vt-mode">linear</span>
+        <button class="vt-btn" id="vt-stop" title="Vortrag beenden (Esc)" onclick="vtStop()">&#9209;</button>
+      </div>
       <div class="center-body" id="center-body">
         <div class="note-area" id="note-area">
           <div class="placeholder"><span class="big">&#9670;</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>
@@ -4274,7 +4304,7 @@ document.addEventListener('click',e=>{closeCtx();if(!document.getElementById('co
 // Hinweis: Das Rail-Flyout bleibt bewusst offen (kein Schließen bei Klick außerhalb).
 // Es schließt nur über dasselbe Rail-Icon (Toggle in openRailFlyout), ein anderes Icon
 // (öffnet dort neu) oder Esc. Beim Layout-/Vault-Wechsel + Drag wird es explizit geschlossen.
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(document.querySelector('.app')?.classList.contains('reading')&&!document.querySelector('.overlay.show')){e.preventDefault();exitReading();return;}closeCtx();cpClose();iconClose();closeRailFlyout();closePalette();closeVaultModal();pickerCancel();_confirmCancel();closeSettings();closeUsagePopover();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(_vt.aktiv&&!document.querySelector('.overlay.show')){e.preventDefault();vtStop();return;}if(document.querySelector('.app')?.classList.contains('reading')&&!document.querySelector('.overlay.show')){e.preventDefault();exitReading();return;}closeCtx();cpClose();iconClose();closeRailFlyout();closePalette();closeVaultModal();pickerCancel();_confirmCancel();closeSettings();closeUsagePopover();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
 
 // ═════════════════════ DRAG & DROP / UPLOAD ═════════════════════
 // R15: Das Vollbild-Overlay nur zeigen, wenn der Cursor NICHT ueber einer praezisen Datei-Drop-Zone
@@ -4818,10 +4848,10 @@ function onNoteWheel(e){
   smartAxisScroll(e.currentTarget,e);
 }
 // Bearbeiten-Button (Overlay im Tab-Band): nur in der Markdown-Leseansicht sichtbar.
-function showEditFab(path){const f=document.getElementById('note-edit-fab');if(!f)return;f.style.display='inline-block';f.onclick=()=>openEditor(path);const ec=document.getElementById('edit-controls');if(ec)ec.style.display='none';const rt=document.getElementById('read-toggle');if(rt)rt.style.display='inline-block';updateReadToggle();}
+function showEditFab(path){const f=document.getElementById('note-edit-fab');if(!f)return;f.style.display='inline-block';f.onclick=()=>openEditor(path);const ec=document.getElementById('edit-controls');if(ec)ec.style.display='none';const rt=document.getElementById('read-toggle');if(rt)rt.style.display='inline-block';const vtb=document.getElementById('vortrag-toggle');if(vtb)vtb.style.display=(window.speechSynthesis?'inline-block':'none');updateReadToggle();}
 // Versteckt FAB UND Editier-Cluster: hideEditFab feuert auf jedem Ansichtswechsel (Tabs,
 // PDF, Placeholder ...) - das Cluster darf dort genauso wenig stehen bleiben wie der FAB.
-function hideEditFab(){const f=document.getElementById('note-edit-fab');if(f)f.style.display='none';const ec=document.getElementById('edit-controls');if(ec)ec.style.display='none';const rt=document.getElementById('read-toggle');if(rt)rt.style.display='none';}
+function hideEditFab(){const f=document.getElementById('note-edit-fab');if(f)f.style.display='none';const ec=document.getElementById('edit-controls');if(ec)ec.style.display='none';const rt=document.getElementById('read-toggle');if(rt)rt.style.display='none';const vtb=document.getElementById('vortrag-toggle');if(vtb)vtb.style.display='none';vtStop();}
 // E3: Editiermodus-Overlay an der FAB-Stelle (ersetzt die alte .editor-toolbar).
 // Bindet die Buttons bei jedem Aufruf neu - onclick-Zuweisung ist idempotent.
 function setEditControls(mode){
@@ -4830,6 +4860,7 @@ function setEditControls(mode){
   if(mode==='edit'){
     if(f)f.style.display='none';
     const rt=document.getElementById('read-toggle');if(rt)rt.style.display='none';
+    const vtb=document.getElementById('vortrag-toggle');if(vtb)vtb.style.display='none';vtStop();
     ec.style.display='flex';
     document.getElementById('ed-save').onclick=()=>saveEditor();
     document.getElementById('ed-preview').onclick=()=>togglePreview();
@@ -4874,6 +4905,270 @@ function exitReading(){
   withScrollAnchor(()=>{app.classList.remove('reading');updateReadToggle();});
 }
 function toggleReading(){const app=document.querySelector('.app');if(!app)return;app.classList.contains('reading')?exitReading():enterReading();}
+
+// ═════════════════════ R24: VORTRAG – Notiz vorlesen & mitzeigen ═════════════════════
+// Zwei Modi: (a) Skript-Modus, wenn neben der Notiz ein <Notiz>.vortrag.json liegt
+// (via MCP-Tool write_vortrag erzeugt; Segmente {sprich, anker, art}, serverseitig
+// validiert + Notiz-Hash gestempelt); (b) linearer Fallback aus dem gerenderten DOM.
+// TTS: speechSynthesis (in Electron = lokale Windows-Stimmen, offline, 0 Requests).
+// Pure Kernfunktionen DOM-frei zwischen den VT-Markern (data:-URL-Test wie der LP-Kern).
+//__VT_START__
+// MUSS identisch zu vortragNorm in src/tools.js bleiben (Paritaets-Test in
+// test/vortrag.test.mjs): write_vortrag validiert Anker serverseitig mit derselben
+// Normalisierung, mit der der Player sie hier im gerenderten Sichttext sucht.
+// Inline-Marker (*_~`=) -> '' (Rendern entfernt sie ersatzlos, auch im Wortinneren);
+// Struktur-Marker (# > |) -> ' ' (Ueberschriften-/Zitat-/Tabellenzeichen trennen Woerter).
+function vtNorm(t){
+  return (t||'')
+    .replace(/!\[\[[^\]]+\]\]/g,' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g,' ')
+    .replace(/\[\[([^\]#|]+)(?:#[^\]|]*)?\|([^\]]+)\]\]/g,'$2')
+    .replace(/\[\[([^\]#|]+)(?:#[^\]|]*)?\]\]/g,'$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g,'$1')
+    .replace(/[*_~`=]/g,'')
+    .replace(/[#>|]/g,' ')
+    .replace(/\s+/g,' ')
+    .trim().toLowerCase();
+}
+// Lange Absaetze satzweise in sprechbare Stuecke teilen: Chromium-TTS kappt sehr lange
+// Utterances teils kommentarlos, und kurze Stuecke pausieren/springen sauberer.
+function vtChunkSaetze(text,max){
+  const t=(text||'').replace(/\s+/g,' ').trim();
+  if(!t)return [];
+  if(t.length<=max)return [t];
+  const saetze=t.match(/[^.!?…]+[.!?…]+["»«)]*\s*|[^.!?…]+$/g)||[t];
+  const chunks=[];let cur='';
+  for(const s of saetze){
+    if(cur&&(cur.length+s.length)>max){chunks.push(cur.trim());cur='';}
+    cur+=s;
+    while(cur.length>max*1.6){        // ueberlanger Einzelsatz: an Wortgrenze teilen
+      const cut=cur.lastIndexOf(' ',max);
+      if(cut<20)break;
+      chunks.push(cur.slice(0,cut).trim());cur=cur.slice(cut+1);
+    }
+  }
+  if(cur.trim())chunks.push(cur.trim());
+  return chunks;
+}
+// Linearer Fallback: Block-Typ -> gesprochener Text. Tabellen/Code werden ANGESAGT
+// statt zellenweise vorgelesen (unhoerbar); alles andere spricht seinen Sichttext.
+function vtSprechtext(art,text,meta){
+  meta=meta||{};
+  if(art==='tabelle')return 'Eine Tabelle mit '+(meta.spalten||'mehreren')+' Spalten und '+(meta.zeilen!=null?meta.zeilen:'mehreren')+' Zeilen'+(meta.kopf?(': '+String(meta.kopf).slice(0,160)):'')+'.';
+  if(art==='code')return 'Ein Codeblock mit '+(meta.zeilen!=null?meta.zeilen:'mehreren')+' Zeilen – uebersprungen.';
+  return text||'';
+}
+//__VT_END__
+// ── Einstellungen (localStorage 'nexus.vortrag*', Muster wie Graph-Glow) ──
+function vtVoices(){return window.speechSynthesis?speechSynthesis.getVoices():[];}
+function vtVoicesSortiert(){const vs=[...vtVoices()];const de=v=>/^de/i.test(v.lang)?0:1;vs.sort((a,b)=>de(a)-de(b)||a.lang.localeCompare(b.lang)||a.name.localeCompare(b.name));return vs;}
+function currentVtVoice(){return localStorage.getItem('nexus.vortragVoice')||'';}
+function setVtVoice(v){if(v)localStorage.setItem('nexus.vortragVoice',v);else localStorage.removeItem('nexus.vortragVoice');}
+function currentVtRate(){const n=parseFloat(localStorage.getItem('nexus.vortragRate'));return (n>=0.6&&n<=1.4)?n:1;}
+function onVtRateInput(v){const n=Math.max(0.6,Math.min(1.4,parseFloat(v)||1));localStorage.setItem('nexus.vortragRate',String(n));const e=document.getElementById('set-vt-rate-val');if(e)e.textContent=n.toFixed(2).replace(/\.?0+$/,'')+'×';}
+function currentVtPitch(){const n=parseFloat(localStorage.getItem('nexus.vortragPitch'));return (n>=0.7&&n<=1.3)?n:1;}
+function onVtPitchInput(v){const n=Math.max(0.7,Math.min(1.3,parseFloat(v)||1));localStorage.setItem('nexus.vortragPitch',String(n));const e=document.getElementById('set-vt-pitch-val');if(e)e.textContent=n.toFixed(2).replace(/\.?0+$/,'')+'×';}
+function currentVtPause(){const n=parseInt(localStorage.getItem('nexus.vortragPause'),10);return (n>=0&&n<=1500)?n:350;}
+function onVtPauseInput(v){const n=Math.max(0,Math.min(1500,parseInt(v,10)||0));localStorage.setItem('nexus.vortragPause',String(n));const e=document.getElementById('set-vt-pause-val');if(e)e.textContent=n+' ms';}
+// Gewuenschte Stimme aufloesen; Fallback: erste deutsche, sonst erste ueberhaupt.
+function vtPickVoice(){const want=currentVtVoice();const vs=vtVoices();if(want){const v=vs.find(x=>x.voiceURI===want||x.name===want);if(v)return v;}return vs.find(v=>/^de/i.test(v.lang))||vs[0]||null;}
+function vtTestSatz(){if(_vt.aktiv)vtStop();if(!window.speechSynthesis)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance('So klingt der Nexus-Vortrag mit dieser Stimme.');const v=vtPickVoice();if(v){u.voice=v;u.lang=v.lang;}else u.lang='de-DE';u.rate=currentVtRate();u.pitch=currentVtPitch();speechSynthesis.speak(u);}
+function settingsVortragHtml(){
+  if(!window.speechSynthesis)return '<div class="set-section"><div class="set-label">Vortrag</div><div class="set-hint">Sprachausgabe wird von dieser Umgebung nicht unterstützt.</div></div>';
+  let h='<div class="set-section"><div class="set-label">Stimme</div><select class="set-select" id="set-vt-voice" onchange="setVtVoice(this.value)"></select>';
+  h+='<div class="set-hint">Deutsche Stimmen zuerst. Mehr/natürlichere Stimmen: Windows-Einstellungen &rarr; Zeit &amp; Sprache &rarr; Sprache &rarr; Sprachpaket mit Text-zu-Sprache installieren, danach Nexus neu starten.</div></div>';
+  h+='<div class="set-section"><div class="set-label">Tempo <span class="set-val" id="set-vt-rate-val">'+currentVtRate().toFixed(2).replace(/\.?0+$/,'')+'×</span></div><input type="range" class="set-range" id="set-vt-rate" min="0.6" max="1.4" step="0.05" value="'+currentVtRate()+'" oninput="onVtRateInput(this.value)"></div>';
+  h+='<div class="set-section"><div class="set-label">Tonhöhe <span class="set-val" id="set-vt-pitch-val">'+currentVtPitch().toFixed(2).replace(/\.?0+$/,'')+'×</span></div><input type="range" class="set-range" id="set-vt-pitch" min="0.7" max="1.3" step="0.05" value="'+currentVtPitch()+'" oninput="onVtPitchInput(this.value)"></div>';
+  h+='<div class="set-section"><div class="set-label">Pause zwischen Segmenten <span class="set-val" id="set-vt-pause-val">'+currentVtPause()+' ms</span></div><input type="range" class="set-range" id="set-vt-pause" min="0" max="1500" step="50" value="'+currentVtPause()+'" oninput="onVtPauseInput(this.value)"></div>';
+  h+='<div class="set-section"><div class="set-label">Test</div><button class="ft-btn" style="padding:8px 14px" onclick="vtTestSatz()">Testsatz vorlesen</button>';
+  h+='<div class="set-hint">Der Vortrag-Button (&#127908;) neben &bdquo;Lesen&ldquo; trägt die offene Notiz vor. Liegt ein Vortragsskript daneben (&lt;Notiz&gt;.vortrag.json, per Claude-Tool write_vortrag erzeugt), wird moderiert vorgetragen &ndash; sonst linear Abschnitt für Abschnitt.</div></div>';
+  return h;
+}
+function initVortragSettings(){
+  const s=document.getElementById('set-vt-voice');if(!s)return;
+  const cur=currentVtVoice();const vs=vtVoicesSortiert();
+  s.innerHTML='<option value="">Automatisch (erste deutsche Stimme)</option>'+vs.map(v=>'<option value="'+esc(v.voiceURI||v.name)+'"'+((v.voiceURI===cur||v.name===cur)?' selected':'')+'>'+esc(v.name+' ('+v.lang+')')+'</option>').join('');
+}
+// Stimmenliste laedt asynchron (beim ersten getVoices() oft leer) -> Dropdown nachziehen.
+if(window.speechSynthesis){try{speechSynthesis.onvoiceschanged=()=>{if(document.getElementById('set-vt-voice'))initVortragSettings();};}catch(e){}}
+// ── Player-State + Segmentaufbau ──
+const _vt={aktiv:false,pause:false,nextPending:false,seg:[],idx:0,modus:'linear',stale:false,utter:null,timer:null,focusEls:[],liftEls:[],wortMarks:[]};
+// Linearer Modus: Segmente aus dem gerenderten DOM (Titel, Bloecke, Listenpunkte einzeln).
+function vtLinearSegmente(area){
+  const body=area.querySelector('.md-body');if(!body)return [];
+  const seg=[];
+  const title=area.querySelector('h1.note-title');
+  if(title&&title.textContent.trim())seg.push({sprich:title.textContent.trim(),el:title,art:'ueberschrift'});
+  for(const el of body.children){
+    const tag=el.tagName;
+    if(el.classList.contains('mermaid-block')||el.classList.contains('dataview-block')){seg.push({sprich:'Ein Diagramm – siehe Anzeige.',el,art:'absatz'});continue;}
+    if(el.classList.contains('transclude')){seg.push({sprich:'Eine eingebettete Notiz – siehe Anzeige.',el,art:'absatz'});continue;}
+    if(/^H[1-6]$/.test(tag)){const t=el.textContent.trim();if(t)seg.push({sprich:t,el,art:'ueberschrift'});continue;}
+    // Renderer wickelt Tabellen in div.md-table-wrap und Code in div.code-block:
+    // deshalb per :scope>-Blick hinein, statt nur auf TABLE/PRE-Tags zu pruefen.
+    const tbl=(tag==='TABLE')?el:(el.querySelector?el.querySelector(':scope>table'):null);
+    if(tbl){
+      const kopf=[...tbl.querySelectorAll('thead th')].map(c=>c.textContent.trim()).filter(Boolean);
+      const k=kopf.length?kopf:[...(tbl.querySelector('tr')?.children||[])].map(c=>c.textContent.trim()).filter(Boolean);
+      const zeilen=tbl.querySelectorAll('tbody tr').length||Math.max(0,tbl.querySelectorAll('tr').length-1);
+      seg.push({sprich:vtSprechtext('tabelle','',{spalten:k.length,zeilen,kopf:k.join(', ')}),el,art:'tabelle'});continue;
+    }
+    const pre=(tag==='PRE')?el:(el.querySelector?el.querySelector(':scope>pre'):null);
+    if(pre){seg.push({sprich:vtSprechtext('code','',{zeilen:(pre.textContent.match(/\n/g)||[]).length+1}),el,art:'absatz'});continue;}
+    if(tag==='UL'||tag==='OL'){for(const li of el.children){const t=li.textContent.replace(/\s+/g,' ').trim();if(t)seg.push({sprich:t,el:li,art:'absatz'});}continue;}
+    const t=el.textContent.replace(/\s+/g,' ').trim();
+    if(t)seg.push({sprich:t,el,art:'absatz'});
+  }
+  return seg;
+}
+// Skript-Modus: Anker (normalisiert) auf den KLEINSTEN passenden Block mappen (li schlaegt ul).
+function vtBloecke(area){
+  const out=[];const body=area.querySelector('.md-body');if(!body)return out;
+  const title=area.querySelector('h1.note-title');if(title)out.push(title);
+  for(const el of body.children){out.push(el);if(el.tagName==='UL'||el.tagName==='OL')for(const li of el.children)out.push(li);}
+  return out;
+}
+// Sichttext eines Elements MIT Trennzeichen zwischen Textknoten: Tabellenzellen kleben
+// in textContent sonst zusammen ("LinearGerenderte…") und Tabellen-Anker matchen nie.
+// (R23 loest das identisch: hitFlatten haengt nach jedem Knoten ein Trennzeichen an.)
+function vtElText(el){
+  const w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT,null);
+  let t='',n;while((n=w.nextNode()))t+=n.nodeValue+' ';
+  return t;
+}
+function vtSkriptSegmente(area,skript){
+  const bloecke=vtBloecke(area).map(el=>({el,norm:vtNorm(vtElText(el))}));
+  return (skript.segmente||[]).map(s=>{
+    let el=null;
+    if(s.art!=='keine'&&s.anker){
+      const na=vtNorm(s.anker);let best=null;
+      if(na)for(const b of bloecke){if(b.norm.includes(na)&&(!best||b.norm.length<best.norm.length))best=b;}
+      el=best?best.el:null;
+    }
+    return {sprich:s.sprich,el,art:s.art||'absatz',anker:s.anker};
+  });
+}
+// ── Spotlight/Fokus (Aufraeumen nach R23-Vorbild: unwrap + normalize()) ──
+function vtClearMarks(){for(const m of _vt.wortMarks){const p=m.parentNode;if(!p)continue;while(m.firstChild)p.insertBefore(m.firstChild,m);p.removeChild(m);p.normalize();}_vt.wortMarks=[];}
+function vtClearFocus(){for(const el of _vt.focusEls)el.classList.remove('vortrag-focus');for(const el of _vt.liftEls)el.classList.remove('vortrag-lift');_vt.focusEls=[];_vt.liftEls=[];vtClearMarks();}
+function vtWortMark(el,wort){
+  const ziel=(wort||'').toLowerCase();if(!ziel)return null;
+  const w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT,null);let n;
+  while((n=w.nextNode())){
+    const i=n.nodeValue.toLowerCase().indexOf(ziel);
+    if(i<0)continue;
+    const target=i>0?n.splitText(i):n;
+    if(target.nodeValue.length>ziel.length)target.splitText(ziel.length);
+    const mark=document.createElement('mark');mark.className='vortrag-wort';
+    target.parentNode.insertBefore(mark,target);mark.appendChild(target);
+    return mark;
+  }
+  return null;
+}
+function vtFocus(el,art,anker){
+  vtClearFocus();
+  if(!el||!el.isConnected)return;
+  el.classList.add('vortrag-focus');_vt.focusEls.push(el);
+  const body=el.closest('.md-body');
+  if(body){let top=el;while(top.parentElement&&top.parentElement!==body)top=top.parentElement;if(top!==el){top.classList.add('vortrag-lift');_vt.liftEls.push(top);}}
+  if(art==='wort'&&anker){const m=vtWortMark(el,anker);if(m)_vt.wortMarks.push(m);}
+  el.scrollIntoView({block:'center',behavior:'smooth'});
+}
+// ── Player ──
+function vtUpdateBar(){
+  const bar=document.getElementById('vortrag-bar');if(bar)bar.classList.toggle('show',_vt.aktiv);
+  const info=document.getElementById('vt-info');if(info)info.textContent=_vt.aktiv?((_vt.idx+1)+' / '+_vt.seg.length):'–';
+  const play=document.getElementById('vt-play');if(play){play.innerHTML=_vt.pause?'&#9205;':'&#9208;';play.title=_vt.pause?'Weiter':'Pause';}
+  const mode=document.getElementById('vt-mode');if(mode){mode.textContent=_vt.modus==='skript'?(_vt.stale?'Skript veraltet':'Skript'):'linear';mode.classList.toggle('stale',_vt.stale);mode.title=_vt.stale?'Die Notiz wurde seit Erstellung des Vortragsskripts geändert – Skript neu erzeugen (write_vortrag).':(_vt.modus==='skript'?'Moderierter Vortrag aus <Notiz>.vortrag.json':'Linearer Vortrag aus der gerenderten Notiz');}
+  document.querySelector('.app')?.classList.toggle('vortragend',_vt.aktiv);
+}
+async function vtLadeSkript(path){
+  try{
+    const r=await fetch(fileUrl(path.replace(/\.md$/i,'')+'.vortrag.json'));
+    if(!r.ok)return null;
+    const j=await r.json();
+    if(!j||j.version!==1||!Array.isArray(j.segmente)||!j.segmente.length)return null;
+    return j;
+  }catch(e){return null;}
+}
+async function vtHash(text){
+  try{
+    const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));
+    return 'sha256:'+[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+  }catch(e){return null;}
+}
+async function startVortrag(){
+  if(!window.speechSynthesis||_vt.aktiv)return;
+  const area=document.getElementById('note-area');
+  if(!area||!_curNotePath||!area.querySelector('.md-body'))return;
+  clearSearchHit(area);   // R23-Marks nie mit Vortrag-Marks mischen (beide nutzen splitText)
+  const skript=await vtLadeSkript(_curNotePath);
+  let seg=[],modus='linear',stale=false;
+  if(skript){
+    modus='skript';
+    if(typeof _curNoteRaw==='string'&&skript.notizHash){const h=await vtHash(_curNoteRaw);stale=!!h&&h!==skript.notizHash;}
+    seg=vtSkriptSegmente(area,skript);
+  }
+  if(!seg.length){modus='linear';stale=false;seg=vtLinearSegmente(area);}
+  if(!seg.length)return;
+  _vt.aktiv=true;_vt.pause=false;_vt.nextPending=false;_vt.seg=seg;_vt.idx=0;_vt.modus=modus;_vt.stale=stale;
+  const body=area.querySelector('.md-body');if(body)body.classList.add('vortrag-dim');
+  vtUpdateBar();
+  vtSpielSegment();
+}
+function vtSpielSegment(){
+  if(!_vt.aktiv)return;
+  if(_vt.idx>=_vt.seg.length){vtStop();return;}
+  const s=_vt.seg[_vt.idx];
+  clearTimeout(_vt.timer);_vt.timer=null;
+  vtFocus(s.el,s.art,s.anker);
+  vtUpdateBar();
+  const chunks=vtChunkSaetze(s.sprich,220);
+  if(!chunks.length){_vt.idx++;vtSpielSegment();return;}
+  speechSynthesis.cancel();   // Queue leeren (Prev/Next-Spruenge); onend-Guards fangen das Echo
+  let ci=0;
+  const spielChunk=()=>{
+    if(!_vt.aktiv)return;
+    const u=new SpeechSynthesisUtterance(chunks[ci]);
+    const v=vtPickVoice();if(v){u.voice=v;u.lang=v.lang;}else u.lang='de-DE';
+    u.rate=currentVtRate();u.pitch=currentVtPitch();
+    _vt.utter=u;
+    u.onend=()=>{
+      if(!_vt.aktiv||_vt.utter!==u)return;
+      ci++;
+      if(ci<chunks.length){spielChunk();return;}
+      _vt.timer=setTimeout(()=>{if(!_vt.aktiv)return;if(_vt.pause){_vt.nextPending=true;return;}_vt.idx++;vtSpielSegment();},currentVtPause());
+    };
+    u.onerror=ev=>{
+      if(!_vt.aktiv||_vt.utter!==u)return;
+      if(ev.error==='canceled'||ev.error==='interrupted')return;
+      ci++;if(ci<chunks.length)spielChunk();else{_vt.idx++;vtSpielSegment();}
+    };
+    speechSynthesis.speak(u);
+  };
+  spielChunk();
+}
+function vtPlayPause(){
+  if(!_vt.aktiv)return;
+  if(_vt.pause){
+    _vt.pause=false;
+    if(_vt.nextPending){_vt.nextPending=false;_vt.idx++;vtSpielSegment();}
+    else try{speechSynthesis.resume();}catch(e){}
+  }else{_vt.pause=true;try{speechSynthesis.pause();}catch(e){}}
+  vtUpdateBar();
+}
+function vtNext(){if(!_vt.aktiv)return;clearTimeout(_vt.timer);_vt.nextPending=false;_vt.pause=false;try{speechSynthesis.resume();}catch(e){}if(_vt.idx<_vt.seg.length-1){_vt.idx++;vtSpielSegment();}else vtStop();}
+function vtPrev(){if(!_vt.aktiv)return;clearTimeout(_vt.timer);_vt.nextPending=false;_vt.pause=false;try{speechSynthesis.resume();}catch(e){}_vt.idx=Math.max(0,_vt.idx-1);vtSpielSegment();}
+function vtStop(){
+  if(!_vt.aktiv&&!_vt.utter)return;   // idle: hideEditFab ruft bei jedem Ansichtswechsel
+  _vt.aktiv=false;_vt.pause=false;_vt.nextPending=false;
+  clearTimeout(_vt.timer);_vt.timer=null;_vt.utter=null;_vt.seg=[];_vt.idx=0;_vt.stale=false;
+  if(window.speechSynthesis)try{speechSynthesis.cancel();}catch(e){}
+  vtClearFocus();
+  document.querySelectorAll('.md-body.vortrag-dim').forEach(b=>b.classList.remove('vortrag-dim'));
+  vtUpdateBar();
+}
+function toggleVortrag(){_vt.aktiv?vtStop():startVortrag();}
 function currentGraphDefault(){return localStorage.getItem('nexus.graphDefault')||'ego';}
 function setGraphDefault(v){localStorage.setItem('nexus.graphDefault',(v==='main')?'main':'ego');}
 // Graph-Glow (beide Layouts): 0..100 (%), 0 = aus
@@ -4922,7 +5217,7 @@ function setLayout(id){localStorage.setItem('nexus.layout',(id==='softdark')?'so
 function openSettings(){renderSettings();const o=document.getElementById('settings-overlay');if(o)o.classList.add('show');}
 function closeSettings(){const o=document.getElementById('settings-overlay');if(o)o.classList.remove('show');}
 // Reiter-Navigation der Einstellungen (optisch wie der Rest: Unterstrich-Tabs in der Akzentfarbe)
-const SETTINGS_TABS=[{id:'appearance',label:'Darstellung'},{id:'graph',label:'Graph'},{id:'usage',label:'Usage'},{id:'system',label:'System'}];
+const SETTINGS_TABS=[{id:'appearance',label:'Darstellung'},{id:'graph',label:'Graph'},{id:'usage',label:'Usage'},{id:'vortrag',label:'Vortrag'},{id:'system',label:'System'}];
 let _settingsTab='appearance';
 function setSettingsTab(id){_settingsTab=SETTINGS_TABS.some(t=>t.id===id)?id:'appearance';renderSettings();}
 function settingsAppearanceHtml(){
@@ -5011,11 +5306,13 @@ async function renderSettings(){
   let h='';
   if(tab==='graph')h=settingsGraphHtml();
   else if(tab==='usage')h=settingsUsageHtml();
+  else if(tab==='vortrag')h=settingsVortragHtml();
   else if(tab==='system')h=settingsSystemHtml();
   else h=settingsAppearanceHtml();
   body.innerHTML=h;
   if(tab==='appearance')body.querySelectorAll('[data-set-theme]').forEach(b=>b.addEventListener('click',()=>{setTheme(b.getAttribute('data-set-theme'));renderSettings();}));
   if(tab==='graph')renderFolderColors();
+  if(tab==='vortrag')initVortragSettings();
   if(tab==='system'){try{const r=await api('/api/settings/vaultsRoot');const inp=document.getElementById('set-vaultroot');if(inp&&!r.error)inp.value=r.vaultsRoot||'';}catch(e){}}
   loadVersionInfo();
 }
