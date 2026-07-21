@@ -704,6 +704,19 @@ body.row-resizing{cursor:row-resize;user-select:none}
 .set-theme .st-sw{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:7px;vertical-align:middle}
 .set-body .set-range{width:100%;padding:0;border:none;background:none;accent-color:var(--accent);cursor:pointer}
 .set-body .set-select{width:100%;padding:8px 10px;background:var(--field);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none;cursor:pointer}
+/* Aufgeklapptes Menu im Nexus-Look statt Windows-Popup (Chromium base-select,
+   ab ~135 verfuegbar - Electron 42 = Chromium 148; aeltere Renderer ignorieren
+   das komplett und behalten das native Menu als Fallback). */
+.set-body .set-select,.set-body .set-select::picker(select){appearance:base-select}
+.set-body .set-select::picker(select){background:var(--pop,var(--panel));border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 44px rgba(0,0,0,.45),0 0 0 1px var(--accent-08);padding:6px;margin-top:6px}
+.set-body .set-select option{padding:7px 12px;border-radius:8px;color:var(--text);font-size:13px;cursor:pointer;transition:background .12s}
+.set-body .set-select option:hover,.set-body .set-select option:focus{background:var(--accent-12)}
+.set-body .set-select option:checked{background:var(--accent-14)}
+.set-body .set-select option::checkmark{color:var(--accent);margin-right:6px}
+.set-body .set-select optgroup{font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--dim);padding:6px 8px 2px}
+.set-body .set-select optgroup option{text-transform:none;letter-spacing:0;font-size:13px;color:var(--text)}
+.set-body .set-select::picker-icon{color:var(--dim);transition:transform .15s}
+.set-body .set-select:open::picker-icon{transform:rotate(180deg)}
 .set-folders{display:flex;flex-direction:column;gap:6px}
 .set-folder{display:flex;align-items:center;gap:10px}
 .set-body .set-color{width:38px;height:30px;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer;padding:2px;flex-shrink:0}
