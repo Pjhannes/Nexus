@@ -45,7 +45,7 @@ const vaultParam = z.string().optional()
 // Die eigentlichen Regeln leben editierbar im Vault unter _System/ – Scaffold im App-Ordner unter rules/.
 const NEXUS_INSTRUCTIONS = [
   'Du arbeitest auf persoenlichen Wissens-Vaults ueber die Nexus-Tools',
-  '(list_vaults, search, outline, read_note, write_note, append_to_section, patch, backlinks,',
+  '(list_vaults, search, outline, read_note, write_note, write_vortrag, append_to_section, patch, backlinks,',
   'list_notes, query, dataview, reindex, create_folder, move, delete, vault_check).',
   'Der Server bedient ALLE Vaults der Nexus-App: list_vaults zeigt sie; jedes Tool',
   'hat einen optionalen vault-Parameter (Standard: der in der App aktive Vault).',
@@ -55,6 +55,10 @@ const NEXUS_INSTRUCTIONS = [
   'Ordner/Notizen anlegen, verschieben, umbenennen oder loeschen IMMER ueber',
   'create_folder/move/delete – nie ueber Datei-System-/Mount-Operationen (die sind',
   'blockiert). move und delete funktionieren auch fuer ganze Ordner.',
+  'Bittet der Nutzer um ein Vortragsskript fuer eine Notiz (fuer den Vortrag-Button der App):',
+  'Notiz lesen, dann write_vortrag mit Segmenten {sprich, anker, art} aufrufen –',
+  'sprich frei und vortragend formulieren (Rueckbezuege, Uebergaenge, kein blosses Ablesen),',
+  'anker WOERTLICH aus der Notiz zitieren (wird serverseitig validiert).',
   '',
   'PFLICHT zu Beginn jeder Session: zuerst die Arbeitsregeln des Nutzers lesen und befolgen –',
   'read_note "_System/Session-Start-Nexus.md", "_System/Arbeitsweise-Nexus.md" und',
@@ -136,6 +140,26 @@ server.tool(
   async ({ path, content, create, vault }) => {
     const e = registry.get(vault);
     return withVault(e, e.tools.writeNote({ path, content, create }));
+  }
+);
+
+server.tool(
+  'write_vortrag',
+  'Erstellt/aktualisiert das Vortragsskript einer Notiz (<Notiz>.vortrag.json) fuer den Vortrag-Button der App: validiert jeden anker woertlich gegen die Notiz und stempelt den Notiz-Hash.',
+  {
+    path:  z.string().describe('Pfad der .md-Notiz, zu der das Skript gehoert'),
+    titel: z.string().optional().describe('Vortragstitel (optional)'),
+    segmente: z.array(z.object({
+      sprich: z.string().describe('Gesprochener Text des Segments – frei formuliert, mit Rueckbezuegen/Uebergaengen'),
+      anker:  z.string().optional().describe('Woertlicher Textausschnitt aus der Notiz, der waehrend des Segments hervorgehoben wird'),
+      art:    z.enum(['absatz', 'wort', 'tabelle', 'ueberschrift', 'keine']).optional()
+                .describe('Hervorhebungsart (Standard: absatz; keine = nur sprechen, ohne anker)'),
+    })).describe('Vortrags-Segmente in Sprechreihenfolge'),
+    vault: vaultParam,
+  },
+  async ({ path, titel, segmente, vault }) => {
+    const e = registry.get(vault);
+    return withVault(e, e.tools.writeVortrag({ path, titel, segmente }));
   }
 );
 

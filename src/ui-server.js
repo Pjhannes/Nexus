@@ -69,6 +69,11 @@ function buildTree(root, relBase, ignoreSet, depth = 0) {
     if (e.isDirectory()) {
       result.push({ name: e.name, path: rel, type: 'folder', children: buildTree(root, rel, ignoreSet, depth + 1) });
     } else {
+      // R24: Vortragsskript-Sidecars sind Maschinen-Dateien – nicht im Baum zeigen.
+      // Auch .vortrag.json.nexustmp (Crash-Leiche des atomaren Writes) mitfiltern.
+      // (Gleiche Regel in treeSignature spiegeln, sonst feuert das SSE-Polling
+      // tree-changed-Events fuer unsichtbare Dateien.)
+      if (e.name.endsWith('.vortrag.json') || e.name.endsWith('.vortrag.json.nexustmp')) continue;
       const ext = extname(e.name).toLowerCase();
       result.push({ name: e.name, path: rel, type: 'file', ext });
     }
@@ -92,6 +97,7 @@ function treeSignature(root, ignoreSet, depth = 0, rel = '', state = { h: 0x811c
   catch { return state; }
   for (const e of entries) {
     if (ignoreSet.has(e.name) || e.name.startsWith('.')) continue;
+    if (!e.isDirectory() && (e.name.endsWith('.vortrag.json') || e.name.endsWith('.vortrag.json.nexustmp'))) continue; // R24: wie buildTree
     const r = rel ? rel + '/' + e.name : e.name;
     state.n++;
     for (let i = 0; i < r.length; i++) { state.h ^= r.charCodeAt(i); state.h = Math.imul(state.h, 0x01000193) >>> 0; }
@@ -386,6 +392,13 @@ app.post('/api/rename', (req, res) => {
     if (existsSync(to)) return res.status(409).json({ error: 'Ziel existiert bereits' });
     mkdirSync(dirname(to), { recursive: true });
     renameSync(from, to);
+    // R24: Vortragsskript-Sidecar der Notiz mit umbenennen (im Baum unsichtbar).
+    // Der gestempelte Hash haengt am Inhalt, nicht am Pfad – bleibt also gueltig.
+    if (/\.md$/i.test(from) && /\.md$/i.test(to)) {
+      const scFrom = from.replace(/\.md$/i, '.vortrag.json');
+      const scTo   = to.replace(/\.md$/i, '.vortrag.json');
+      if (existsSync(scFrom) && !existsSync(scTo)) { try { renameSync(scFrom, scTo); } catch {} }
+    }
     const result = tools.reindex();
     res.json({ ok: true, oldPath: oldPath.replace(/\\/g, '/'), newPath: newPath.replace(/\\/g, '/'), indexed: result.indexed });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -402,6 +415,11 @@ app.post('/api/delete', (req, res) => {
     // maxRetries/retryDelay faengt kurzzeitige Windows-Locks (EPERM/EBUSY) ab,
     // z.B. wenn ein Datei-Watcher den Ordner gerade noch losgelassen hat.
     rmSync(full, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 });
+    // R24: Vortragsskript-Sidecar der geloeschten Notiz mit entfernen (unsichtbar im Baum).
+    if (/\.md$/i.test(full)) {
+      const sc = full.replace(/\.md$/i, '.vortrag.json');
+      if (existsSync(sc)) { try { rmSync(sc, { force: true, maxRetries: 5, retryDelay: 120 }); } catch {} }
+    }
     const result = tools.reindex();
     res.json({ ok: true, path: relPath.replace(/\\/g, '/'), indexed: result.indexed });
   } catch (e) { res.status(500).json({ error: e.message }); }
