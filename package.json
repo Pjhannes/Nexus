@@ -10,6 +10,8 @@
     "mcp": "node src/server.js",
     "ui": "node src/ui-server.js",
     "index": "node src/cli.js reindex",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
     "test": "node test/smoke.js",
     "app": "electron electron/main.js",
     "dist": "electron-builder --win",
@@ -31,6 +33,7 @@
   },
   "devDependencies": {
     "@electron/fuses": "^1.8.0",
+    "@tauri-apps/cli": "^2.11.4",
     "electron": "^42.0.0",
     "electron-builder": "^25.0.0",
     "png-to-ico": "^2.1.8",
