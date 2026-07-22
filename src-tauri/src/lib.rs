@@ -170,6 +170,10 @@ fn ensure_server(app: &AppHandle) -> Result<(), String> {
     cmd.arg(&ui_server)
         .env("NEXUS_PORT", PORT.to_string())
         .env("NEXUS_DATA_DIR", &shell.data_dir)
+        // Marker fuer den Sidecar: "du laeufst unter der gepackten Tauri-Shell".
+        // Nur damit fuehrt ui-server.js die Claude-Config-Auto-Migration aus
+        // (Phase 3) – npm run ui / Dev schreiben nie ungefragt an der Config.
+        .env("NEXUS_SHELL", "tauri")
         .stdin(Stdio::null())
         .stdout(out)
         .stderr(err);

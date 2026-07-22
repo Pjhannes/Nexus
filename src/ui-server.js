@@ -14,7 +14,7 @@ import { loadConfig, resolveDbPath, dataPath, CONFIG_PATH } from './paths.js';
 // Route funktioniert in-process unter Electron UND spaeter als eigenstaendiger
 // Tauri-Sidecar-Prozess (computeLaunchSpec() unten erkennt die Umgebung selbst).
 import { piperStatus, piperInstallVoice, piperDeleteVoice, piperSynth } from './piper.js';
-import { connectClaude } from './claude-connect.js';
+import { connectClaude, migrateClaudeEntryIfStale } from './claude-connect.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const cfg   = loadConfig();
@@ -301,6 +301,24 @@ app.post('/api/connect-claude', (_req, res) => {
     res.json(connectClaude({ launchSpec: computeLaunchSpec(), mcpKey: DEV ? 'nexus-dev' : 'nexus' }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// Phase 3 – Auto-Migration beim Start unter der GEPACKTEN Tauri-Shell:
+// Die Rust-Shell markiert ihren Sidecar mit NEXUS_SHELL=tauri (nur Release).
+// Ein bestehender Claude-Desktop-Eintrag mit dem alten Electron-Trick
+// (ELECTRON_RUN_AS_NODE auf der Nexus.exe) wird dann einmalig auf die
+// Node-Sidecar-Spec umgeschrieben (mit Backup) – danach ist die Pruefung
+// idempotent (kein weiterer Write). Bewusst NICHT im Dev / bei `npm run ui`:
+// dort soll nie ungefragt an der echten Claude-Config geschrieben werden.
+// !process.versions.electron: Haertung gegen ein theoretisches Ping-Pong, falls
+// NEXUS_SHELL=tauri jemals maschinenweit exportiert wuerde – ein Electron-Prozess
+// darf NIE auto-migrieren (seine Spec enthaelt den ELECTRON_RUN_AS_NODE-Trick).
+if (process.env.NEXUS_SHELL === 'tauri' && !DEV && !process.versions.electron) {
+  try {
+    const r = migrateClaudeEntryIfStale({ launchSpec: computeLaunchSpec(), mcpKey: 'nexus' });
+    if (r.migrated) console.error(`[Nexus] Claude-Desktop-Eintrag auf Node-Sidecar migriert (Backup: ${r.path}.nexus-backup). Claude Desktop einmal neu starten.`);
+    else console.error(`[Nexus] Claude-Eintrag: ${r.reason}`);
+  } catch (e) { console.error('[Nexus] Claude-Migration fehlgeschlagen:', e.message); }
+}
 
 // ── Drag & Drop Upload ────────────────────────────────────────────────────────
 const UPLOAD_TMP = dataPath('.nexus', 'tmp');
