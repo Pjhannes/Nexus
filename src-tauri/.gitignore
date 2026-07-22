@@ -2,3 +2,6 @@
 # will have compiled files and executables
 /target/
 /gen/schemas
+
+# Node-Sidecar-Binary (~80 MB, via scripts/fetch-node-sidecar.mjs geholt – nie ins Repo)
+/binaries/

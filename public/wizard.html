@@ -130,7 +130,14 @@
 </div>
 
 <script>
-  const api = window.nexusAPI;
+  // Electron liefert window.nexusAPI (preload); unter der Tauri-Shell (Phase 2)
+  // uebernehmen die Rust-Commands dieselben Aufgaben – gleiche API-Form, damit
+  // der restliche Wizard-Code unveraendert bleibt.
+  const api = window.nexusAPI || (window.__TAURI__ && {
+    browseFolder:     ()     => window.__TAURI__.core.invoke('wizard_browse').catch(() => null),
+    defaultVaultPath: ()     => window.__TAURI__.core.invoke('wizard_default_vault_path').catch(() => null),
+    finishWizard:     (opts) => window.__TAURI__.core.invoke('wizard_finish', { opts }).catch(e => ({ error: String(e) })),
+  });
   let cur = 0;
   function go(n){
     document.querySelectorAll('.page').forEach((p,i)=>p.classList.toggle('active', i===n));

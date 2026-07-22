@@ -937,7 +937,7 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
 <div id="toast"></div>
 
 <div class="app">
-  <div class="titlebar">
+  <div class="titlebar" data-tauri-drag-region>
     <div class="logo">&#9670; NEXUS</div>
     <div class="crumb" id="crumb">&mdash;</div>
     <button id="read-toggle" title="Lesemodus – Vollbild-Fokus (Esc beendet)" style="display:none" onclick="toggleReading()">&#128214; Lesen</button>
@@ -5709,6 +5709,21 @@ function initUsageWidget(){
   }
 }
 
+// ── Tauri-Shell-Adapter (Phase 2) ──
+// Unter Tauri gibt es kein preload/nexusAPI – die wenigen echt nativen Aktionen
+// laufen dort ueber window.__TAURI__ (withGlobalTauri). Gleiche Feature-Detection
+// wie bisher: existiert keins von beiden (reiner Browser), bleiben die Buttons
+// versteckt bzw. melden "Nur in der Nexus-App verfuegbar".
+if(window.__TAURI__&&!window.nexusAPI){
+  // openHelp als EVENT statt invoke: dieses Fenster laedt http://localhost:PORT
+  // und ist im Release eine Remote-Origin – App-Commands (invoke) sind dort per
+  // ACL gesperrt, Events sind ueber den remote-Block der Capability erlaubt.
+  // Die Rust-Shell lauscht auf 'ui:open-help' (listen_any) und oeffnet das Fenster.
+  window.nexusAPI={openHelp:()=>window.__TAURI__.event.emit('ui:open-help').then(()=>({ok:true})).catch(e=>({error:String(e)}))};
+  // Menue "Mit Claude Desktop verbinden" -> gleiche REST-Route + Toast wie der
+  // Einstellungen-Button (die Rust-Shell emittiert nur das Event).
+  try{window.__TAURI__.event.listen('menu:connect-claude',()=>connectClaudeFromSettings());}catch(e){}
+}
 initUsageWidget();
 init();
 </script>

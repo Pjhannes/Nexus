@@ -1,23 +1,16 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "nexus",
-  "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "productName": "Nexus",
+  "version": "../package.json",
+  "identifier": "com.nexusapp.nexus",
   "build": {
     "frontendDist": "../public",
     "devUrl": "http://localhost:3002",
     "beforeDevCommand": "node scripts/dev-tauri.mjs"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Nexus",
-        "width": 1280,
-        "height": 860,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ],
+    "withGlobalTauri": true,
+    "windows": [],
     "security": {
       "csp": null
     }
@@ -25,15 +18,18 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": ["binaries/node"],
+    "resources": {
+      "../src": "src",
+      "../public": "public",
+      "../package.json": "package.json"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "android": {
-      "debugApplicationIdSuffix": ".debug"
-    }
+    ]
   }
 }
