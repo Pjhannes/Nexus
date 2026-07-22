@@ -1,7 +1,8 @@
-// electron/piper.js – R24b: lokale Neural-TTS (Piper) fuer den Vortrag-Button.
+// src/piper.js – R24b: lokale Neural-TTS (Piper) fuer den Vortrag-Button.
 //
 // Bewusst OHNE Electron-Imports (reines Node/ESM): so ist das Modul headless
-// testbar (node -e) und koennte spaeter auch vom UI-Server genutzt werden.
+// testbar (node -e) und wird seit Phase 1 direkt vom UI-Server genutzt (REST
+// statt Electron-IPC, siehe src/ui-server.js).
 // Aufgaben: Engine + Stimmen herunterladen (nutzerinitiiert, mit Fortschritt),
 // verwalten, und Text -> WAV synthetisieren (piper.exe, Text via stdin).
 //
@@ -12,7 +13,7 @@
 import { existsSync, mkdirSync, createWriteStream, readFileSync, rmSync, readdirSync, renameSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { spawn, spawnSync } from 'child_process';
-import { DATA_DIR } from '../src/paths.js';
+import { DATA_DIR } from './paths.js';
 
 export const PIPER_DIR = join(DATA_DIR, '.nexus', 'piper');
 const ENGINE_DIR = join(PIPER_DIR, 'piper');

@@ -10,9 +10,16 @@ import { readFileSync } from 'fs';
 import { buildIndexer } from './indexer.js';
 import { makeTools } from './tools.js';
 import { loadConfig, resolveDbPath, dataPath, CONFIG_PATH } from './paths.js';
+// Phase 1: Piper-TTS + Claude-Connect laufen als REST statt Electron-IPC – dieselbe
+// Route funktioniert in-process unter Electron UND spaeter als eigenstaendiger
+// Tauri-Sidecar-Prozess (computeLaunchSpec() unten erkennt die Umgebung selbst).
+import { piperStatus, piperInstallVoice, piperDeleteVoice, piperSynth } from './piper.js';
+import { connectClaude } from './claude-connect.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const cfg   = loadConfig();
+// Gleiche Bedeutung wie in electron/main.js: nur vom Dev-Starter (Nexus-Dev.vbs) gesetzt.
+const DEV   = process.env.NEXUS_DEV === '1';
 
 // App-Version aus package.json – eine Quelle der Wahrheit, passt sich bei jedem Build automatisch an
 // (gleiche Version, die electron-builder einbettet). package.json liegt sowohl im Dev-Baum als auch im
@@ -253,6 +260,45 @@ app.post('/api/reindex', (req, res) => {
     const { tools } = getVault(req.body?.vault);
     const result = tools.reindex();
     res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Piper-Neural-TTS (R24b, seit Phase 1 REST statt Electron-IPC) ─────────────
+// Fortschritt bei Downloads geht als SSE-Event ueber den bestehenden /api/events-Kanal
+// (kein separater Kanal noetig, der Client hoert dort schon auf tree-changed).
+app.get('/api/piper/status', (_req, res) => {
+  try { res.json(piperStatus()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/piper/install', async (req, res) => {
+  try {
+    const r = await piperInstallVoice(req.body?.id, (p) => broadcastEvent({ type: 'piper-progress', ...p }));
+    res.json(r);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/piper/delete', (req, res) => {
+  try { res.json(piperDeleteVoice(req.body?.id)); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/piper/synth', async (req, res) => {
+  try {
+    const { text, voice, lengthScale } = req.body || {};
+    res.json(await piperSynth(text, { voice, lengthScale }));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Claude-Desktop-Anbindung (Phase 1: REST statt Electron-IPC) ───────────────
+// computeLaunchSpec() erkennt die Umgebung selbst: unter Electron kommt der
+// ELECTRON_RUN_AS_NODE-Trick dazu (wie bisher), sonst (spaeter: Tauri-Node-Sidecar)
+// ist process.execPath bereits ein reiner Node-Prozess -> kein Trick noetig. Dieselbe
+// Route braucht daher in Phase 3 (Shell-Wechsel) voraussichtlich KEINE Anpassung.
+function computeLaunchSpec() {
+  const env = {};
+  if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = '1';
+  if (process.env.NEXUS_DATA_DIR) env.NEXUS_DATA_DIR = process.env.NEXUS_DATA_DIR;
+  return { command: process.execPath, args: [join(__dir, 'server.js')], env };
+}
+app.post('/api/connect-claude', (_req, res) => {
+  try {
+    res.json(connectClaude({ launchSpec: computeLaunchSpec(), mcpKey: DEV ? 'nexus-dev' : 'nexus' }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -498,6 +544,20 @@ app.post('/api/open-external', async (req, res) => {
     } else {
       openInDefaultApp(full);
     }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Externe URL im Standard-Browser oeffnen (Phase 1: REST statt Electron-IPC) ─
+// Nutzt dieselbe Electron-Erkennung wie oben (getShell), aber shell.openExternal
+// statt shell.openPath – bewusst nur https:// erlaubt (wie die alte IPC-Guard).
+app.post('/api/open-external-url', async (req, res) => {
+  try {
+    const url = req.body?.url;
+    if (typeof url !== 'string' || !/^https:\/\//i.test(url)) return res.status(400).json({ error: 'Nur https:// URLs erlaubt' });
+    const sh = await getShell();
+    if (sh) await sh.openExternal(url);
+    else openInDefaultApp(url);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

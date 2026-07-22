@@ -21,20 +21,13 @@ import { app, BrowserWindow, Menu, dialog, shell, ipcMain } from 'electron';
 import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { createServer } from 'net';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, appendFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'fs';
 import { setupAutoUpdate } from './updater.js';
-// R24b: lokale Neural-TTS (Piper) fuer den Vortrag-Button – Download/Verwaltung/Synthese.
-// WICHTIG: bewusst KEIN statischer Top-Level-Import. piper.js importiert seinerseits
-// src/paths.js, dessen DATA_DIR/CONFIG_PATH als const beim ERSTEN Import fest einfriert.
-// Ein statischer Import hier wuerde src/paths.js schon beim Modul-Start von main.js laden -
-// VOR ensureDataDir() (laeuft erst in app.whenReady()), das NEXUS_DATA_DIR erst setzt.
-// Ergebnis waere ein dauerhaft falscher, in den read-only asar zeigender Pfad fuer
-// ALLE Module, die paths.js spaeter importieren (ui-server.js, server.js, ...) -
-// die gepackte App würde beim Start (Config "nicht gefunden") sofort und lautlos
-// abbrechen (app.quit() ohne Dialog). Der dynamische Import unten laedt piper.js
-// daher lazy, erst wenn tatsaechlich ein IPC-Aufruf kommt (also sicher nach ensureDataDir()).
-let _piperModP = null;
-function piperMod() { return _piperModP || (_piperModP = import('./piper.js')); }
+// R24b/Phase 1: Piper-Neural-TTS + Claude-Connect laufen jetzt ueber den UI-Server
+// (REST, src/piper.js + src/claude-connect.js) statt ueber Electron-IPC – funktioniert
+// dadurch identisch unter Electron UND spaeter unter Tauri (kein separater Code-Pfad
+// noetig). connectClaudeCore() (Menue-Aktion) nutzt das gleiche geteilte Modul.
+import { connectClaude } from '../src/claude-connect.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const APP_ROOT   = join(__dir, '..');
@@ -232,16 +225,6 @@ function seedConfig(vaultsRoot) {
 }
 
 // ── Claude-Desktop-Anbindung (Kern + Menue-Variante) ───────────────────────────
-function claudeConfigPath() {
-  if (process.platform === 'win32') {
-    return join(process.env.APPDATA || join(app.getPath('home'), 'AppData', 'Roaming'), 'Claude', 'claude_desktop_config.json');
-  }
-  if (process.platform === 'darwin') {
-    return join(app.getPath('home'), 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
-  }
-  return join(app.getPath('home'), '.config', 'Claude', 'claude_desktop_config.json');
-}
-
 // Startet den MCP-Server als REINEN Node-Prozess via ELECTRON_RUN_AS_NODE.
 // Hintergrund: ein gepacktes GUI-Electron hat auf Windows keine brauchbaren
 // stdin/stdout-Pipes im Hauptprozess -> stdio-JSON-RPC schlaegt fehl
@@ -256,24 +239,11 @@ function mcpLaunchSpec() {
   return { command: process.execPath, args: [MCP_SERVER_PATH], env };
 }
 
-// Schreibt/merged den nexus-Eintrag. Gibt ein Ergebnisobjekt zurueck (kein Dialog).
+// Schreibt/merged den nexus-Eintrag ueber das geteilte Modul (auch vom UI-Server als
+// REST-Endpunkt genutzt). Dev traegt sich als eigener Key "nexus-dev" ein -> ueberschreibt
+// NICHT den Prod-Eintrag "nexus". Gibt ein Ergebnisobjekt zurueck (kein Dialog).
 function connectClaudeCore() {
-  const cfgPath = claudeConfigPath();
-  mkdirSync(dirname(cfgPath), { recursive: true });
-  let cfg = {};
-  let backedUp = false;
-  if (existsSync(cfgPath)) {
-    copyFileSync(cfgPath, cfgPath + '.nexus-backup');
-    backedUp = true;
-    try { cfg = JSON.parse(readFileSync(cfgPath, 'utf8')); } catch { cfg = {}; }
-  }
-  if (!cfg.mcpServers || typeof cfg.mcpServers !== 'object') cfg.mcpServers = {};
-  const spec = mcpLaunchSpec();
-  // Dev traegt sich als eigener Key "nexus-dev" ein -> ueberschreibt NICHT den Prod-Eintrag "nexus".
-  const mcpKey = DEV ? 'nexus-dev' : 'nexus';
-  cfg.mcpServers[mcpKey] = { command: spec.command, args: spec.args, env: spec.env };
-  writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), 'utf8');
-  return { ok: true, path: cfgPath, backedUp, key: mcpKey };
+  return connectClaude({ launchSpec: mcpLaunchSpec(), mcpKey: DEV ? 'nexus-dev' : 'nexus' });
 }
 
 function connectClaudeDesktop() {
@@ -411,36 +381,14 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle('help:connect-claude', () => {
-    try { return connectClaudeCore(); }
-    catch (e) { return { error: String(e && e.message ? e.message : e) }; }
-  });
-
   // Hilfe-/Einrichtungsfenster aus der App-UI (Einstellungen -> System) oeffnen,
   // damit Usage-Key & Anleitung auch nach dem Wizard erreichbar sind (v. a. macOS).
+  // (help:connect-claude, app:open-external, app:version, piper:* entfallen seit Phase 1 –
+  // laufen jetzt als REST-Endpunkte ueber den UI-Server, siehe src/ui-server.js.)
   ipcMain.handle('help:open', () => {
     try { openHelpWindow(); return { ok: true }; }
     catch (e) { return { error: String(e && e.message ? e.message : e) }; }
   });
-
-  ipcMain.handle('app:open-external', (_e, url) => {
-    if (typeof url === 'string' && /^https:\/\//i.test(url)) shell.openExternal(url);
-  });
-
-  ipcMain.handle('app:version', () => app.getVersion());
-
-  // R24b: Piper-Neural-TTS. Downloads sind IMMER nutzerinitiiert (Button in den
-  // Einstellungen); Fortschritt geht als 'piper:progress'-Events an das Fenster.
-  ipcMain.handle('piper:status', async () => {
-    try { return (await piperMod()).piperStatus(); }
-    catch (e) { return { error: String(e && e.message ? e.message : e) }; }
-  });
-  ipcMain.handle('piper:install', async (e, id) => {
-    const send = (p) => { try { if (!e.sender.isDestroyed()) e.sender.send('piper:progress', p); } catch {} };
-    return (await piperMod()).piperInstallVoice(id, send);
-  });
-  ipcMain.handle('piper:delete', async (_e, id) => (await piperMod()).piperDeleteVoice(id));
-  ipcMain.handle('piper:synth', async (_e, text, opts) => (await piperMod()).piperSynth(text, opts || {}));
 }
 
 // --- Start --------------------------------------------------------------------

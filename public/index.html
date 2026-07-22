@@ -1438,6 +1438,8 @@ function startLiveUpdates(){
       if(m&&m.type==='tree-changed'&&m.vault===activeVault){
         clearTimeout(_liveTimer);
         _liveTimer=setTimeout(()=>{refreshTree().catch(()=>{});},250);
+      }else if(m&&m.type==='piper-progress'){
+        handlePiperProgress(m);
       }
     };
     // onerror: EventSource verbindet dank "retry" automatisch neu -> nichts zu tun.
@@ -5022,7 +5024,7 @@ function settingsVortragHtml(){
   h+='<div class="set-section"><div class="set-label">Tempo <span class="set-val" id="set-vt-rate-val">'+currentVtRate().toFixed(2).replace(/\.?0+$/,'')+'×</span></div><input type="range" class="set-range" id="set-vt-rate" min="0.6" max="1.4" step="0.05" value="'+currentVtRate()+'" oninput="onVtRateInput(this.value)"></div>';
   h+='<div class="set-section"><div class="set-label">Tonhöhe <span class="set-val" id="set-vt-pitch-val">'+currentVtPitch().toFixed(2).replace(/\.?0+$/,'')+'×</span></div><input type="range" class="set-range" id="set-vt-pitch" min="0.7" max="1.3" step="0.05" value="'+currentVtPitch()+'" oninput="onVtPitchInput(this.value)"></div>';
   h+='<div class="set-section"><div class="set-label">Pause zwischen Segmenten <span class="set-val" id="set-vt-pause-val">'+currentVtPause()+' ms</span></div><input type="range" class="set-range" id="set-vt-pause" min="0" max="1500" step="50" value="'+currentVtPause()+'" oninput="onVtPauseInput(this.value)"></div>';
-  if(window.nexusAPI&&window.nexusAPI.piperStatus){
+  {
     h+='<div class="set-section"><div class="set-label">Neural-Stimmen (Piper, offline)</div>';
     h+='<div id="set-piper-list" class="set-hint">Lade Stimmen-Status ...</div>';
     h+='<div class="set-hint" id="set-piper-progress" style="min-height:16px"></div>';
@@ -5037,9 +5039,9 @@ async function initVortragSettings(){
   const cur=currentVtVoice();const vs=vtVoicesSortiert();
   const sysOpts=vs.map(v=>'<option value="'+esc(v.voiceURI||v.name)+'"'+((v.voiceURI===cur||v.name===cur)?' selected':'')+'>'+esc(v.name+' ('+v.lang+')')+'</option>').join('');
   let piperOpts='';
-  if(window.nexusAPI&&window.nexusAPI.piperStatus){
+  {
     try{
-      const st=await window.nexusAPI.piperStatus();
+      const st=await api('/api/piper/status');
       if(st&&!st.error){
         _piperStatus=st;
         if(st.voices.length)piperOpts='<optgroup label="Neural (Piper)">'+st.voices.map(id=>{
@@ -5056,18 +5058,17 @@ async function initVortragSettings(){
   s.innerHTML='<option value="">Automatisch (erste deutsche Stimme)</option>'+piperOpts+
     (vs.length?('<optgroup label="System (Windows)">'+sysOpts+'</optgroup>'):'');
 }
-let _piperStatus=null,_piperBusy=false,_piperProgressWired=false;
+let _piperStatus=null,_piperBusy=false;
+// Fortschritt kommt seit Phase 1 per SSE (Kanal /api/events, type:'piper-progress') statt
+// per Electron-IPC – der globale SSE-Handler (startLiveUpdates) ruft das hier auf.
+function handlePiperProgress(p){
+  const el=document.getElementById('set-piper-progress');if(!el||!p)return;
+  const mb=x=>(x/1048576).toFixed(1);
+  el.textContent=p.fertig?(p.label+' - fertig ('+mb(p.received)+' MB)')
+    :(p.label+' ... '+mb(p.received)+(p.total?(' / '+mb(p.total)):'')+' MB');
+}
 function renderPiperList(st){
   const host=document.getElementById('set-piper-list');if(!host)return;
-  if(!_piperProgressWired&&window.nexusAPI&&window.nexusAPI.onPiperProgress){
-    _piperProgressWired=true;
-    window.nexusAPI.onPiperProgress(p=>{
-      const el=document.getElementById('set-piper-progress');if(!el||!p)return;
-      const mb=x=>(x/1048576).toFixed(1);
-      el.textContent=p.fertig?(p.label+' - fertig ('+mb(p.received)+' MB)')
-        :(p.label+' ... '+mb(p.received)+(p.total?(' / '+mb(p.total)):'')+' MB');
-    });
-  }
   const rows=Object.keys(st.katalog||{}).map(id=>{
     const k=st.katalog[id];const da=st.voices.indexOf(id)>=0;
     return '<div style="display:flex;align-items:center;gap:10px;margin:4px 0">'+
@@ -5084,7 +5085,7 @@ async function vtPiperInstall(id){
   if(_piperBusy)return;_piperBusy=true;
   const el=document.getElementById('set-piper-progress');if(el)el.textContent='Starte Download ...';
   try{
-    const r=await window.nexusAPI.piperInstall(id);
+    const r=await api('/api/piper/install',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
     if(el)el.textContent=(r&&r.error)?('Fehler: '+r.error):'';
     if(r&&r.ok&&!currentVtVoice())setVtVoice('piper:'+id);   // erste Neural-Stimme direkt aktivieren
   }catch(e){if(el)el.textContent='Fehler: '+e.message;}
@@ -5094,7 +5095,7 @@ async function vtPiperInstall(id){
 async function vtPiperDelete(id){
   if(_piperBusy)return;_piperBusy=true;
   try{
-    await window.nexusAPI.piperDelete(id);
+    await api('/api/piper/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
     if(currentVtVoice()==='piper:'+id)setVtVoice('');
   }catch(e){}
   _piperBusy=false;
@@ -5244,14 +5245,15 @@ async function startVortrag(){
   vtUpdateBar();
   vtSpielSegment();
 }
-// R24b: Piper-Neural-TTS (lokal, via Electron-IPC). Aktiv, wenn die gewaehlte
-// Stimme 'piper:<id>' ist UND die App-Bruecke existiert (im Dev-Browser ohne
-// nexusAPI faellt alles automatisch auf die System-Stimmen zurueck).
-function vtIsPiper(){return currentVtVoice().indexOf('piper:')===0&&!!(window.nexusAPI&&window.nexusAPI.piperSynth);}
+// R24b: Piper-Neural-TTS (lokal, seit Phase 1 per REST -> laeuft ueberall, wo der
+// UI-Server laeuft, nicht mehr nur unter Electron). Aktiv, wenn die gewaehlte
+// Stimme 'piper:<id>' ist; schlaegt die Synthese fehl, faellt vtSpielSegment auf
+// die System-Stimme zurueck (siehe vtPiperSynthWav-Fehlerpfad).
+function vtIsPiper(){return currentVtVoice().indexOf('piper:')===0;}
 async function vtPiperSynthWav(text){
   try{
     const id=currentVtVoice().slice(6);
-    const r=await window.nexusAPI.piperSynth(text,{voice:id,lengthScale:Math.max(0.5,Math.min(2,1/currentVtRate()))});
+    const r=await api('/api/piper/synth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,voice:id,lengthScale:Math.max(0.5,Math.min(2,1/currentVtRate()))})});
     if(!r||r.error||!r.wavBase64){if(r&&r.error)console.warn('Piper:',r.error);return null;}
     const bin=atob(r.wavBase64);const u8=new Uint8Array(bin.length);
     for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
@@ -5463,13 +5465,14 @@ function settingsUsageHtml(){
 }
 function settingsSystemHtml(){
   let h='<div class="set-section"><div class="set-label">Vault-Speicherort</div><div class="set-vaultroot"><input type="text" class="set-input" id="set-vaultroot" placeholder="Pfad zum Vaults-Ordner&hellip;"><button class="ft-btn" style="padding:8px 14px" onclick="saveVaultRoot()">Speichern</button></div><div class="set-hint" id="set-vaultroot-hint">Ordner, in dem neue Vaults angelegt werden. Bestehende Vaults behalten ihren Pfad.</div></div>';
-  // Nur in der Nexus-App (Electron, preload-Bridge) – im reinen Browser ohne nexusAPI ausgeblendet.
-  if(window.nexusAPI&&window.nexusAPI.connectClaude){
-    h+='<div class="set-section"><div class="set-label">Claude Desktop &amp; Einrichtung</div>';
-    h+='<div class="set-vaultroot" style="flex-wrap:wrap;gap:8px"><button class="ft-btn" style="padding:8px 14px" onclick="connectClaudeFromSettings()">Mit Claude Desktop verbinden</button>';
-    h+='<button class="ft-btn" style="padding:8px 14px" onclick="openHelpFromSettings()">Einrichtung &amp; Usage-Key&hellip;</button></div>';
-    h+='<div class="set-hint" id="set-claude-hint">Tr&auml;gt Nexus als MCP-Server in die Claude-Desktop-Konfiguration ein. Danach Claude Desktop komplett beenden und neu &ouml;ffnen.</div></div>';
-  }
+  // Seit Phase 1 per REST (immer verfuegbar, egal ob Electron/Tauri/reiner Browser).
+  h+='<div class="set-section"><div class="set-label">Claude Desktop &amp; Einrichtung</div>';
+  h+='<div class="set-vaultroot" style="flex-wrap:wrap;gap:8px"><button class="ft-btn" style="padding:8px 14px" onclick="connectClaudeFromSettings()">Mit Claude Desktop verbinden</button>';
+  // Einrichtungsfenster oeffnen ist ein natives Fenster -> bleibt an die Nexus-App gebunden.
+  if(window.nexusAPI&&window.nexusAPI.openHelp)
+    h+='<button class="ft-btn" style="padding:8px 14px" onclick="openHelpFromSettings()">Einrichtung &amp; Usage-Key&hellip;</button>';
+  h+='</div>';
+  h+='<div class="set-hint" id="set-claude-hint">Tr&auml;gt Nexus als MCP-Server in die Claude-Desktop-Konfiguration ein. Danach Claude Desktop komplett beenden und neu &ouml;ffnen.</div></div>';
   return h;
 }
 // App-Version (aus package.json, passt sich bei jedem Build automatisch an) einmalig in die Fußzeile laden.
@@ -5529,9 +5532,8 @@ async function saveVaultRoot(){
 }
 async function connectClaudeFromSettings(){
   const hint=document.getElementById('set-claude-hint');
-  if(!(window.nexusAPI&&window.nexusAPI.connectClaude)){toast('Nur in der Nexus-App verf&uuml;gbar','error');return;}
   try{
-    const r=await window.nexusAPI.connectClaude();
+    const r=await api('/api/connect-claude',{method:'POST'});
     if(r&&r.error){toast('Fehler: '+r.error,'error');if(hint)hint.textContent='⚠ '+r.error;return;}
     const key=(r&&r.key)||'nexus';
     toast('✓ Mit Claude Desktop verbunden','success');logActivity('#10B981','Claude Desktop verbunden ('+esc(key)+')');

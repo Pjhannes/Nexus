@@ -113,17 +113,20 @@
   // Live mitziehen, wenn das Theme im Hauptfenster gewechselt wird (storage-Event feuert origin-weit).
   window.addEventListener('storage', e => { if(e.key === 'nexus.themeVars') applyNexusTheme(); });
 
-  const api = window.nexusAPI;
+  // connectClaude/openExternal laufen seit Phase 1 per REST ueber den UI-Server
+  // (funktioniert identisch unter Electron und spaeter unter Tauri).
   async function connect(){
     const s = document.getElementById('connStatus');
     s.textContent = 'Verbinde…'; s.style.color = '#8a93a8';
     try{
-      const r = await api.connectClaude();
+      const r = await fetch('/api/connect-claude', { method: 'POST' }).then(r => r.json());
       if(r && r.ok){ s.style.color = '#34d399'; s.textContent = '✓ Eingetragen. Claude Desktop jetzt neu starten.'; }
       else { s.style.color = '#f87171'; s.textContent = 'Fehler: ' + ((r && r.error) || 'unbekannt'); }
     }catch(e){ s.style.color = '#f87171'; s.textContent = 'Fehler: ' + e.message; }
   }
-  function open1(){ api.openExternal('https://claude.ai'); }
+  function open1(){
+    fetch('/api/open-external-url', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ url: 'https://claude.ai' }) });
+  }
 </script>
 </body>
 </html>
