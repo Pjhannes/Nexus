@@ -11,9 +11,13 @@ name: Build Nexus (Windows + macOS)
 # Signierung ist bewusst AUS (keine Zertifikate). Die App wird per Electron-Fuses
 # (scripts/afterPack.cjs) gehaertet; macOS bekommt eine Ad-hoc-Signatur.
 
+# Seit R25 (Tauri-Migration): Dieser Workflow baut NUR NOCH die Electron-
+# Bruecken-Releases der 0.x-Reihe (letztes geplantes: 0.6.0 mit dem
+# "Nexus 1.0 verfuegbar"-Hinweis). Die Tauri-Generation (>= 1.0.0) baut
+# .github/workflows/tauri-release.yml auf Tags v1* aufwaerts.
 on:
   push:
-    tags: ['v*']
+    tags: ['v0.*']
   workflow_dispatch:
 
 permissions:

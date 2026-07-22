@@ -64,6 +64,45 @@ function nativeController(parent) {
   };
 }
 
+// ── R25-Bruecke: Generationswechsel Electron (0.x) -> Tauri (>= 1.0.0) ────────
+// electron-updater kann technisch NICHT auf die Tauri-App updaten (anderes
+// Paketformat, keine latest.yml mehr). Sobald das neueste Release Major >= 1
+// ist, zeigt die Electron-App deshalb einen Hinweis mit Download-Link statt
+// des normalen Auto-Updates – auf ALLEN Plattformen. Gibt true zurueck, wenn
+// der Generationsfall vorlag (dann keine weitere Update-Logik).
+async function checkGenerationBridge(win, log) {
+  let data;
+  try {
+    const resp = await fetch(API_LATEST, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Nexus-Updater' },
+    });
+    if (!resp.ok) { log('Bruecken-Check: HTTP', resp.status); return false; }
+    data = await resp.json();
+  } catch (err) {
+    log('Bruecken-Check fehlgeschlagen:', err && err.message);
+    return false;
+  }
+  const tag = data && data.tag_name;
+  if (!tag || !isNewer(tag, app.getVersion())) return false;
+  if ((parseVersion(tag)[0] || 0) < 1) return false;   // normales 0.x-Update -> alte Wege
+
+  const c = makeController(win, log);
+  const idx = await c.prompt({
+    title: 'Nexus – neue Generation verfügbar',
+    message: `Nexus ${String(tag).replace(/^v/i, '')} ist verfügbar.`,
+    detail:
+      `Installiert: ${app.getVersion()}.\n\n` +
+      'Nexus ist auf eine neue, schlankere Technik umgestiegen. Dieses eine Mal ' +
+      'bitte den neuen Installer von der Download-Seite laden und über die ' +
+      'bestehende Version installieren – Konfiguration, Index und Vaults bleiben ' +
+      'vollständig erhalten. Danach aktualisiert sich Nexus wieder von selbst.',
+    buttons: ['Download-Seite öffnen', 'Später'],
+  });
+  c.close();
+  if (idx === 0) shell.openExternal(RELEASES_PAGE);
+  return true;
+}
+
 // macOS: schlanke Pruefung gegen die oeffentliche API, dann Link auf die Download-Seite.
 async function checkMac(win, log) {
   let data;
@@ -163,6 +202,10 @@ export async function setupAutoUpdate(win, log = () => {}) {
   // kein Fenster/keinen Nutzer (main.js ruft uns dort ohnehin nicht auf).
   if (!app.isPackaged) return;
   try {
+    // R25: erst der Generationswechsel-Check (Tauri >= 1.0.0). Liegt er vor,
+    // uebernimmt der Hinweis-Dialog – electron-updater wuerde die neuen
+    // Artefakte ohnehin nicht verstehen.
+    if (await checkGenerationBridge(win, log)) return;
     if (process.platform === 'win32') await checkWin(win, log);
     else if (process.platform === 'darwin') await checkMac(win, log);
     // Linux: kein Distributionsweg fuer Endnutzer -> bewusst nichts.

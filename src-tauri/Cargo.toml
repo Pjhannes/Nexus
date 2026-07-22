@@ -29,3 +29,4 @@ tauri-plugin-single-instance = "2"   # Zweitstart fokussiert bestehendes Fenster
 tauri-plugin-dialog = "2"            # nativer Ordner-Picker im Wizard
 tauri-plugin-autostart = "2"         # "Beim Windows-Start starten" (Wizard-Option)
 tauri-plugin-opener = "2"            # Vault-Ordner im Explorer oeffnen
+tauri-plugin-updater = "2"           # In-App-Auto-Update (GitHub Releases, minisign-signiert)

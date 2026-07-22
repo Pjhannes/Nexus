@@ -1,0 +1,108 @@
+name: Build Nexus Tauri (Windows + macOS)
+
+# Baut die Tauri-Generation von Nexus (>= 1.0.0):
+#   - Windows: NSIS-Installer (per-user, de/en) + signierte Updater-Artefakte
+#   - macOS:   DMG fuer arm64 UND x64 (zwei Jobs; der x64-Build laeuft als
+#              Crossbuild auf dem arm64-Runner – Rust-Target + passende
+#              Node-Sidecar-Binary werden explizit geholt)
+#
+# Ausloeser:
+#   - Tag pushen ab v1 (z. B.  git tag v1.0.0 && git push --tags )
+#     -> baut + haengt alles an einen DRAFT-Release (manuell freigeben!)
+#     -> tauri-action erzeugt/aktualisiert dabei latest.json (Auto-Update-Feed)
+#   - manuell ueber "Run workflow" (workflow_dispatch) -> baut nur Artefakte
+#
+# Updater-Signierung (minisign): braucht das Repo-Secret
+#   TAURI_SIGNING_PRIVATE_KEY  = Inhalt von C:\Users\pjhan\.tauri\nexus_updater.key
+# (Key ist ohne Passwort erzeugt; sonst zusaetzlich
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD setzen.)
+# App-Code-Signierung (Authenticode/Apple) bleibt wie bisher bewusst AUS.
+
+on:
+  push:
+    tags: ['v[1-9]*']
+  workflow_dispatch:
+
+permissions:
+  contents: write          # noetig, um den Release zu erstellen/zu beschreiben
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+            triple: x86_64-pc-windows-msvc
+            args: ''
+          - os: macos-14
+            name: macos-arm64
+            triple: aarch64-apple-darwin
+            args: '--target aarch64-apple-darwin'
+          - os: macos-14
+            name: macos-x64
+            triple: x86_64-apple-darwin
+            args: '--target x86_64-apple-darwin'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24     # gleiche Linie wie die Sidecar-Binary (node:sqlite >= 22.5)
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Dependencies installieren
+        run: npm ci
+
+      # Bei einem Tag-Push (v1.0.0) die package.json-Version aus dem Tag setzen –
+      # tauri.conf.json referenziert die Version aus package.json.
+      - name: Version aus Git-Tag setzen
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Setze package.json-Version auf $VERSION (Tag: $GITHUB_REF_NAME)"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      # Node-Sidecar-Binary fuer das ZIEL-Triple (beim mac-x64-Crossbuild explizit,
+      # sonst wuerde die arm64-Binary des Runners geladen).
+      - name: Node-Sidecar holen
+        run: node scripts/fetch-node-sidecar.mjs --triple=${{ matrix.triple }}
+
+      # tauri-action: baut (beforeBuildCommand staget resources/node_modules),
+      # signiert die Updater-Artefakte und haengt bei Tag-Push alles inkl.
+      # latest.json an einen Draft-Release.
+      - name: Build (tauri-action)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          args: ${{ matrix.args }}
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Nexus {0}', github.ref_name) || '' }}
+          releaseDraft: true
+          includeUpdaterJson: true
+
+      - name: Artefakte hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-tauri-${{ matrix.name }}
+          if-no-files-found: warn
+          path: |
+            src-tauri/target/**/release/bundle/nsis/*.exe
+            src-tauri/target/**/release/bundle/nsis/*.sig
+            src-tauri/target/**/release/bundle/dmg/*.dmg
+            src-tauri/target/**/release/bundle/macos/*.tar.gz
+            src-tauri/target/**/release/bundle/macos/*.sig

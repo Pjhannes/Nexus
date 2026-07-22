@@ -5,10 +5,9 @@
 // ins Git-Repo (src-tauri/binaries/ steht in .gitignore) – dieses Script holt sie
 // bei Bedarf: einmal lokal pro Entwickler-Maschine, und in der CI pro Runner.
 //
-// Es wird immer nur die Binary fuer die AKTUELLE Plattform geladen (Windows laedt
-// node.exe direkt, macOS entpackt bin/node aus dem offiziellen tar.gz). Die macOS-
-// Runner der CI holen ihre eigene – Cross-Fetch waere sinnlos (Dateirechte gehen
-// unter Windows verloren).
+// Standard: Binary fuer die AKTUELLE Plattform. Fuer CI-Crossbuilds (z. B.
+// x86_64-DMG auf einem arm64-Mac-Runner) laesst sich das Ziel explizit setzen:
+//   node scripts/fetch-node-sidecar.mjs --triple=x86_64-apple-darwin
 //
 // Version angepinnt auf die lokal getestete LTS-Linie (node:sqlite braucht >= 22.5).
 import { existsSync, mkdirSync, createWriteStream, renameSync, rmSync, chmodSync } from 'fs';
@@ -21,12 +20,24 @@ const NODE_VERSION = '24.16.0';
 const __dir = dirname(fileURLToPath(import.meta.url));
 const BIN_DIR = join(__dir, '..', 'src-tauri', 'binaries');
 
-function targetTriple() {
+// triple -> Download-Koordinaten bei nodejs.org
+const TARGETS = {
+  'x86_64-pc-windows-msvc': { kind: 'exe', dist: 'win-x64' },
+  'aarch64-apple-darwin':   { kind: 'tgz', dist: 'darwin-arm64' },
+  'x86_64-apple-darwin':    { kind: 'tgz', dist: 'darwin-x64' },
+};
+
+function currentTriple() {
   if (process.platform === 'win32' && process.arch === 'x64') return 'x86_64-pc-windows-msvc';
   if (process.platform === 'darwin' && process.arch === 'arm64') return 'aarch64-apple-darwin';
   if (process.platform === 'darwin' && process.arch === 'x64') return 'x86_64-apple-darwin';
   throw new Error(`Nicht unterstuetzte Plattform: ${process.platform}/${process.arch}`);
 }
+
+const argTriple = process.argv.find(a => a.startsWith('--triple='))?.slice(9);
+const triple = argTriple || currentTriple();
+const target = TARGETS[triple];
+if (!target) throw new Error(`Unbekanntes Triple: ${triple} (bekannt: ${Object.keys(TARGETS).join(', ')})`);
 
 async function download(url, dest) {
   console.log(`[node-sidecar] Lade ${url} ...`);
@@ -41,8 +52,7 @@ async function download(url, dest) {
   renameSync(tmp, dest);
 }
 
-const triple = targetTriple();
-const ext = process.platform === 'win32' ? '.exe' : '';
+const ext = target.kind === 'exe' ? '.exe' : '';
 const dest = join(BIN_DIR, `node-${triple}${ext}`);
 
 if (existsSync(dest)) {
@@ -51,13 +61,12 @@ if (existsSync(dest)) {
 }
 mkdirSync(BIN_DIR, { recursive: true });
 
-if (process.platform === 'win32') {
+if (target.kind === 'exe') {
   // Windows: node.exe liegt einzeln im dist-Ordner – kein Archiv noetig.
-  await download(`https://nodejs.org/dist/v${NODE_VERSION}/win-x64/node.exe`, dest);
+  await download(`https://nodejs.org/dist/v${NODE_VERSION}/${target.dist}/node.exe`, dest);
 } else {
   // macOS: offizielles tar.gz, daraus nur bin/node entnehmen.
-  const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
-  const name = `node-v${NODE_VERSION}-darwin-${arch}`;
+  const name = `node-v${NODE_VERSION}-${target.dist}`;
   const tgz = join(BIN_DIR, `${name}.tar.gz`);
   await download(`https://nodejs.org/dist/v${NODE_VERSION}/${name}.tar.gz`, tgz);
   const r = spawnSync('tar', ['-xzf', tgz, '-C', BIN_DIR, `${name}/bin/node`], { stdio: 'inherit' });

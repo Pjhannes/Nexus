@@ -34,8 +34,9 @@ use std::time::{Duration, Instant};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Listener, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
-use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_updater::UpdaterExt;
 
 // Debug (= `tauri dev`): Port 3002, Server kommt vom beforeDevCommand,
 // Datenordner = Repo-Wurzel (wie Electron-Dev). Release: Port 3000, Sidecar.
@@ -373,6 +374,73 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
     }
 }
 
+// ── Auto-Update (Phase 4; Paritaet zu electron/updater.js, Windows-Pfad) ──────
+// Wie Electron: NUR in der gepackten App, Pruefung ~3 s nach dem Start, und es
+// passiert nichts ungefragt – erst Frage vor dem Download, dann Frage vor dem
+// Neustart. Anders als Electron laeuft die Installation danach IN-APP (Tauri-
+// Updater wendet das signierte NSIS-Paket direkt an, minisign-verifiziert) –
+// kein manuelles Installer-Herunterladen mehr, genau wie von Paul gewuenscht.
+// V1 mit nativen Dialogen; das gestylte update.html-Fenster ist ein dokumen-
+// tierter Feinschliff (Fortschrittsanzeige), kein Funktionsverlust.
+fn schedule_update_check(app: &AppHandle) {
+    if cfg!(debug_assertions) {
+        return; // Dev: keine Releases/Signatur -> wie Electron nichts tun
+    }
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(3));
+        // Eigener Thread + block_on: die Dialoge duerfen hier blockieren, ohne
+        // den Main-Thread oder die async-Runtime-Worker aufzuhalten.
+        if let Err(e) = tauri::async_runtime::block_on(run_update_check(&handle)) {
+            log::warn!("Update-Check fehlgeschlagen: {e}");
+        }
+    });
+}
+
+async fn run_update_check(app: &AppHandle) -> Result<(), String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
+        log::info!("Updater: keine neue Version");
+        return Ok(());
+    };
+    let current = app.package_info().version.to_string();
+    let wants = app
+        .dialog()
+        .message(format!(
+            "Version {} ist verfügbar.\n\nInstalliert: {current}.\n\nJetzt herunterladen und installieren? Deine Daten bleiben erhalten.",
+            update.version
+        ))
+        .title("Update verfügbar")
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Herunterladen & installieren".into(),
+            "Später".into(),
+        ))
+        .blocking_show();
+    if !wants {
+        return Ok(());
+    }
+    log::info!("Updater: lade Version {} ...", update.version);
+    update
+        .download_and_install(|_chunk, _total| {}, || log::info!("Updater: Download fertig"))
+        .await
+        .map_err(|e| e.to_string())?;
+    // Auf Windows beendet der Updater die App fuer den Installer i. d. R. selbst;
+    // falls nicht (andere Plattformen), bieten wir den Neustart an.
+    let restart = app
+        .dialog()
+        .message("Das Update wurde installiert. Jetzt neu starten?")
+        .title("Update bereit")
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Neu starten".into(),
+            "Später".into(),
+        ))
+        .blocking_show();
+    if restart {
+        app.restart();
+    }
+    Ok(())
+}
+
 // ── Wizard-Commands (Ersatz fuer die wizard:* Electron-IPC-Handler) ───────────
 // Nur vom Wizard-Fenster aufgerufen (lokale App-URL -> invoke erlaubt).
 #[derive(serde::Deserialize, Default)]
@@ -455,6 +523,7 @@ async fn wizard_finish(app: AppHandle, opts: WizardOpts) -> Result<serde_json::V
     if launch {
         ensure_server(&app)?;
         create_main_window(&app).map_err(|e| e.to_string())?;
+        schedule_update_check(&app);
     }
     if guide {
         if let Err(e) = ensure_server(&app) {
@@ -498,6 +567,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             wizard_default_vault_path,
             wizard_browse,
@@ -563,6 +633,7 @@ pub fn run() {
                     std::process::exit(1);
                 }
                 create_main_window(&handle)?;
+                schedule_update_check(&handle);
             }
             Ok(())
         })

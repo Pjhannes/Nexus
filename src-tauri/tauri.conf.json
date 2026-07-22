@@ -6,7 +6,8 @@
   "build": {
     "frontendDist": "../public",
     "devUrl": "http://localhost:3002",
-    "beforeDevCommand": "node scripts/dev-tauri.mjs"
+    "beforeDevCommand": "node scripts/dev-tauri.mjs",
+    "beforeBuildCommand": "node scripts/prepare-sidecar-resources.mjs"
   },
   "app": {
     "withGlobalTauri": true,
@@ -15,14 +16,38 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg5MUMzRDQ3OEUwOEI5RDMKUldUVHVRaU9SejBjaVI4K2ZPRWJHOGF3bzV2WWw3QURwcEFjNGh2UnRlWEFkNEFRUlkxZExBVGQK",
+      "endpoints": [
+        "https://github.com/Pjhannes/Nexus/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis", "app", "dmg"],
+    "createUpdaterArtifacts": true,
     "externalBin": ["binaries/node"],
     "resources": {
       "../src": "src",
       "../public": "public",
-      "../package.json": "package.json"
+      "../package.json": "package.json",
+      "resources/node_modules": "node_modules"
+    },
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["German", "English"],
+        "displayLanguageSelector": true,
+        "installerIcon": "../build/icon.ico",
+        "headerImage": "../build/installerHeader.bmp",
+        "sidebarImage": "../build/installerSidebar.bmp"
+      }
     },
     "icon": [
       "icons/32x32.png",

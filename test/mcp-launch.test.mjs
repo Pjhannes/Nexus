@@ -24,6 +24,7 @@ import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
+import { mcpSession, toolJson } from './mcp-client.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const SERVER_JS = join(__dir, '..', 'src', 'server.js');
@@ -56,61 +57,8 @@ const nodeCopy = join(binDir, process.platform === 'win32' ? 'node.exe' : 'node'
 copyFileSync(process.execPath, nodeCopy);
 if (process.platform !== 'win32') chmodSync(nodeCopy, 0o755);
 
-// ── Mini-MCP-Client (JSON-RPC ueber stdio, eine Nachricht pro Zeile) ─────────
-// Robust gegen Spawn-Fehler (AV blockt die frische node.exe) und Server-Crash:
-// 'error'/'exit' rejecten alle offenen Requests sofort statt in den Timeout zu
-// laufen oder als unbehandeltes Event den Test ausserhalb des try/catch zu killen.
-function mcpSession(command, args, env) {
-  const child = spawn(command, args, { env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
-  let buf = '';
-  const pending = new Map();
-  let stderrTail = '';
-  let dead = null;
-  const failAll = (err) => {
-    dead = err;
-    for (const [, entry] of pending) { clearTimeout(entry.t); entry.reject(err); }
-    pending.clear();
-  };
-  child.on('error', (e) => failAll(new Error(`Spawn fehlgeschlagen: ${e.message}`)));
-  child.on('exit', (code, sig) => {
-    if (pending.size) failAll(new Error(`Server-Exit (code ${code}, signal ${sig}). stderr: ${stderrTail.slice(-500)}`));
-  });
-  child.stderr.on('data', d => { stderrTail = (stderrTail + d.toString()).slice(-3000); });
-  child.stdout.on('data', d => {
-    buf += d.toString();
-    let i;
-    while ((i = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
-      if (!line) continue;
-      let msg; try { msg = JSON.parse(line); } catch { continue; }
-      if (msg.id !== undefined && pending.has(msg.id)) {
-        const entry = pending.get(msg.id);
-        clearTimeout(entry.t); pending.delete(msg.id); entry.resolve(msg);
-      }
-    }
-  });
-  let seq = 0;
-  function request(method, params, timeoutMs = 20_000) {
-    const id = ++seq;
-    return new Promise((resolve, reject) => {
-      if (dead) return reject(dead);
-      const t = setTimeout(() => { pending.delete(id); reject(new Error(`Timeout bei ${method}. stderr: ${stderrTail.slice(-400)}`)); }, timeoutMs);
-      pending.set(id, { resolve, reject, t });
-      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
-    });
-  }
-  function notify(method, params) {
-    try { child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n'); } catch {}
-  }
-  const exited = new Promise(r => child.once('exit', r));
-  return { child, request, notify, exited, getStderr: () => stderrTail };
-}
-
-// Tool-Antwort -> geparstes JSON (list_vaults liefert JSON-Text im content).
-function toolJson(msg) {
-  const text = (msg.result?.content ?? []).map(c => c.text).join('');
-  try { return JSON.parse(text); } catch { return { __raw: text }; }
-}
+// ── Mini-MCP-Client: geteilt mit mcp-packaged.test.mjs ──────────────────────
+// (Implementierung in test/mcp-client.mjs – robust gegen Spawn-Fehler/Crash.)
 
 // ── Testlauf ─────────────────────────────────────────────────────────────────
 const session = mcpSession(nodeCopy, [SERVER_JS], { NEXUS_DATA_DIR: scratch });

@@ -5,3 +5,7 @@
 
 # Node-Sidecar-Binary (~80 MB, via scripts/fetch-node-sidecar.mjs geholt – nie ins Repo)
 /binaries/
+
+# Gestagtes Produktions-node_modules fuer den Release-Bundle
+# (via scripts/prepare-sidecar-resources.mjs erzeugt – nie ins Repo)
+/resources/
