@@ -17,6 +17,8 @@ const stub = `
 const IMG_EXT=['.png','.jpg','.jpeg','.gif','.webp','.svg','.bmp','.avif'];
 function esc(s){return (s==null?'':s).toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function escHtml(s){return (s==null?'':s).toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function aq(s){return (s==null?'':s).toString().replace(/"/g,'&quot;');}
+function dangerScheme(u){return /^(javascript|data|vbscript|file):/i.test((u==null?'':u).toString().replace(/[\\u0000-\\u0020]+/g,''));}
 function fileUrl(p){return '/api/file?path='+encodeURIComponent(p);}
 let vaultTree=[{type:'folder',name:'Wissen',children:[{type:'file',name:'Controlling.md',path:'Wissen/Controlling.md',ext:'.md'}]},{type:'file',name:'bild.png',path:'bild.png',ext:'.png'}];
 let selectedPath='Start.md';
@@ -97,6 +99,16 @@ ok('javascript:-URL neutralisiert', !/javascript:/i.test(evil) && evil.includes(
 
 const gluedHtml = renderMarkdown('Absatz direkt davor\n<svg viewBox="0 0 10 10"><rect/></svg>').html;
 ok('HTML-Block ohne Leerzeile trennt vom Absatz', gluedHtml.includes('<p>Absatz direkt davor</p>') && gluedHtml.includes('<svg viewBox="0 0 10 10">'));
+
+// R25 Sicherheits-Regression (Stored-XSS): Attribut-Ausbruch via " + Scheme-Bypass via Steuerzeichen.
+const xssImg = renderMarkdown('![a" onerror=hack() b](http://h/i.png)').html;
+ok('Bild-alt: Anfuehrungszeichen escaped (kein Attribut-Ausbruch)', xssImg.includes('&quot;') && !/alt="a"\s+onerror/i.test(xssImg));
+const xssLink = renderMarkdown('[k](http://h/a"onmouseover=hack())').html;
+ok('Link-href: Anfuehrungszeichen escaped', xssLink.includes('&quot;') && !/href="http:\/\/h\/a"onmouseover/i.test(xssLink));
+const xssPlain = renderMarkdown('[k](javascript:hack())').html;
+ok('Link: javascript:-Schema nicht verlinkt', !/href="[^"]*javascript/i.test(xssPlain));
+const xssCtrl = renderMarkdown('[k](' + String.fromCharCode(8) + 'javascript:hack())').html;
+ok('Link: Steuerzeichen-Bypass (\\x08javascript:) neutralisiert', !/href="[^"]*javascript/i.test(xssCtrl));
 
 console.log(`\n${fail === 0 ? '\x1b[32m' : '\x1b[31m'}${pass} bestanden, ${fail} Fehler\x1b[0m`);
 process.exit(fail === 0 ? 0 : 1);

@@ -1143,6 +1143,15 @@ function folderIcon(name){const c=_customFolderIcons();if(c[name])return c[name]
 async function api(url,opts){const r=await fetch(url,opts);return r.json();}
 function esc(s){return (s??'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function escHtml(s){return (s??'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+// Sicherheits-Fix R25 (Stored-XSS): Renderer-Werte sind bereits durch escHtml
+// gelaufen (& < > escaped, ABER NICHT "), landen aber teils in "..."-Attributen.
+// Ohne " zu neutralisieren bricht ein " in einer Notiz aus dem Attribut aus und
+// injiziert z. B. onerror=. aq() = Attribut-Quote-Escape (nur ", kein Doppel-Escape von &).
+function aq(s){return (s??'').toString().replace(/"/g,'&quot;');}
+// Gefaehrliches Link-Schema? Fuehrende Steuerzeichen/Whitespace ZUERST strippen –
+// Browser ignorieren z. B. \x08 vor der Scheme-Aufloesung, ein reiner \s-Test
+// (der C0-Steuerzeichen nicht erfasst) waere sonst umgehbar.
+function dangerScheme(u){return /^(javascript|data|vbscript|file):/i.test((u??"").toString().replace(/[\u0000-\u0020]+/g,""));}
 function setCrumb(html){document.getElementById('crumb').innerHTML=html;}
 let toastTimer;
 function toast(msg,type=''){const el=document.getElementById('toast');el.textContent=msg;el.className='show'+(type?' '+type:'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),3200);}
@@ -1851,8 +1860,8 @@ function renderWiki(inner){
   const sp=typeof selectedPath!=='undefined'?selectedPath:null;
   const resolved=file?resolveWiki(file):sp;
   if(resolved){ if(resolved!==sp)_mdLinks.push(resolved);
-    return '<a class="wikilink" data-path="'+esc(resolved)+'"'+(anchor?' data-anchor="'+anchor+'"':'')+'>'+label+'</a>';}
-  return '<a class="wikilink broken" data-search="'+file+'">'+label+'</a>';
+    return '<a class="wikilink" data-path="'+esc(resolved)+'"'+(anchor?' data-anchor="'+aq(anchor)+'"':'')+'>'+label+'</a>';}
+  return '<a class="wikilink broken" data-search="'+aq(file)+'">'+label+'</a>';
 }
 function renderEmbed(inner){
   let parts=inner.split('|'); let tgt=parts[0].trim(); let size=parts[1];
@@ -1860,12 +1869,12 @@ function renderEmbed(inner){
   if(IMG_EXT.includes(ext)){
     const resolved=resolveAssetPath(tgt);
     const w=(size&&/^\d+$/.test(size.trim()))?' width="'+size.trim()+'"':'';
-    return '<img class="md-img" src="'+(resolved?fileUrl(resolved):tgt)+'"'+w+' alt="'+tgt+'">';
+    return '<img class="md-img" src="'+aq(resolved?fileUrl(resolved):tgt)+'"'+w+' alt="'+aq(tgt)+'">';
   }
   let file=tgt, anchor=''; const hi=tgt.indexOf('#'); if(hi>=0){file=tgt.slice(0,hi);anchor=tgt.slice(hi+1);}
   const resolved=resolveWiki(file);
   if(resolved){_mdLinks.push(resolved);
-    return '<div class="transclude" data-embed="'+esc(resolved)+'"'+(anchor?' data-anchor="'+anchor+'"':'')+'><div class="tc-head">⧉ '+file+(anchor?' › '+anchor:'')+' <span style="margin-left:auto;color:var(--dim)">öffnen</span></div><div class="tc-body">…</div></div>';}
+    return '<div class="transclude" data-embed="'+esc(resolved)+'"'+(anchor?' data-anchor="'+aq(anchor)+'"':'')+'><div class="tc-head">⧉ '+file+(anchor?' › '+anchor:'')+' <span style="margin-left:auto;color:var(--dim)">öffnen</span></div><div class="tc-body">…</div></div>';}
   return '<div class="transclude broken"><div class="tc-head">⧉ '+tgt+' — nicht gefunden</div></div>';
 }
 
@@ -1875,14 +1884,14 @@ function mdInline(text){
   text=text.replace(/`([^`]+?)`/g,(m,c)=>keep('<code>'+escHtml(c)+'</code>'));
   text=text.replace(/\$(?!\s)([^$\n]+?)(?<!\s)\$/g,(m,c)=>keep('<span class="math-inline" data-tex="'+esc(c)+'"><span class="math-raw">'+escHtml(c)+'</span></span>'));
   text=escHtml(text);
-  text=text.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,(m,a,u)=>keep('<img class="md-img" alt="'+a+'" src="'+u+'">'));
+  text=text.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,(m,a,u)=>keep('<img class="md-img" alt="'+aq(a)+'" src="'+aq(u)+'">'));
   text=text.replace(/!\[\[([^\]]+?)\]\]/g,(m,inner)=>keep(renderEmbed(inner)));
   text=text.replace(/\[\[([^\]]+?)\]\]/g,(m,inner)=>keep(renderWiki(inner)));
   // Gefaehrliche Schemes (javascript:/data:/...) nicht als Link rendern,
   // sondern als Text stehen lassen (R25-Review: mit csp:null wuerde ein Klick
   // auf [x](javascript:...) sonst beliebiges Notiz-JS ausfuehren).
-  text=text.replace(/\[([^\]]+?)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,(m,t,u)=>/^\s*(javascript|data|vbscript|file)\s*:/i.test(u)?m:keep('<a class="ext" href="'+u+'" target="_blank" rel="noopener">'+t+'</a>'));
-  text=text.replace(/(^|[\s(])((?:https?:\/\/)[^\s<)]+)/g,(m,p,u)=>p+keep('<a class="ext" href="'+u+'" target="_blank" rel="noopener">'+u+'</a>'));
+  text=text.replace(/\[([^\]]+?)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,(m,t,u)=>dangerScheme(u)?m:keep('<a class="ext" href="'+aq(u)+'" target="_blank" rel="noopener">'+t+'</a>'));
+  text=text.replace(/(^|[\s(])((?:https?:\/\/)[^\s<)]+)/g,(m,p,u)=>p+keep('<a class="ext" href="'+aq(u)+'" target="_blank" rel="noopener">'+u+'</a>'));
   text=text.replace(/\*\*\*([^*]+?)\*\*\*/g,'<strong><em>$1</em></strong>');
   text=text.replace(/\*\*([^*]+?)\*\*/g,'<strong>$1</strong>');
   text=text.replace(/__([^_]+?)__/g,'<strong>$1</strong>');
