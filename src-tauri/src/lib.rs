@@ -283,7 +283,11 @@ fn ensure_server(app: &AppHandle) -> Result<(), String> {
 
 fn kill_sidecar(app: &AppHandle) {
     if let Some(shell) = app.try_state::<Shell>() {
-        if let Some(mut child) = shell.child.lock().unwrap().take() {
+        // Lock nur zum Herausnehmen halten, NICHT waehrend kill()+wait()
+        // (Review): sonst blockiert ein paralleler RunEvent::Exit-Pfad kurz auf
+        // .lock(). take() ist idempotent -> der zweite Aufrufer bekommt None.
+        let child = shell.child.lock().unwrap().take();
+        if let Some(mut child) = child {
             let _ = child.kill();
             let _ = child.wait();
         }
@@ -721,8 +725,14 @@ async fn run_update_check(app: &AppHandle) -> Result<(), String> {
     update_progress(app, 0, "Wird heruntergeladen…");
     let mut downloaded: u64 = 0;
     let progress_handle = app.clone();
-    let install_result = update
-        .download_and_install(
+    // Download und Install BEWUSST getrennt (R25-Audit #4, live reproduziert):
+    // Der kombinierte download_and_install() laesst unseren Node-Sidecar bis in
+    // den Installer hinein am Leben. Tauri beendet fuer den NSIS-Install nur
+    // app.exe selbst – das fremd benannte node.exe-Kind bleibt und sperrt sich
+    // selbst -> "Fehler beim Ueberschreiben der Datei ...\node.exe". Deshalb:
+    // erst laden, dann Sidecar killen, dann installieren.
+    let bytes = match update
+        .download(
             move |chunk_length, content_length| {
                 downloaded += chunk_length as u64;
                 let pct = content_length
@@ -734,9 +744,36 @@ async fn run_update_check(app: &AppHandle) -> Result<(), String> {
             },
             || log::info!("Updater: Download fertig"),
         )
+        .await
+    {
+        Ok(b) => b,
+        Err(e) => {
+            close_update_window(app);
+            return Err(e.to_string());
+        }
+    };
+    // Sidecar beenden, BEVOR der Installer die Dateien anfasst (node.exe frei).
+    update_progress(app, 100, "Wird installiert…");
+    log::info!("Updater: beende Node-Sidecar vor der Installation");
+    kill_sidecar(app);
+    if let Err(e) = update.install(bytes) {
+        log::error!("Updater: Installation fehlgeschlagen: {e}");
+        // Der Sidecar ist bereits tot -> das Hauptfenster (localhost:3000) hat
+        // kein Backend mehr. Nutzer nicht stumm mit totem Fenster sitzen lassen
+        // (Review-Fund): informieren + Neustart anbieten (relauncht die noch
+        // installierte bisherige Version, respawnt den Sidecar).
+        let idx = update_prompt(
+            app,
+            "Update fehlgeschlagen",
+            "Die Installation konnte nicht abgeschlossen werden.".into(),
+            "Nexus muss neu gestartet werden, um weiterzuarbeiten.".into(),
+            &["Neu starten", "Später"],
+        )
         .await;
-    if let Err(e) = install_result {
         close_update_window(app);
+        if idx == 0 {
+            app.restart();
+        }
         return Err(e.to_string());
     }
     // Auf Windows beendet der Updater die App fuer den Installer i. d. R. selbst;
