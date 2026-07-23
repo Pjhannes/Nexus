@@ -94,6 +94,55 @@ fn config_path(data_dir: &Path) -> PathBuf {
     data_dir.join("nexus.config.json")
 }
 
+// Windows-APIs (u. a. Tauris resource_dir()/document_dir()) liefern oft
+// \\?\-Extended-Length-Pfade. Fuer die eigene Rust-Seite unproblematisch,
+// aber als Kommandozeilen-Argument an node.exe fuehrt das Praefix zu
+// Fehlparsing beim Modul-Resolving (siehe ensure_server). Ohne \\?\
+// funktionieren dieselben Pfade unter der ueblichen MAX_PATH-Grenze weiterhin
+// einwandfrei -> einfach abstreifen. Sonderfall \\?\UNC\server\share\... ist
+// KEIN normaler Pfad nach dem Stripping (das waere "UNC\server\share\..."),
+// sondern muss zu \\server\share\... werden (Review-Befund).
+fn strip_verbatim_prefix(p: &Path) -> PathBuf {
+    let Some(s) = p.to_str() else { return p.to_path_buf() };
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{rest}"))
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(rest)
+    } else {
+        p.to_path_buf()
+    }
+}
+
+#[cfg(test)]
+mod strip_verbatim_prefix_tests {
+    use super::strip_verbatim_prefix;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn strips_plain_verbatim_prefix() {
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"\\?\C:\Users\pjhan\AppData\Local\Nexus")),
+            PathBuf::from(r"C:\Users\pjhan\AppData\Local\Nexus")
+        );
+    }
+
+    #[test]
+    fn rewrites_unc_verbatim_prefix_to_plain_unc() {
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"\\?\UNC\server\share\Nexus")),
+            PathBuf::from(r"\\server\share\Nexus")
+        );
+    }
+
+    #[test]
+    fn leaves_non_verbatim_paths_unchanged() {
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"C:\Users\pjhan\AppData\Local\Nexus")),
+            PathBuf::from(r"C:\Users\pjhan\AppData\Local\Nexus")
+        );
+    }
+}
+
 // ── Server-Lebenszyklus ───────────────────────────────────────────────────────
 fn port_open(port: u16) -> bool {
     let addr: SocketAddr = ([127, 0, 0, 1], port).into();
@@ -131,16 +180,20 @@ fn ensure_server(app: &AppHandle) -> Result<(), String> {
         }
     }
     // Gebuendelte Node-Binary liegt (externalBin) neben der App-Exe als "node".
-    let exe_dir = std::env::current_exe()
-        .map_err(|e| e.to_string())?
-        .parent()
-        .ok_or("Exe ohne Parent-Ordner")?
-        .to_path_buf();
+    let exe_dir = strip_verbatim_prefix(
+        std::env::current_exe()
+            .map_err(|e| e.to_string())?
+            .parent()
+            .ok_or("Exe ohne Parent-Ordner")?,
+    );
     let node = exe_dir.join(if cfg!(windows) { "node.exe" } else { "node" });
-    let ui_server = app
-        .path()
-        .resource_dir()
-        .map_err(|e| e.to_string())?
+    // strip_verbatim_prefix: resource_dir() liefert unter Windows einen
+    // \\?\-Extended-Length-Pfad. Node.js (>= 22, verifiziert mit v24.16.0)
+    // crasht beim Aufloesen des Hauptmoduls darauf mit "EISDIR: lstat 'C:'"
+    // (Modul-Resolving parst das \\?\-Praefix falsch) – live reproduziert beim
+    // ersten Tauri-Installtest. Fuer Pfade unter MAX_PATH ist der Praefix
+    // ohnehin unnoetig, also vor der Weitergabe an node.exe abstreifen.
+    let ui_server = strip_verbatim_prefix(&app.path().resource_dir().map_err(|e| e.to_string())?)
         .join("src")
         .join("ui-server.js");
     if !node.exists() {
@@ -454,7 +507,7 @@ struct WizardOpts {
 
 #[tauri::command]
 fn wizard_default_vault_path(app: AppHandle) -> Result<String, String> {
-    let docs = app.path().document_dir().map_err(|e| e.to_string())?;
+    let docs = strip_verbatim_prefix(&app.path().document_dir().map_err(|e| e.to_string())?);
     Ok(docs.join("Nexus Vaults").to_string_lossy().into_owned())
 }
 
@@ -475,10 +528,7 @@ fn seed_config(app: &AppHandle, vaults_root: Option<&str>) -> Result<(), String>
     let shell = app.state::<Shell>();
     let root: PathBuf = match vaults_root.map(str::trim).filter(|s| !s.is_empty()) {
         Some(s) => PathBuf::from(s),
-        None => app
-            .path()
-            .document_dir()
-            .map_err(|e| e.to_string())?
+        None => strip_verbatim_prefix(&app.path().document_dir().map_err(|e| e.to_string())?)
             .join("Nexus Vaults"),
     };
     let vault_path = root.join("knowledge-base");
