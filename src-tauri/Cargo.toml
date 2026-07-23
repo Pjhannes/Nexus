@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.5.2"
+version = "1.0.0"
 description = "Nexus – persönlicher Wissens-Workspace mit Claude-Anbindung"
 authors = ["Paul-Johannes Hunold"]
 license = ""
