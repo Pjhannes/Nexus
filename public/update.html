@@ -46,7 +46,7 @@
 </style>
 </head>
 <body>
-  <div class="bar"></div>
+  <div class="bar" data-tauri-drag-region></div>
   <div class="wrap">
     <div class="head">
       <svg width="30" height="30" viewBox="0 0 100 100" aria-hidden="true">
@@ -75,7 +75,16 @@
   </div>
 
 <script>
-  const api = window.nexusAPI;
+  // Electron liefert window.nexusAPI (preload); die Tauri-Shell hat kein
+  // preload-Aequivalent -> gleiche schmale API ueber Events nachgebaut
+  // (Rust-Seite: create_update_window/update_prompt/update_progress in
+  // src-tauri/src/lib.rs). Dieses Fenster laedt als lokale App-Origin
+  // (WebviewUrl::App), invoke waere hier zwar erlaubt, aber Events halten
+  // die API zu nexusAPI identisch und brauchen keine eigenen Commands.
+  const api = window.nexusAPI || (window.__TAURI__ && {
+    onUpdateView: (cb) => window.__TAURI__.event.listen('update:view', (e) => cb(e.payload)),
+    updateAction: (index) => window.__TAURI__.event.emit('update:action', index),
+  });
   const $ = (id) => document.getElementById(id);
   let cancelIndex = -1;
 

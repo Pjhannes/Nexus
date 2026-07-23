@@ -1,85 +1,91 @@
 # Nexus – Bauen & Verteilen (Release-Handbuch)
 
-Kurzanleitung, wie aus dem Quellcode (deiner **Entwickler-Version**) die fertigen,
-gehärteten Installer für **Windows** und **macOS** entstehen und wie du sie als
-**Update-Paket** über bestehende Installationen spielst.
+Kurzanleitung, wie aus dem Quellcode ein neues, signiertes Tauri-Release entsteht
+und wie bestehende Installationen es automatisch bekommen.
 
-> **Kein Auto-Update.** Ein „Update" = ein neuer, versionierter Installer, den du drüber
-> installierst. Config/Index/Vault bleiben dabei erhalten (liegen im Nutzer-Datenordner,
-> nicht im Programmordner).
+> **Es gibt Auto-Update.** Der In-App-Updater (`tauri-plugin-updater`) prüft ca. 3 s nach
+> dem Start gegen die GitHub-Releases-API, fragt vor dem Download **und** vor dem
+> Neustart, und installiert das signierte Paket direkt – kein manueller Installer-Download
+> für Nutzer nötig. Config/Index/Vault bleiben dabei erhalten (liegen im Nutzer-Datenordner,
+> nicht im Installationsordner).
 
 ---
 
 ## 0. Versionsnummer erhöhen (vor jedem Release)
 
-**Empfohlen (lokal):**
-
 ```powershell
-npm version patch    # 0.3.1 -> 0.3.2  (oder: minor / major)
+npm version patch    # 1.0.0 -> 1.0.1  (oder: minor / major)
 ```
 
-Das aktualisiert `package.json` und legt einen Git-Tag `vX.Y.Z` an. Danach `git push --tags`.
+Aktualisiert `package.json` (+ `package-lock.json`), committet und legt einen Git-Tag
+`vX.Y.Z` an. `tauri.conf.json` zieht die Version automatisch aus `package.json`
+(`"version": "../package.json"`) – keine zweite Stelle zum Pflegen.
+
+**Eine Ausnahme:** `src-tauri/Cargo.toml` hat ein eigenes `version`-Feld, das Cargo für
+sich selbst nutzt (Crate-Metadaten) und das `npm version` nicht anfasst. Für saubere
+`cargo`-Metadaten manuell mitziehen:
+
+```powershell
+# Cargo.toml: version = "X.Y.Z" von Hand editieren, dann:
+cd src-tauri
+cargo check --release   # aktualisiert Cargo.lock
+cd ..
+git add src-tauri/Cargo.toml src-tauri/Cargo.lock
+git commit -m "chore: Cargo.toml Version auf X.Y.Z"
+```
+
+Danach `git push && git push --tags`.
 
 > **Robust gegen Vergessen:** Der CI-Workflow setzt die `package.json`-Version beim Build
-> ohnehin **aus dem gepushten Tag** (`v0.3.2` → Version `0.3.2`). Dadurch heißen die
-> Installer **immer** wie der Tag – auch wenn `npm version` mal vergessen wurde und der
-> Tag von Hand (z. B. über die GitHub-Oberfläche) gesetzt wird. Wichtig bleibt nur, dass
-> der **Tag** die gewünschte Versionsnummer trägt.
+> ohnehin **aus dem gepushten Tag**. Wichtig bleibt nur, dass der **Tag** die gewünschte
+> Versionsnummer trägt (Format `vX.Y.Z`, z. B. `v1.0.1`).
 
 ---
 
-## 1. Windows-Installer (lokal, schnell)
-
-Auf deinem Windows-PC:
+## 1. Bauen (lokal, zum Testen)
 
 ```powershell
-npm install         # nur beim ersten Mal / nach Dependency-Änderungen
-npm run dist        # baut NSIS-Installer + Portable nach dist\
+npm run tauri build
 ```
 
-Ergebnis in `dist\`:
-- `Nexus Setup X.Y.Z.exe`  → der Installer (Doppelklick, installiert nach `%LOCALAPPDATA%\Programs\Nexus`)
-- `Nexus-X.Y.Z-portable.exe` → portable Variante (ohne Installation startbar)
+Baut Windows-NSIS (+ signierte Updater-Artefakte, sofern `TAURI_SIGNING_PRIVATE_KEY`
+lokal als Umgebungsvariable gesetzt ist – sonst bricht nur der Signier-Schritt ab, der
+NSIS-Installer selbst entsteht trotzdem und reicht zum Installtest).
 
-Schnelltest ohne Installer (entpackte App): `npm run dist:dir` → `dist\win-unpacked\Nexus.exe`.
+Ergebnis: `src-tauri\target\release\bundle\nsis\Nexus_X.Y.Z_x64-setup.exe`
+
+macOS lässt sich auf Windows nicht bauen (Cross-Compile fürs Signieren/Bundling reicht
+nicht) – dafür immer den CI-Workflow nutzen (Abschnitt 2).
 
 ---
 
-## 2. macOS-DMG (über GitHub Actions – kein eigener Mac nötig)
-
-Eine **DMG** lässt sich nur auf macOS bauen. Das übernimmt der CI-Workflow
-`.github/workflows/release.yml` auf einem macOS-Runner.
+## 2. Release bauen + verteilen (über GitHub Actions)
 
 ```powershell
-git push                 # Code hochladen (privates Repo)
-git push --tags          # Tag vX.Y.Z pushen  -> startet den Build
+git push                 # Code hochladen
+git push --tags          # Tag vX.Y.Z pushen -> startet den Build
 ```
 
-→ Actions baut **Windows + macOS** parallel und legt einen **Draft-Release** mit allen
-Dateien an (`Nexus-X.Y.Z-arm64.dmg`, `Nexus-X.Y.Z-x64.dmg`, Windows-Installer).
-Draft im GitHub-Release-Tab prüfen → „Publish".
+→ `.github/workflows/tauri-release.yml` baut **Windows + macOS (arm64 UND x64)**
+parallel, signiert die Updater-Artefakte (minisign, Secret `TAURI_SIGNING_PRIVATE_KEY`)
+und legt einen **Draft-Release** mit allen Dateien + `latest.json` (Auto-Update-Feed) an.
+Draft im GitHub-Release-Tab prüfen → „Publish". **Erst danach** sehen installierte Apps
+das Update (der Updater fragt gegen `releases/latest`, Drafts zählen nicht).
 
-Ohne Tag: im Actions-Tab **„Run workflow"** → baut nur Artefakte (zum Testen).
+Ohne Tag: im Actions-Tab **„Run workflow"** (workflow_dispatch) → baut nur Artefakte
+zum Testen, ohne Release/Tag anzufassen.
 
-> Apple-Silicon-Mac → `arm64`-DMG, Intel-Mac → `x64`-DMG.
-
----
-
-## 3. Update einspielen (auf den festen Installationen)
-
-- **Windows:** neuen `Nexus Setup X.Y.Z.exe` ausführen → installiert über die alte Version.
-  Da `appId` gleich bleibt (`com.nexusapp.nexus`) und `deleteAppDataOnUninstall:false` gesetzt
-  ist, bleiben Config + Suchindex in `%APPDATA%\Nexus` erhalten.
-- **macOS:** neue `Nexus.app` aus der DMG nach `Programme/Applications` ziehen, „Ersetzen".
-  Daten in `~/Library/Application Support/Nexus` bleiben erhalten.
+> Tags `v0.*` lösen stattdessen den ALTEN Workflow (`release.yml`, Electron-Ära) aus –
+> der ist mit 0.6.0 final abgeschlossen und wird nicht mehr gebraucht.
 
 ---
 
-## 4. macOS-Erststart (unsigniert)
+## 3. macOS-Erststart (unsigniert)
 
-Ohne Apple-Zertifikat blockt Gatekeeper den ersten Start. Die App ist dabei **nicht**
-„beschädigt" – das ist nur die Gatekeeper-Ablehnung einer nicht notarisierten App, die per
-Browser geladen wurde (sie trägt das `com.apple.quarantine`-Flag). Vorgehen:
+Ohne Apple-Zertifikat blockt Gatekeeper den ersten Start (App-Code-Signing ist bewusst
+aus, siehe Abschnitt 5). Die App ist dabei **nicht** „beschädigt" – das ist nur die
+Gatekeeper-Ablehnung einer nicht notarisierten, per Browser geladenen App
+(`com.apple.quarantine`-Flag). Vorgehen:
 
 1. DMG öffnen und `Nexus.app` **einzeln** per Drag nach `Programme`/`/Applications` ziehen.
    (Ein *einzelnes* Verschieben deaktiviert „App Translocation" dauerhaft – nicht mehrere
@@ -94,25 +100,34 @@ Browser geladen wurde (sie trägt das `com.apple.quarantine`-Flag). Vorgehen:
 > Terminal: App einmal starten (wird blockiert), dann **Systemeinstellungen → Datenschutz &
 > Sicherheit → „Trotzdem öffnen"** (Admin-Passwort, pro App einmalig).
 
-Der Workaround entfällt **vollständig erst** mit Apple-Developer-Zertifikat + Notarisierung
-(siehe Abschnitt 6) – das Containerformat (DMG/ZIP) ändert daran nichts.
+Nach dem allerersten Start läuft der In-App-Updater ganz normal weiter (kein erneuter
+Gatekeeper-Schritt bei Updates) – der Workaround entfällt vollständig erst mit
+Apple-Developer-Zertifikat + Notarisierung (siehe Abschnitt 5).
 
 ---
 
-## 5. Was steckt drin / Härtung
+## 4. Was steckt drin / Härtung
 
-- Quellcode liegt in `app.asar` (kein loses Editieren im Programmordner).
-- Electron-Fuses (`scripts/afterPack.cjs`): **`RunAsNode` an** (zwingend für den MCP-Server,
-  der via `ELECTRON_RUN_AS_NODE` als reiner Node-Prozess startet), `NODE_OPTIONS`/`--inspect`
-  aus, Cookie-Verschlüsselung an, **`OnlyLoadAppFromAsar` an** (ignoriert untergeschobene Dateien).
-- Keine persönlichen Daten im gebündelten Code; keine sichtbaren Electron-Hinweise
-  (Fenster/Taskleiste/`Nexus.exe`/About = „Nexus").
+- Kein `asar`, kein Chromium-Bundle: die App ist eine schlanke Rust-Shell (Tauri/WebView2
+  bzw. WKWebView) + ein gebündelter Node-Sidecar (`node.exe` + `resources/`) für UI-Server
+  und MCP. Quellcode liegt offen im Installationsordner (kein loses Editieren *wirkt* sich
+  aber aus, da nichts signiert/integritätsgeprüft ist – siehe Abschnitt 5 für die
+  Nachrüst-Option).
+- Updater-Artefakte sind **minisign-signiert** (`TAURI_SIGNING_PRIVATE_KEY`); ein
+  Update, dessen Signatur nicht zum eingebetteten Public Key passt, wird abgelehnt.
+- Keine persönlichen Daten im gebündelten Code; keine sichtbaren Tauri-Hinweise
+  (Fenster/Taskleiste/`app.exe`/Über-Dialog = „Nexus").
 
-## 6. Später nachrüstbar: Code-Signing (volle Fälschungssicherheit)
+## 5. Später nachrüstbar: App-Code-Signing (volle Fälschungssicherheit)
 
-- **Windows:** OV/EV-Code-Signing-Zertifikat → `win.certificateFile` + `CSC_*`-Secrets; danach
-  zusätzlich `EnableEmbeddedAsarIntegrityValidation` im afterPack einschalten (Integritäts-Resource
-  wird von electron-builder bereits eingebettet).
-- **macOS:** Apple Developer Program (99 $/Jahr) → `identity` setzen, Notarisierung über
-  `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID`-Secrets in der CI; dann entfällt der
-  Gatekeeper-Workaround aus Abschnitt 4.
+Aktuell bewusst aus (kein Zertifikat). Betrifft die *Binary selbst* (Windows
+SmartScreen-Warnung, macOS Gatekeeper-Workaround aus Abschnitt 3) – unabhängig von der
+oben beschriebenen Updater-Signatur, die schon aktiv ist.
+
+- **Windows:** OV/EV-Code-Signing-Zertifikat → `tauri.conf.json` → `bundle.windows.certificateThumbprint`
+  (oder `signCommand` für einen externen Signer) + `WIX`/`NSIS`-Signierung; verhindert die
+  SmartScreen-„Computer wurde geschützt"-Warnung beim Erstinstall.
+- **macOS:** Apple Developer Program (99 $/Jahr) → `bundle.macOS.signingIdentity` setzen,
+  Notarisierung über `APPLE_ID`/`APPLE_PASSWORD`/`APPLE_TEAM_ID`-Secrets in der CI
+  (`tauri-action` unterstützt das eingebaut); dann entfällt der Gatekeeper-Workaround aus
+  Abschnitt 3 vollständig.

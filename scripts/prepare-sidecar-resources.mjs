@@ -3,12 +3,10 @@
 //
 // Der Node-Sidecar (ui-server.js / server.js) braucht im installierten Layout
 // seine npm-Dependencies neben sich: resources/node_modules. Das darf NICHT das
-// Dev-node_modules sein (enthaelt electron, electron-builder, sharp ... ~500 MB),
+// Dev-node_modules sein (enthaelt @tauri-apps/cli u. a. Dev-Tooling),
 // sondern ein PRODUKTIONS-Stand: package.json + package-lock.json werden in
 // src-tauri/resources/ gestaged und dort per `npm ci --omit=dev` installiert –
-// lockfile-treu und reproduzierbar. (electron-updater ist als runtime-dependency
-// dabei, obwohl nur die Electron-Huelle es nutzt – bewusst in Kauf genommen,
-// solange die Bruecken-Phase laeuft; fliegt mit dem Electron-Rueckbau raus.)
+// lockfile-treu und reproduzierbar.
 //
 // Idempotent: neu installiert wird nur, wenn sich package-lock.json geaendert hat
 // (Hash-Merker .lockhash). src-tauri/resources/ ist gitignored.

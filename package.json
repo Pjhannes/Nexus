@@ -4,7 +4,6 @@
   "description": "Nexus – persoenliche Wissensdatenbank (MCP-Server + Web-UI)",
   "author": "Nexus",
   "type": "module",
-  "main": "electron/main.js",
   "scripts": {
     "start": "node src/server.js",
     "mcp": "node src/server.js",
@@ -13,11 +12,6 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "test": "node test/smoke.js",
-    "app": "electron electron/main.js",
-    "dist": "electron-builder --win",
-    "dist:dir": "electron-builder --dir",
-    "gen:icon": "node scripts/gen-icon.mjs",
-    "gen:icon-dev": "node scripts/gen-icon-dev.mjs",
     "verify:html": "node scripts/verify-html.mjs public/index.html",
     "edit:html": "node scripts/safe-edit.mjs public/index.html",
     "prepare": "node scripts/install-hooks.mjs"
@@ -25,95 +19,15 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "chokidar": "^4.0.0",
-    "electron-updater": "^6.3.0",
     "express": "^4.19.0",
     "multer": "^1.4.5-lts.1",
     "yaml": "^2.4.0",
     "zod": "^3.0.0 || ^4.0.0"
   },
   "devDependencies": {
-    "@electron/fuses": "^1.8.0",
-    "@tauri-apps/cli": "^2.11.4",
-    "electron": "^42.0.0",
-    "electron-builder": "^25.0.0",
-    "png-to-ico": "^2.1.8",
-    "png2icons": "^2.0.1",
-    "sharp": "^0.33.0"
+    "@tauri-apps/cli": "^2.11.4"
   },
   "engines": {
     "node": ">=20"
-  },
-  "build": {
-    "appId": "com.nexusapp.nexus",
-    "productName": "Nexus",
-    "copyright": "© 2026 Nexus",
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "Pjhannes",
-        "repo": "Nexus"
-      }
-    ],
-    "directories": {
-      "output": "dist",
-      "buildResources": "build"
-    },
-    "files": [
-      "electron/**/*",
-      "src/**/*",
-      "public/**/*",
-      "package.json"
-    ],
-    "asar": true,
-    "afterPack": "scripts/afterPack.cjs",
-    "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ],
-      "icon": "build/icon.ico",
-      "requestedExecutionLevel": "asInvoker",
-      "legalTrademarks": "Nexus"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowElevation": false,
-      "allowToChangeInstallationDirectory": true,
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "installerHeaderIcon": "build/icon.ico",
-      "installerHeader": "build/installerHeader.bmp",
-      "installerSidebar": "build/installerSidebar.bmp",
-      "uninstallerSidebar": "build/installerSidebar.bmp",
-      "installerLanguages": [
-        "de_DE",
-        "en_US"
-      ],
-      "language": "1031",
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Nexus",
-      "runAfterFinish": true,
-      "deleteAppDataOnUninstall": false
-    },
-    "portable": {
-      "artifactName": "Nexus-${version}-portable.exe"
-    },
-    "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        }
-      ],
-      "category": "public.app-category.productivity",
-      "icon": "build/icon.icns",
-      "identity": null,
-      "artifactName": "Nexus-${version}-${arch}.${ext}"
-    }
   }
 }

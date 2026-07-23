@@ -32,16 +32,30 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Emitter, Listener, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Listener, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
 
 // Debug (= `tauri dev`): Port 3002, Server kommt vom beforeDevCommand,
 // Datenordner = Repo-Wurzel (wie Electron-Dev). Release: Port 3000, Sidecar.
 const PORT: u16 = if cfg!(debug_assertions) { 3002 } else { 3000 };
+// Dev-Identitaet (R25-Audit #45, Electron-Paritaet zu NEXUS_DEV/Nexus-Dev.vbs):
+// eigener Name/AUMID unter `tauri dev`, damit die Taskleiste die Dev-Instanz
+// nicht mit einer installierten Prod-App gruppiert. Icon bleibt bewusst
+// gemeinsam (Phase-2-Review-Entscheidung, dokumentiert bei Commit 3206be3):
+// Tauri hat ohne Config-Verdopplung keinen Mechanismus fuer ein zweites Icon,
+// und der Nutzen (rein kosmetische Taskleisten-Unterscheidung) steht in
+// keinem Verhaeltnis zum Aufwand.
+#[cfg(debug_assertions)]
+const APP_NAME: &str = "Nexus Dev";
+#[cfg(not(debug_assertions))]
 const APP_NAME: &str = "Nexus";
+#[cfg(debug_assertions)]
+const APP_ID: &str = "com.nexusapp.nexus-dev";
+#[cfg(not(debug_assertions))]
+const APP_ID: &str = "com.nexusapp.nexus";
 // Dunkle Fenster-Hintergruende wie Electron (kein weisser Blitz beim Oeffnen).
 const BG_DARK: tauri::window::Color = tauri::window::Color(0x07, 0x09, 0x0f, 0xff);
 const BG_WIZARD: tauri::window::Color = tauri::window::Color(0x16, 0x15, 0x14, 0xff);
@@ -70,6 +84,8 @@ struct Shell {
     zoom: Mutex<f64>,
     data_dir: PathBuf,
     close: Mutex<CloseState>,
+    // Wartet update_prompt() auf einen Klick im Update-Fenster; siehe dort.
+    update_action_tx: Mutex<Option<tauri::async_runtime::Sender<usize>>>,
 }
 
 // ── Datenordner (Kontinuitaet zum Electron-userData-Pfad!) ────────────────────
@@ -395,20 +411,59 @@ fn create_help_window(app: &AppHandle) -> tauri::Result<()> {
 // ("Hart neu laden" entfaellt bewusst: der UI-Server liefert HTML eh mit
 // no-store, und WebView2 kennt Ctrl+Shift+R nativ.)
 fn set_app_menu(app: &AppHandle) -> tauri::Result<()> {
+    let connect_item = MenuItem::with_id(app, "menu_connect", "Mit Claude Desktop verbinden", true, None::<&str>)?;
+    let help_item = MenuItem::with_id(app, "menu_help", "Einrichtung & Usage-Key…", true, None::<&str>)?;
+    let vault_item = MenuItem::with_id(app, "menu_vault", "Vault-Ordner oeffnen", true, None::<&str>)?;
+    let sep1 = PredefinedMenuItem::separator(app)?;
+    // Eigenes Item statt PredefinedMenuItem::quit: laeuft durch den
+    // Dirty-Schutz (app:close-requested) statt hart zu beenden.
+    let quit_item = MenuItem::with_id(app, "menu_quit", "Beenden", true, None::<&str>)?;
+
+    // macOS-Paritaet zu electron/main.js buildMenu (R25-Audit #23): dort ist
+    // das erste Menue zwingend das fette App-Menue mit Ueber-Dialog + Aus-
+    // blenden-Rollen; auf Windows/Linux bleibt es das schlanke "Nexus"-Menue.
+    #[cfg(target_os = "macos")]
+    let nexus_menu = {
+        let about = PredefinedMenuItem::about(
+            app,
+            Some("Ueber Nexus"),
+            Some(
+                tauri::menu::AboutMetadataBuilder::new()
+                    .name(Some(APP_NAME))
+                    .version(Some(app.package_info().version.to_string()))
+                    .build(),
+            ),
+        )?;
+        let sep0 = PredefinedMenuItem::separator(app)?;
+        let sep2 = PredefinedMenuItem::separator(app)?;
+        let hide = PredefinedMenuItem::hide(app, Some("Nexus ausblenden"))?;
+        let hide_others = PredefinedMenuItem::hide_others(app, Some("Andere ausblenden"))?;
+        let show_all = PredefinedMenuItem::show_all(app, Some("Alle einblenden"))?;
+        Submenu::with_items(
+            app,
+            "Nexus",
+            true,
+            &[
+                &about, &sep0, &connect_item, &help_item, &vault_item, &sep1,
+                &hide, &hide_others, &show_all, &sep2, &quit_item,
+            ],
+        )?
+    };
+    #[cfg(not(target_os = "macos"))]
     let nexus_menu = Submenu::with_items(
         app,
         "Nexus",
         true,
-        &[
-            &MenuItem::with_id(app, "menu_connect", "Mit Claude Desktop verbinden", true, None::<&str>)?,
-            &MenuItem::with_id(app, "menu_help", "Einrichtung & Usage-Key…", true, None::<&str>)?,
-            &MenuItem::with_id(app, "menu_vault", "Vault-Ordner oeffnen", true, None::<&str>)?,
-            &PredefinedMenuItem::separator(app)?,
-            // Eigenes Item statt PredefinedMenuItem::quit: laeuft durch den
-            // Dirty-Schutz (app:close-requested) statt hart zu beenden.
-            &MenuItem::with_id(app, "menu_quit", "Beenden", true, None::<&str>)?,
-        ],
+        &[&connect_item, &help_item, &vault_item, &sep1, &quit_item],
     )?;
+
+    // Vollbild-Accelerator plattformueblich (R25-Audit #22): Electron nutzte
+    // F11 auf Windows/Linux, Ctrl+Cmd+F auf macOS.
+    #[cfg(target_os = "macos")]
+    let fullscreen_accel = Some("Cmd+Ctrl+F");
+    #[cfg(not(target_os = "macos"))]
+    let fullscreen_accel = Some("F11");
+
     let view_menu = Submenu::with_items(
         app,
         "Ansicht",
@@ -427,7 +482,7 @@ fn set_app_menu(app: &AppHandle) -> tauri::Result<()> {
             &MenuItem::with_id(app, "menu_zoom_in", "Vergroessern", true, None::<&str>)?,
             &MenuItem::with_id(app, "menu_zoom_out", "Verkleinern", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "menu_fullscreen", "Vollbild", true, Some("F11"))?,
+            &MenuItem::with_id(app, "menu_fullscreen", "Vollbild", true, fullscreen_accel)?,
         ],
     )?;
     let help_menu = Submenu::with_items(
@@ -565,6 +620,58 @@ fn schedule_update_check(app: &AppHandle) {
     });
 }
 
+// ── Update-Fenster: eigenes, gestyltes Fenster statt nativer Dialoge ──────────
+// Electron-Paritaet (electron/update-window.js + public/update.html, Studio-
+// Dunkel+Amber). Rust <-> JS laeuft wie der Dirty-Schutz oben ueber Events
+// statt invoke: 'update:view' {view:'prompt'|'progress',...} raus,
+// 'update:action' (geklickter Button-Index) rein.
+fn create_update_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    if let Some(w) = app.get_webview_window("update") {
+        let _ = w.set_focus();
+        return Ok(w);
+    }
+    let mut b = WebviewWindowBuilder::new(app, "update", WebviewUrl::App("update.html".into()))
+        .title("Nexus Update")
+        .inner_size(460.0, 270.0)
+        .resizable(false)
+        .minimizable(false)
+        .maximizable(false)
+        .decorations(false) // rahmenlos wie das Electron-Original
+        .background_color(BG_WIZARD);
+    if let Some(main) = app.get_webview_window("main") {
+        b = b.parent(&main)?;
+    }
+    b.build()
+}
+
+fn close_update_window(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("update") {
+        let _ = w.close();
+    }
+}
+
+// Zeigt eine Frage im Update-Fenster und wartet auf den Klick (Button-Index).
+// usize::MAX = Fenster/App-Fehler statt eines echten Klicks (fail-safe: wird
+// wie "letzter Button" = Abbrechen behandelt).
+async fn update_prompt(app: &AppHandle, title: &str, message: String, detail: String, buttons: &[&str]) -> usize {
+    let (tx, mut rx) = tauri::async_runtime::channel::<usize>(1);
+    *app.state::<Shell>().update_action_tx.lock().unwrap() = Some(tx);
+    let _ = app.emit_to(
+        "update",
+        "update:view",
+        serde_json::json!({ "view": "prompt", "title": title, "message": message, "detail": detail, "buttons": buttons }),
+    );
+    rx.recv().await.unwrap_or(buttons.len().saturating_sub(1))
+}
+
+fn update_progress(app: &AppHandle, percent: u32, label: &str) {
+    let _ = app.emit_to(
+        "update",
+        "update:view",
+        serde_json::json!({ "view": "progress", "percent": percent, "label": label }),
+    );
+}
+
 async fn run_update_check(app: &AppHandle) -> Result<(), String> {
     let updater = app.updater().map_err(|e| e.to_string())?;
     let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
@@ -572,38 +679,54 @@ async fn run_update_check(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     };
     let current = app.package_info().version.to_string();
-    let wants = app
-        .dialog()
-        .message(format!(
-            "Version {} ist verfügbar.\n\nInstalliert: {current}.\n\nJetzt herunterladen und installieren? Deine Daten bleiben erhalten.",
-            update.version
-        ))
-        .title("Update verfügbar")
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            "Herunterladen & installieren".into(),
-            "Später".into(),
-        ))
-        .blocking_show();
-    if !wants {
+    create_update_window(app).map_err(|e| e.to_string())?;
+    let idx = update_prompt(
+        app,
+        "Update verfügbar",
+        format!("Version {} ist verfügbar.", update.version),
+        format!("Installiert: {current}.\n\nJetzt herunterladen und installieren? Deine Daten bleiben erhalten."),
+        &["Herunterladen & installieren", "Später"],
+    )
+    .await;
+    if idx != 0 {
+        close_update_window(app);
         return Ok(());
     }
     log::info!("Updater: lade Version {} ...", update.version);
-    update
-        .download_and_install(|_chunk, _total| {}, || log::info!("Updater: Download fertig"))
-        .await
-        .map_err(|e| e.to_string())?;
+    update_progress(app, 0, "Wird heruntergeladen…");
+    let mut downloaded: u64 = 0;
+    let progress_handle = app.clone();
+    let install_result = update
+        .download_and_install(
+            move |chunk_length, content_length| {
+                downloaded += chunk_length as u64;
+                let pct = content_length
+                    .filter(|&total| total > 0)
+                    .map(|total| ((downloaded as f64 / total as f64) * 100.0).round() as u32)
+                    .unwrap_or(0)
+                    .min(100);
+                update_progress(&progress_handle, pct, "Wird heruntergeladen…");
+            },
+            || log::info!("Updater: Download fertig"),
+        )
+        .await;
+    if let Err(e) = install_result {
+        close_update_window(app);
+        return Err(e.to_string());
+    }
     // Auf Windows beendet der Updater die App fuer den Installer i. d. R. selbst;
-    // falls nicht (andere Plattformen), bieten wir den Neustart an.
-    let restart = app
-        .dialog()
-        .message("Das Update wurde installiert. Jetzt neu starten?")
-        .title("Update bereit")
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            "Neu starten".into(),
-            "Später".into(),
-        ))
-        .blocking_show();
-    if restart {
+    // falls nicht (andere Plattformen), bieten wir den Neustart an, ueber
+    // dasselbe Fenster (noch offen von der ersten Frage).
+    let restart_idx = update_prompt(
+        app,
+        "Update bereit",
+        "Das Update wurde installiert.".into(),
+        "Jetzt neu starten?".into(),
+        &["Neu starten", "Später"],
+    )
+    .await;
+    close_update_window(app);
+    if restart_idx == 0 {
         app.restart();
     }
     Ok(())
@@ -714,7 +837,7 @@ async fn wizard_finish(app: AppHandle, opts: WizardOpts) -> Result<serde_json::V
 fn set_taskbar_identity() {
     use windows::core::HSTRING;
     use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
-    let _ = unsafe { SetCurrentProcessExplicitAppUserModelID(&HSTRING::from("com.nexusapp.nexus")) };
+    let _ = unsafe { SetCurrentProcessExplicitAppUserModelID(&HSTRING::from(APP_ID)) };
 }
 #[cfg(not(windows))]
 fn set_taskbar_identity() {}
@@ -790,6 +913,22 @@ pub fn run() {
                     let _ = window.emit_to("main", "app:close-requested", ());
                 }
             }
+            // Selbst-Review-Fund (Update-Fenster-Bridge, s. run_update_check):
+            // schliesst der Nutzer das Update-Fenster per [X] statt einen
+            // Button zu klicken, feuert nie 'update:action' -> ohne dieses
+            // Aufraeumen wuerde update_prompt()s rx.recv().await fuer immer
+            // haengen (der Sender bleibt in Shell.update_action_tx liegen)
+            // und der Update-Check-Hintergrund-Thread waere dauerhaft
+            // blockiert. Sender einfach droppen (nicht senden) -> recv()
+            // liefert sauber None, update_prompt() faellt auf den
+            // "letzter Button" = Abbrechen-Fallback zurueck. Kein
+            // prevent_close noetig, das Fenster soll ja wirklich zugehen.
+            if window.label() == "update" {
+                if let tauri::WindowEvent::CloseRequested { .. } = event {
+                    let shell = window.state::<Shell>();
+                    let _ = shell.update_action_tx.lock().unwrap().take();
+                }
+            }
         })
         .setup(|app| {
             let data_dir = resolve_data_dir();
@@ -823,6 +962,7 @@ pub fn run() {
                 zoom: Mutex::new(1.0),
                 data_dir: data_dir.clone(),
                 close: Mutex::new(CloseState::default()),
+                update_action_tx: Mutex::new(None),
             });
             app.on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()));
 
@@ -880,6 +1020,19 @@ pub fn run() {
                 *shell.close.lock().unwrap() = CloseState::default();
             });
 
+            // Klick im Update-Fenster (siehe update_prompt): an den wartenden
+            // Channel weiterreichen, falls gerade eine Frage offen ist.
+            let update_action_handle = app.handle().clone();
+            app.listen_any("update:action", move |event| {
+                if let Ok(idx) = event.payload().parse::<usize>() {
+                    let shell = update_action_handle.state::<Shell>();
+                    let tx = shell.update_action_tx.lock().unwrap().take();
+                    if let Some(tx) = tx {
+                        let _ = tx.try_send(idx);
+                    }
+                }
+            });
+
             // Zoom-Buchfuehrung angleichen (Review): Strg+Rad/Strg+± zoomen
             // nativ an apply_zoom vorbei und tauri 2.11 hat keinen Getter –
             // die Seite meldet den echten Faktor ueber devicePixelRatio.
@@ -923,14 +1076,20 @@ pub fn run() {
 
     app.run(|app_handle, event| match event {
         RunEvent::Exit => kill_sidecar(app_handle),
+        // macOS-Paritaet zu electron/main.js: window-all-closed quittet dort
+        // NUR non-darwin (R25-Audit #13). Ohne das wuerde Tauri die App beim
+        // letzten Fenster beenden -> der Reopen-Pfad unten waere toter Code,
+        // die App verschwaende komplett statt im Dock liegenzubleiben.
+        #[cfg(target_os = "macos")]
+        RunEvent::ExitRequested { api, .. } => api.prevent_exit(),
         // macOS: Klick aufs Dock-Icon ohne offene Fenster -> Hauptfenster neu
         // (Electron-Paritaet app.on('activate'); die Enum-Variante existiert
-        // nur auf macOS, daher cfg-gated).
+        // nur auf macOS, daher cfg-gated). has_visible_windows kommt direkt
+        // von NSApplication (R25-Audit #14: praeziser als eine Handliste
+        // einzelner Fensternamen, deckt Hilfe-Fenster automatisch mit ab).
         #[cfg(target_os = "macos")]
-        RunEvent::Reopen { .. } => {
-            if app_handle.get_webview_window("main").is_none()
-                && app_handle.get_webview_window("wizard").is_none()
-            {
+        RunEvent::Reopen { has_visible_windows, .. } => {
+            if !has_visible_windows {
                 let _ = create_main_window(app_handle);
             }
         }

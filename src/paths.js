@@ -1,13 +1,13 @@
 // src/paths.js - zentrale, schreibbare Pfade fuer Nexus
 //
-// Problem: gepackt (Electron/asar) ist der App-Ordner READ-ONLY. Config, Index-DB
+// Problem: gepackt ist der App-/Sidecar-Ordner faktisch read-only. Config, Index-DB
 // und Upload-Temp muessen daher in einen schreibbaren Ordner (userData) wandern.
 //
 // Loesung: DATA_DIR.
-//   - Dev (npm run app / node src/server.js): NEXUS_DATA_DIR ist NICHT gesetzt
+//   - Dev (node src/server.js / npm run ui): NEXUS_DATA_DIR ist NICHT gesetzt
 //     -> DATA_DIR = App-Root (Quell-Repo). Verhalten exakt wie bisher.
-//   - Gepackt: electron/main.js setzt NEXUS_DATA_DIR = app.getPath('userData')
-//     -> Config + DB + Temp liegen schreibbar neben den Nutzerdaten.
+//   - Gepackt: die Tauri-Shell (src-tauri/src/lib.rs) setzt NEXUS_DATA_DIR auf den
+//     userData-Pfad -> Config + DB + Temp liegen schreibbar neben den Nutzerdaten.
 //
 // Statische Assets (public/, src/) werden weiterhin aus dem App-Ordner gelesen
 // (read-only ist dort ok) - dafuer ist APP_ROOT.
@@ -22,9 +22,10 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 // App-Ordner (Code, public/) - read-only ok
 export const APP_ROOT = join(__dir, '..');
 
-// Plattform-Standard "userData"-Ordner (entspricht Electrons app.getPath('userData')
-// fuer productName "Nexus"). Unabhaengig nachgebaut, weil der headless MCP-Prozess
-// (ELECTRON_RUN_AS_NODE -> kein app-Objekt) ihn sonst nicht kennt.
+// Plattform-Standard "userData"-Ordner (historisch der Electron-app.getPath('userData')
+// fuer productName "Nexus"; die Tauri-Shell setzt in src-tauri/src/lib.rs exakt
+// denselben Pfad -> DATA_DIR-Kontinuitaet). Unabhaengig nachgebaut, weil der headless
+// MCP-Prozess (reiner Node-Sidecar) ihn ohne die Shell-Umgebung sonst nicht kennt.
 function defaultUserDataDir() {
   const home = homedir();
   if (process.platform === 'darwin') return join(home, 'Library', 'Application Support', 'Nexus');
@@ -34,7 +35,7 @@ function defaultUserDataDir() {
 
 // Schreibbarer Datenordner (Config, .nexus/, Upload-Temp):
 //   - Dev (NEXUS_DATA_DIR ungesetzt): App-Root, exakt wie bisher.
-//   - Gepackt: electron/main.js setzt NEXUS_DATA_DIR = app.getPath('userData').
+//   - Gepackt: die Tauri-Shell setzt NEXUS_DATA_DIR = userData-Pfad.
 // Selbstheilung: Ist NEXUS_DATA_DIR gesetzt, enthaelt aber KEINE nexus.config.json
 // (typisch: in der claude_desktop_config.json von Hand falsch eingetragen, z. B.
 // "Applications Support" statt "Application Support"), liegt aber am Standard-
@@ -58,7 +59,7 @@ export const DATA_DIR = resolveDataDir();
 export const CONFIG_PATH = join(DATA_DIR, 'nexus.config.json');
 
 // Liest die Config. Klarer, handlungsweisender Fehler statt rohem ENOENT, falls sie
-// fehlt (Seeding macht electron/main.js bzw. der Einrichtungs-Assistent).
+// fehlt (Seeding macht die Tauri-Shell bzw. der Einrichtungs-Assistent).
 export function loadConfig() {
   if (!existsSync(CONFIG_PATH)) {
     throw new Error(

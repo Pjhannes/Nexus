@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Nexus-Fenster: Events (Menue <-> UI), Drag-Region, Wizard-Commands. WICHTIG: main/help laden http://localhost:PORT und sind im Release eine REMOTE-Origin fuer Tauris ACL – ohne den remote-Block wuerden event.listen/emit und die Titlebar-Drag-Region im gepackten Build stillschweigend abgelehnt (im Dev maskiert, weil devUrl als lokal gilt; Review-Befund Phase 2).",
-  "windows": ["main", "wizard", "help"],
+  "windows": ["main", "wizard", "help", "update"],
   "remote": {
     "urls": ["http://localhost:3000", "http://localhost:3002"]
   },

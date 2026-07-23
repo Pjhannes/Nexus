@@ -18,12 +18,13 @@ import { connectClaude, migrateClaudeEntryIfStale } from './claude-connect.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const cfg   = loadConfig();
-// Gleiche Bedeutung wie in electron/main.js: nur vom Dev-Starter (Nexus-Dev.vbs) gesetzt.
+// Dev-Identitaet: von scripts/dev-tauri.mjs (tauri dev) bzw. Nexus-Dev.bat gesetzt.
 const DEV   = process.env.NEXUS_DEV === '1';
 
 // App-Version aus package.json – eine Quelle der Wahrheit, passt sich bei jedem Build automatisch an
-// (gleiche Version, die electron-builder einbettet). package.json liegt sowohl im Dev-Baum als auch im
-// gepackten asar (steht in build.files) unter dem Projekt-Root, also ein Level über src/.
+// (gleiche Version, die tauri.conf.json referenziert). package.json liegt sowohl im Dev-Baum als auch im
+// gepackten Sidecar-Layout (src-tauri/tauri.conf.json -> bundle.resources) unter dem Projekt-Root, also
+// ein Level über src/.
 let APP_VERSION = '';
 try { APP_VERSION = JSON.parse(readFileSync(join(__dir, '..', 'package.json'), 'utf8')).version || ''; } catch { /* ignore */ }
 
@@ -285,14 +286,13 @@ app.post('/api/piper/synth', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── Claude-Desktop-Anbindung (Phase 1: REST statt Electron-IPC) ───────────────
-// computeLaunchSpec() erkennt die Umgebung selbst: unter Electron kommt der
-// ELECTRON_RUN_AS_NODE-Trick dazu (wie bisher), sonst (spaeter: Tauri-Node-Sidecar)
-// ist process.execPath bereits ein reiner Node-Prozess -> kein Trick noetig. Dieselbe
-// Route braucht daher in Phase 3 (Shell-Wechsel) voraussichtlich KEINE Anpassung.
+// ── Claude-Desktop-Anbindung (REST statt Electron-IPC) ────────────────────────
+// computeLaunchSpec(): process.execPath ist der Node-Sidecar (bzw. der Dev-Node)
+// -> ein reiner Node-Prozess, kein ELECTRON_RUN_AS_NODE-Trick noetig (der entfiel
+// mit dem Electron-Rueckbau R25). Unter der gepackten Tauri-Shell gibt NEXUS_DATA_DIR
+// server.js den schreibbaren Datenordner mit.
 function computeLaunchSpec() {
   const env = {};
-  if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = '1';
   if (process.env.NEXUS_DATA_DIR) env.NEXUS_DATA_DIR = process.env.NEXUS_DATA_DIR;
   return { command: process.execPath, args: [join(__dir, 'server.js')], env };
 }
@@ -304,15 +304,12 @@ app.post('/api/connect-claude', (_req, res) => {
 
 // Phase 3 – Auto-Migration beim Start unter der GEPACKTEN Tauri-Shell:
 // Die Rust-Shell markiert ihren Sidecar mit NEXUS_SHELL=tauri (nur Release).
-// Ein bestehender Claude-Desktop-Eintrag mit dem alten Electron-Trick
-// (ELECTRON_RUN_AS_NODE auf der Nexus.exe) wird dann einmalig auf die
-// Node-Sidecar-Spec umgeschrieben (mit Backup) – danach ist die Pruefung
-// idempotent (kein weiterer Write). Bewusst NICHT im Dev / bei `npm run ui`:
-// dort soll nie ungefragt an der echten Claude-Config geschrieben werden.
-// !process.versions.electron: Haertung gegen ein theoretisches Ping-Pong, falls
-// NEXUS_SHELL=tauri jemals maschinenweit exportiert wuerde – ein Electron-Prozess
-// darf NIE auto-migrieren (seine Spec enthaelt den ELECTRON_RUN_AS_NODE-Trick).
-if (process.env.NEXUS_SHELL === 'tauri' && !DEV && !process.versions.electron) {
+// Ein bestehender Claude-Desktop-Eintrag aus der Electron-Aera (Nexus.exe mit
+// ELECTRON_RUN_AS_NODE) wird dann einmalig auf die Node-Sidecar-Spec
+// umgeschrieben (mit Backup) – danach ist die Pruefung idempotent (kein weiterer
+// Write). Bewusst NICHT im Dev / bei `npm run ui`: dort soll nie ungefragt an der
+// echten Claude-Config geschrieben werden.
+if (process.env.NEXUS_SHELL === 'tauri' && !DEV) {
   try {
     const r = migrateClaudeEntryIfStale({ launchSpec: computeLaunchSpec(), mcpKey: 'nexus' });
     if (r.migrated) console.error(`[Nexus] Claude-Desktop-Eintrag auf Node-Sidecar migriert (Backup: ${r.path}.nexus-backup). Claude Desktop einmal neu starten.`);
@@ -530,18 +527,9 @@ app.get('/api/file', (req, res) => {
 });
 
 // ── Datei im Standardprogramm oeffnen (Word/Excel/...) ─────────────────────────
-// Wird vom Office-/Binaer-Viewer im Frontend aufgerufen. Bevorzugt Electrons
-// shell.openPath (robust, behandelt Sonderzeichen/Leerzeichen); faellt im reinen
-// Node-Betrieb (npm run ui) auf OS-Befehle zurueck.
-let _electronShell;
-async function getShell() {
-  if (_electronShell !== undefined) return _electronShell || null;
-  try {
-    const e = await import('electron');
-    _electronShell = (e && e.shell && typeof e.shell.openPath === 'function') ? e.shell : false;
-  } catch { _electronShell = false; }
-  return _electronShell || null;
-}
+// Wird vom Office-/Binaer-Viewer im Frontend aufgerufen. Reine OS-Befehle –
+// bis R25 gab es hier zusaetzlich einen Versuch ueber Electrons shell.openPath,
+// der mit dem Electron-Rueckbau entfiel (lief unter Tauri ohnehin nie).
 function openInDefaultApp(full) {
   const p = process.platform;
   if (p === 'win32')      spawn('rundll32', ['url.dll,FileProtocolHandler', full], { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
@@ -555,20 +543,14 @@ app.post('/api/open-external', async (req, res) => {
     const { vault } = getVault(vaultName);
     const full = safeFull(vault.path, relPath);
     if (!full || !existsSync(full)) return res.status(404).json({ error: 'Datei nicht gefunden' });
-    const sh = await getShell();
-    if (sh) {
-      const err = await sh.openPath(full);   // '' = ok, sonst Fehlertext
-      if (err) return res.status(500).json({ error: err });
-    } else {
-      openInDefaultApp(full);
-    }
+    openInDefaultApp(full);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Externe URL im Standard-Browser oeffnen (Phase 1: REST statt Electron-IPC) ─
-// Nutzt dieselbe Electron-Erkennung wie oben (getShell), aber shell.openExternal
-// statt shell.openPath. Seit R25 auch http:// erlaubt: unter der Tauri-Shell
+// Seit R25 auch http:// erlaubt (vorher nur https, analog zur alten IPC-Guard):
+// unter der Tauri-Shell laufen ALLE externen Links ueber diese Route
 // laufen ALLE externen Links ueber diese Route (WebView2 unterdrueckt
 // target=_blank ohne new-window-Handler), und der Markdown-Renderer verlinkt
 // http wie https. Andere Schemes (file:, javascript: ...) bleiben verboten.
@@ -576,9 +558,7 @@ app.post('/api/open-external-url', async (req, res) => {
   try {
     const url = req.body?.url;
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'Nur http(s):// URLs erlaubt' });
-    const sh = await getShell();
-    if (sh) await sh.openExternal(url);
-    else openInDefaultApp(url);
+    openInDefaultApp(url);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -714,18 +694,21 @@ setInterval(() => {
 }, 2000).unref?.();
 
 // ── Server starten ────────────────────────────────────────────────────────────
-// NEXUS_PORT (von electron/main.js gesetzt) hat Vorrang -> Dev laeuft auf 3001, Prod auf 3000,
-// beide GUIs koennen gleichzeitig offen sein. Standalone (npm run ui) faellt auf cfg.ui.port zurueck.
+// NEXUS_PORT (von der Tauri-Shell gesetzt: Release 3000, tauri dev 3002) hat Vorrang.
+// Standalone (npm run ui) faellt auf cfg.ui.port zurueck.
 const port = Number(process.env.NEXUS_PORT) || cfg.ui?.port || 3000;
 const httpServer = app.listen(port, () => {
   console.log(`[Nexus UI] http://localhost:${port}`);
-  if (cfg.ui?.autoOpen && !process.versions.electron) {
+  // autoOpen NUR im echten Standalone-Betrieb (npm run ui) einen Browser starten.
+  // Unter der Tauri-Shell (NEXUS_SHELL=tauri) laedt bereits das App-Fenster diese
+  // URL -> ein zusaetzlicher Browser-Tab waere ein doppeltes Fenster.
+  if (cfg.ui?.autoOpen && process.env.NEXUS_SHELL !== 'tauri') {
     const opener = process.platform === 'win32' ? 'start' : 'open';
     spawn(opener, [`http://localhost:${port}`], { shell: true, detached: true, windowsHide: true });
   }
 });
 // Belegten Port sauber abfangen statt als "JavaScript error"-Dialog hochblubbern zu lassen.
-// Greift dank Single-Instance-Lock (electron/main.js) im Normalfall gar nicht.
+// Greift dank Single-Instance-Lock (Tauri, src-tauri/src/lib.rs) im Normalfall gar nicht.
 httpServer.on('error', (err) => {
   if (err && err.code === 'EADDRINUSE') {
     console.error(`[Nexus UI] Port ${port} ist belegt - laeuft Nexus bereits? Beende diese Instanz.`);

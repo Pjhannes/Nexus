@@ -8,7 +8,7 @@ Der Ziel-PC braucht **kein Node.js** und keine Entwicklungsumgebung.
 
 ## Schnellstart (Ziel-PC)
 
-1. **`Nexus Setup X.Y.Z.exe` herunterladen** (z. B. `Nexus Setup 0.3.2.exe`) und doppelklicken.
+1. **`Nexus_X.Y.Z_x64-setup.exe` herunterladen** (z. B. `Nexus_1.0.0_x64-setup.exe`) und doppelklicken.
 2. **SmartScreen-Hinweis:** Windows zeigt evtl. „Der Computer wurde durch Windows
    geschützt". Das ist normal bei noch nicht signierten Apps.
    → **„Weitere Informationen"** anklicken → **„Trotzdem ausführen"**.
@@ -22,10 +22,6 @@ Der Ziel-PC braucht **kein Node.js** und keine Entwicklungsumgebung.
      starten", „Einrichtungs-Anleitung anzeigen" → **Fertigstellen**.
 5. Das Nexus-Fenster öffnet sich – leerer Vault, voll funktionsfähig.
    In der Taskleiste erscheint das Nexus-Logo mit dem Namen „Nexus".
-
-> **Portable Variante:** Statt des Installers kann `Nexus-X.Y.Z-portable.exe` einfach
-> doppelgeklickt werden (z. B. vom USB-Stick) – ohne Installation. Der Einrichtungs-
-> Assistent läuft genauso beim ersten Start.
 
 Beim ersten Start legt Nexus automatisch an:
 - eine frische Konfiguration unter `%APPDATA%\Nexus\nexus.config.json` (ohne fremde Inhalte),
@@ -51,8 +47,9 @@ Beides ist direkt aus Nexus heraus eingerichtet – ohne CMD, ohne Dateien von H
 
 1. **„Mit Claude Desktop verbinden"** (ein Klick) – trägt Nexus als MCP-Server in
    `%APPDATA%\Claude\claude_desktop_config.json` ein (alte Datei wird als
-   `…nexus-backup` gesichert). Der Eintrag startet **genau diese .exe** im MCP-Modus
-   (`--mcp`) – darum ist auf dem Ziel-PC kein Node nötig.
+   `…nexus-backup` gesichert). Der Eintrag startet den in der Installation
+   mitgelieferten Node-Sidecar (`node.exe` + `server.js`, beide im Installationsordner) –
+   darum ist auf dem Ziel-PC kein separat installiertes Node nötig.
    Danach **Claude Desktop komplett neu starten** (beenden + öffnen). Die Nexus-Tools
    (`search`, `read_note`, `write_note`, `backlinks`, `query`, `patch`, …) stehen dann bereit.
 2. **Session-Key für das Usage-Widget** – Schritt-für-Schritt, wie man den
@@ -66,26 +63,30 @@ Dieselbe Anleitung erscheint auf Wunsch automatisch am Ende des Einrichtungs-Ass
 
 ## Installer bauen (einmalig, auf dem Entwickler-PC)
 
-Auf dem PC mit dem Repo `D:\Nexus` und Node.js:
+Auf dem PC mit dem Repo `D:\Nexus`, Node.js und Rust (`rustup`):
 
 ```bash
 cd D:\Nexus
-npm install        # zieht electron, electron-builder, sharp, png-to-ico (devDependencies)
-npm run dist       # baut den Windows-Installer (NSIS + portable)
+npm install         # zieht @tauri-apps/cli (devDependency)
+npm run tauri build # baut den Windows-Installer (NSIS)
 ```
 
-Ergebnis in `D:\Nexus\dist\`:
+Ergebnis in `D:\Nexus\src-tauri\target\release\bundle\nsis\`:
 
 | Datei | Was |
 |---|---|
-| `Nexus Setup X.Y.Z.exe` | NSIS-Installer (Ordnerwahl, Desktop-/Startmenü-Verknüpfung, Autostart nach Installation) |
-| `Nexus-X.Y.Z-portable.exe` | Portable Variante – kein Installieren, direkt startbar |
+| `Nexus_X.Y.Z_x64-setup.exe` | NSIS-Installer (Ordnerwahl, Desktop-/Startmenü-Verknüpfung, Autostart nach Installation) |
 
-Eine dieser Dateien kopierst du auf den Ziel-PC. Mehr nicht.
+Diese Datei kopierst du auf den Ziel-PC. Mehr nicht. (Keine portable Variante mehr –
+Tauris Bundler kennt kein Äquivalent zu electron-builders Portable-exe.)
 
-> `npm run dist` muss auf **Windows** laufen (NSIS-Target; in einer Linux-Sandbox nicht baubar).
-> Das **App-Icon** liegt bereits fertig in `build/` – bei Bedarf neu erzeugen mit
-> `npm run gen:icon` (nutzt `sharp` + `png-to-ico`).
+> `npm run tauri build` muss auf **Windows** laufen. Für signierte Auto-Update-Artefakte
+> zusätzlich `TAURI_SIGNING_PRIVATE_KEY` als Umgebungsvariable setzen (Inhalt von
+> `C:\Users\pjhan\.tauri\nexus_updater.key`) – ohne die Variable entsteht der Installer
+> trotzdem, nur ohne Signatur (reicht zum lokalen Testen, nicht zum Verteilen).
+> Echte Releases (signiert, + macOS) baut die CI – siehe `RELEASE.md`.
+> Das **App-Icon** liegt bereits fertig in `src-tauri/icons/`; bei Bedarf neu erzeugen mit
+> `npx tauri icon <pfad-zu-einer-quell-png>`.
 
 ---
 
@@ -93,7 +94,7 @@ Eine dieser Dateien kopierst du auf den Ziel-PC. Mehr nicht.
 
 | Zweck | Ort |
 |---|---|
-| Programm | Installationsordner bzw. die portable `.exe` (read-only) |
+| Programm | Installationsordner (read-only) |
 | Konfiguration | `%APPDATA%\Nexus\nexus.config.json` |
 | Such-Index (SQLite) | `%APPDATA%\Nexus\.nexus\*.db` (wegwerfbar, wird neu gebaut) |
 | Upload-Temp | `%APPDATA%\Nexus\.nexus\tmp\` |
@@ -101,16 +102,20 @@ Eine dieser Dateien kopierst du auf den Ziel-PC. Mehr nicht.
 | Vault-Inhalte | gewählter Vault-Ordner (Standard `Dokumente\Nexus Vaults\<vault>\`) |
 | Claude-Desktop-Anbindung | `%APPDATA%\Claude\claude_desktop_config.json` |
 
-Im **Entwickler-Modus** (`npm run app` aus dem Repo) bleibt alles im Repo (`D:\Nexus`).
-Die userData-Umleitung greift nur in der gepackten App.
+Im **Entwickler-Modus** (`npm run tauri:dev` aus dem Repo) bleibt alles im Repo (`D:\Nexus`).
+Die Datenordner-Umleitung greift nur in der gepackten App.
 
 ---
 
-## Zwei Betriebsarten – eine .exe
+## Zwei getrennte Prozesse – ein Installationsordner
 
-- **Doppelklick / Verknüpfung** → GUI-Modus: Web-UI im Fenster (beim 1. Start: Einrichtungs-Assistent).
-- **`Nexus.exe --mcp`** → MCP-Modus: kein Fenster, spricht stdio mit Claude Desktop.
-  Genau diesen Aufruf trägt „Mit Claude Desktop verbinden" ein.
+- **Doppelklick / Verknüpfung** → startet `app.exe` (die Rust-Shell): GUI-Modus, Web-UI im
+  Fenster (beim 1. Start: Einrichtungs-Assistent). Startet dafür intern automatisch einen
+  gebündelten Node-Sidecar (UI-Server) im Hintergrund.
+- **Claude Desktop** startet den MCP-Server als **eigenen, separaten Prozess** – nicht
+  `app.exe`, sondern den mitgelieferten `node.exe` mit `server.js` als Argument (stdio-Modus,
+  kein Fenster). Genau diesen Aufruf trägt „Mit Claude Desktop verbinden" ein; beide Wege
+  können unabhängig voneinander gleichzeitig laufen.
 
 ---
 
@@ -119,7 +124,8 @@ Die userData-Umleitung greift nur in der gepackten App.
 - **SmartScreen blockiert:** „Weitere Informationen" → „Trotzdem ausführen" (App ist nicht signiert).
 - **Fenster bleibt leer:** Menü „Ansicht → Entwicklerwerkzeuge", Konsole prüfen.
 - **Claude Desktop sieht Nexus nicht:** Claude Desktop wirklich beenden (Tray) und neu starten;
-  prüfen, ob der `nexus`-Eintrag in `claude_desktop_config.json` auf die echte `.exe` zeigt.
+  prüfen, ob der `nexus`-Eintrag in `claude_desktop_config.json` auf den `node.exe` im
+  Installationsordner zeigt (nicht auf eine alte/andere Installation).
 - **Usage-Widget zeigt `— / —`:** Session-Key fehlt/abgelaufen → „Hilfe → Einrichtung & Usage-Key…" erneut durchgehen.
 - **Suche/Index leer:** in der UI „Reindex" drücken (oder MCP-Tool `reindex`).
 - **Wizard nochmal sehen (Test):** Nexus mit gesetzter Umgebungsvariable `NEXUS_FORCE_WIZARD=1` starten

@@ -2,8 +2,9 @@ node_modules/
 .nexus/
 .nexus-backups/
 *.nexustmp
-dist/
-build/*.exe
+# Tauri-Build-Output (Rust-Target liegt zusaetzlich unter src-tauri/.gitignore).
+src-tauri/target/
+src-tauri/resources/
 *.log
 .DS_Store
 Thumbs.db
@@ -20,7 +21,7 @@ STATUS.md
 CLAUDE.md
 rules/
 
-# Dev-Altlasten / lokale Starthelfer (durch Nexus-Dev.vbs ersetzt)
+# Lokale Starthelfer / Dev-Altlasten (Nexus-Dev.bat ist getrackt, der Rest bleibt lokal)
 start-app.bat
 restart.bat
 setup.ps1

@@ -18,7 +18,7 @@ import { makeVaultRegistry } from './vault-registry.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 
-// App-Version aus package.json – gleiche Quelle wie ui-server.js/electron-builder
+// App-Version aus package.json – gleiche Quelle wie ui-server.js/tauri.conf.json
 let APP_VERSION = '0.0.0';
 try { APP_VERSION = JSON.parse(readFileSync(join(__dir, '..', 'package.json'), 'utf8')).version || APP_VERSION; } catch { /* ignore */ }
 
