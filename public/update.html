@@ -119,9 +119,16 @@
     $('progFill').style.width = pct + '%';
   }
 
-  api.onUpdateView((d) => {
+  const viewHandler = (d) => {
     if (d.view === 'progress') showProgress(d);
     else showPrompt(d);
+  };
+  // WICHTIG (R25-Audit): erst NACH erfolgreicher Listener-Registrierung
+  // 'update:ready' melden. Die Rust-Seite wartet darauf, bevor sie den ersten
+  // Prompt emittiert – sonst emit-vor-listen-Race (Tauri puffert Events nicht):
+  // die erste Frage verpufft, das Fenster bliebe leer.
+  Promise.resolve(api.onUpdateView(viewHandler)).then(() => {
+    try { window.__TAURI__ && window.__TAURI__.event.emit('update:ready'); } catch (e) {}
   });
 
   // Esc = Abbrechen (entspricht dem letzten Button)

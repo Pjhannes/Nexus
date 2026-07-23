@@ -86,6 +86,10 @@ struct Shell {
     close: Mutex<CloseState>,
     // Wartet update_prompt() auf einen Klick im Update-Fenster; siehe dort.
     update_action_tx: Mutex<Option<tauri::async_runtime::Sender<usize>>>,
+    // true, sobald update.html seinen 'update:view'-Listener registriert und
+    // 'update:ready' gemeldet hat – gegen den emit-vor-listen-Race (siehe
+    // create_update_window). Vor jedem Fenster-Aufbau zurueckgesetzt.
+    update_ready: Mutex<bool>,
 }
 
 // ── Datenordner (Kontinuitaet zum Electron-userData-Pfad!) ────────────────────
@@ -628,8 +632,9 @@ fn schedule_update_check(app: &AppHandle) {
 fn create_update_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     if let Some(w) = app.get_webview_window("update") {
         let _ = w.set_focus();
-        return Ok(w);
+        return Ok(w); // existiert schon -> Seite laengst bereit
     }
+    *app.state::<Shell>().update_ready.lock().unwrap() = false;
     let mut b = WebviewWindowBuilder::new(app, "update", WebviewUrl::App("update.html".into()))
         .title("Nexus Update")
         .inner_size(460.0, 270.0)
@@ -641,7 +646,21 @@ fn create_update_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     if let Some(main) = app.get_webview_window("main") {
         b = b.parent(&main)?;
     }
-    b.build()
+    let win = b.build()?;
+    // Auf 'update:ready' der Seite warten, BEVOR der Aufrufer den ersten Prompt
+    // emittiert (R25-Audit: Tauri puffert Events nicht -> emit-vor-listen wuerde
+    // die erste Frage verlieren). Fallback nach 5 s, falls die Seite nie meldet.
+    // Laeuft auf dem dedizierten Update-Check-Thread (schedule_update_check) ->
+    // blockierendes Warten ist hier unkritisch; der Ready-Listener feuert auf
+    // dem Event-Thread und setzt das Flag.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if *app.state::<Shell>().update_ready.lock().unwrap() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(30));
+    }
+    Ok(win)
 }
 
 fn close_update_window(app: &AppHandle) {
@@ -654,6 +673,12 @@ fn close_update_window(app: &AppHandle) {
 // usize::MAX = Fenster/App-Fehler statt eines echten Klicks (fail-safe: wird
 // wie "letzter Button" = Abbrechen behandelt).
 async fn update_prompt(app: &AppHandle, title: &str, message: String, detail: String, buttons: &[&str]) -> usize {
+    // Fenster schon weg (Nutzer hat es waehrend des Downloads geschlossen)?
+    // Nicht ins Leere emittieren + ewig auf eine Antwort warten (R25-Audit),
+    // sondern wie "Abbrechen" behandeln.
+    if app.get_webview_window("update").is_none() {
+        return buttons.len().saturating_sub(1);
+    }
     let (tx, mut rx) = tauri::async_runtime::channel::<usize>(1);
     *app.state::<Shell>().update_action_tx.lock().unwrap() = Some(tx);
     let _ = app.emit_to(
@@ -963,6 +988,7 @@ pub fn run() {
                 data_dir: data_dir.clone(),
                 close: Mutex::new(CloseState::default()),
                 update_action_tx: Mutex::new(None),
+                update_ready: Mutex::new(false),
             });
             app.on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()));
 
@@ -1033,6 +1059,13 @@ pub fn run() {
                 }
             });
 
+            // update.html meldet, sobald sein 'update:view'-Listener steht ->
+            // create_update_window wartet darauf (emit-vor-listen-Race).
+            let update_ready_handle = app.handle().clone();
+            app.listen_any("update:ready", move |_| {
+                *update_ready_handle.state::<Shell>().update_ready.lock().unwrap() = true;
+            });
+
             // Zoom-Buchfuehrung angleichen (Review): Strg+Rad/Strg+± zoomen
             // nativ an apply_zoom vorbei und tauri 2.11 hat keinen Getter –
             // die Seite meldet den echten Faktor ueber devicePixelRatio.
@@ -1080,8 +1113,17 @@ pub fn run() {
         // NUR non-darwin (R25-Audit #13). Ohne das wuerde Tauri die App beim
         // letzten Fenster beenden -> der Reopen-Pfad unten waere toter Code,
         // die App verschwaende komplett statt im Dock liegenzubleiben.
+        // NUR nutzer-initiiertes Beenden (Cmd+Q, code=None) abfangen, damit die
+        // App im Dock bleibt. Programmatisches app.exit()/restart() (code=Some,
+        // z. B. wizard_finish "nicht starten" oder Updater-Neustart) NICHT
+        // verschlucken (R25-Audit: sonst fenster-/menueloser Zombie bzw. Update
+        // ohne Neustart).
         #[cfg(target_os = "macos")]
-        RunEvent::ExitRequested { api, .. } => api.prevent_exit(),
+        RunEvent::ExitRequested { api, code, .. } => {
+            if code.is_none() {
+                api.prevent_exit();
+            }
+        }
         // macOS: Klick aufs Dock-Icon ohne offene Fenster -> Hauptfenster neu
         // (Electron-Paritaet app.on('activate'); die Enum-Variante existiert
         // nur auf macOS, daher cfg-gated). has_visible_windows kommt direkt
