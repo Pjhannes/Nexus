@@ -30,3 +30,10 @@ tauri-plugin-dialog = "2"            # nativer Ordner-Picker im Wizard
 tauri-plugin-autostart = "2"         # "Beim Windows-Start starten" (Wizard-Option)
 tauri-plugin-opener = "2"            # Vault-Ordner im Explorer oeffnen
 tauri-plugin-updater = "2"           # In-App-Auto-Update (GitHub Releases, minisign-signiert)
+
+[target.'cfg(windows)'.dependencies]
+# Nur fuer SetCurrentProcessExplicitAppUserModelID (Taskleisten-Identitaet/-Gruppierung).
+# Electron rief das frueher explizit selbst auf (app.setAppUserModelId) – ob Tauri es
+# ungefragt tut, war laut Review nicht sicher zu verifizieren; deshalb explizit statt
+# auf einen unbestaetigten Default zu vertrauen (Phase-2-TODO, jetzt geschlossen).
+windows = { version = "0.61", features = ["Win32_UI_Shell", "Win32_Foundation"] }

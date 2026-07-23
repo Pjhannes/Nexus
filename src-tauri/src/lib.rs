@@ -540,9 +540,24 @@ async fn wizard_finish(app: AppHandle, opts: WizardOpts) -> Result<serde_json::V
     Ok(serde_json::json!({ "ok": true }))
 }
 
+// Taskleisten-Identitaet/-Gruppierung (Phase-2-Review-TODO, "Kosmetik"): explizit
+// setzen statt uns auf einen unbestaetigten Tauri-Default zu verlassen – exakt der
+// Wert, den auch der NSIS-Installer als AppUserModelID auf die Verknuepfung
+// schreibt (identifier aus tauri.conf.json). Greift unabhaengig davon, ob die App
+// ueber die Verknuepfung, per Doppelklick auf die exe oder aus `tauri dev` startet.
+#[cfg(windows)]
+fn set_taskbar_identity() {
+    use windows::core::HSTRING;
+    use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+    let _ = unsafe { SetCurrentProcessExplicitAppUserModelID(&HSTRING::from("com.nexusapp.nexus")) };
+}
+#[cfg(not(windows))]
+fn set_taskbar_identity() {}
+
 // ── Einstieg ──────────────────────────────────────────────────────────────────
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    set_taskbar_identity();
     let mut builder = tauri::Builder::default();
     // Single-Instance nur im RELEASE und als ERSTES Plugin (Doku): Zweitstart
     // fokussiert das bestehende Fenster statt EADDRINUSE. Im Debug bewusst NICHT:
