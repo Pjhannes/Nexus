@@ -1878,7 +1878,10 @@ function mdInline(text){
   text=text.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,(m,a,u)=>keep('<img class="md-img" alt="'+a+'" src="'+u+'">'));
   text=text.replace(/!\[\[([^\]]+?)\]\]/g,(m,inner)=>keep(renderEmbed(inner)));
   text=text.replace(/\[\[([^\]]+?)\]\]/g,(m,inner)=>keep(renderWiki(inner)));
-  text=text.replace(/\[([^\]]+?)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,(m,t,u)=>keep('<a class="ext" href="'+u+'" target="_blank" rel="noopener">'+t+'</a>'));
+  // Gefaehrliche Schemes (javascript:/data:/...) nicht als Link rendern,
+  // sondern als Text stehen lassen (R25-Review: mit csp:null wuerde ein Klick
+  // auf [x](javascript:...) sonst beliebiges Notiz-JS ausfuehren).
+  text=text.replace(/\[([^\]]+?)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,(m,t,u)=>/^\s*(javascript|data|vbscript|file)\s*:/i.test(u)?m:keep('<a class="ext" href="'+u+'" target="_blank" rel="noopener">'+t+'</a>'));
   text=text.replace(/(^|[\s(])((?:https?:\/\/)[^\s<)]+)/g,(m,p,u)=>p+keep('<a class="ext" href="'+u+'" target="_blank" rel="noopener">'+u+'</a>'));
   text=text.replace(/\*\*\*([^*]+?)\*\*\*/g,'<strong><em>$1</em></strong>');
   text=text.replace(/\*\*([^*]+?)\*\*/g,'<strong>$1</strong>');
@@ -5723,6 +5726,68 @@ if(window.__TAURI__&&!window.nexusAPI){
   // Menue "Mit Claude Desktop verbinden" -> gleiche REST-Route + Toast wie der
   // Einstellungen-Button (die Rust-Shell emittiert nur das Event).
   try{window.__TAURI__.event.listen('menu:connect-claude',()=>connectClaudeFromSettings());}catch(e){}
+
+  // ── WebView2-Paritaet (R25-Audit) – alles nur unter der Tauri-Shell aktiv ──
+  // (1) Externe Links: WebView2 unterdrueckt target=_blank komplett, wenn die
+  // Shell keinen new-window-Handler setzt (wry: SetHandled(true)) – unter
+  // Electron oeffnete sich ein Fenster. Stattdessen in den Standard-Browser
+  // ueber die bestehende REST-Route (gleiche wie help.html).
+  const _openExt=u=>{fetch('/api/open-external-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:u})}).catch(()=>{});};
+  // Nur ECHT externe Ziele abfangen (Review: a.href ist absolutiert – relative
+  // Links/#-Anker loesen auf die eigene Origin auf und bleiben in-app).
+  const _extLink=a=>{if(!a)return false;const h=a.href||'';if(!/^https?:\/\//i.test(h))return false;try{return new URL(h).origin!==location.origin;}catch(e){return false;}};
+  document.addEventListener('click',e=>{
+    const a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
+    if(!a||a.target!=='_blank'||!_extLink(a))return;
+    e.preventDefault();_openExt(a.href);
+  },true);
+  document.addEventListener('auxclick',e=>{ // Mittelklick: WebView2 wuerde das Popup ebenfalls verschlucken
+    if(e.button!==1)return;
+    const a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
+    if(!_extLink(a))return;
+    e.preventDefault();_openExt(a.href);
+  },true);
+  // (2) Edge-Kontextmenue unterdruecken (Electron zeigte keins) – ausser in
+  // Eingabefeldern/Editor, wo das native Menue (Einfuegen!) nuetzlich ist.
+  document.addEventListener('contextmenu',e=>{
+    if(e.defaultPrevented)return; // eigene Menues (Dateibaum) haben Vorrang
+    if(e.target&&e.target.closest&&e.target.closest('input,textarea,[contenteditable="true"],.cm-content'))return;
+    e.preventDefault();
+  });
+  // (3) Edge-Browser-Tasten entschaerfen, die es unter Electron nicht gab:
+  // Ctrl+S ohne offenen Editor ("Seite speichern unter"), Ctrl+P (Drucken),
+  // F7 (Caret-Browsing-Dialog). Ctrl+F/F3 bleiben bewusst an (Gratis-Suche).
+  document.addEventListener('keydown',e=>{
+    const mod=e.ctrlKey||e.metaKey,k=e.key.toLowerCase();
+    if(mod&&k==='s'&&!editorState)e.preventDefault();
+    else if(mod&&k==='p')e.preventDefault();
+    else if(e.key==='F7')e.preventDefault();
+  },true);
+  // (4) Fenster-Schliessen mit ungespeicherten Aenderungen: Tauri feuert kein
+  // beforeunload beim Fenster-Close (Electron blockte still). Die Rust-Shell
+  // haelt den Close an (prevent_close) und fragt hier nach; Antwort per Event.
+  try{window.__TAURI__.event.listen('app:close-requested',async()=>{
+    const ev=window.__TAURI__.event;
+    ev.emit('ui:close-ack'); // sofort quittieren: "Seite lebt, Rueckfrage laeuft"
+    if(editorState&&isDirty()){
+      if(!(await uiConfirm('Ungespeicherte Änderungen verwerfen und beenden?'))){ev.emit('ui:close-cancelled');return;}
+    }
+    ev.emit('ui:close-confirmed');
+  });}catch(e){}
+  // (5) Edge-Passwort-Auge im Session-Key-Feld ausblenden (Electron hatte keins).
+  try{const st=document.createElement('style');st.textContent='input::-ms-reveal{display:none}';document.head.appendChild(st);}catch(e){}
+  // (6) Menue-Zoom-Buchfuehrung synchron halten (Review): Strg+Rad/Strg+±
+  // zoomt nativ an der Rust-Seite vorbei, und tauri 2.11 hat keinen Zoom-
+  // Getter. devicePixelRatio spiegelt den Faktor (Basis = Startwert, das
+  // Fenster startet immer mit Zoom 1.0) -> Aenderungen an die Shell melden.
+  try{
+    const _dpr0=window.devicePixelRatio;
+    const _watchZoom=()=>{matchMedia('(resolution: '+window.devicePixelRatio+'dppx)').addEventListener('change',()=>{
+      try{window.__TAURI__.event.emit('ui:zoom-level',window.devicePixelRatio/_dpr0);}catch(e){}
+      _watchZoom();
+    },{once:true});};
+    _watchZoom();
+  }catch(e){}
 }
 initUsageWidget();
 init();

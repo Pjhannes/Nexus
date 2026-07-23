@@ -46,10 +46,30 @@ const APP_NAME: &str = "Nexus";
 const BG_DARK: tauri::window::Color = tauri::window::Color(0x07, 0x09, 0x0f, 0xff);
 const BG_WIZARD: tauri::window::Color = tauri::window::Color(0x16, 0x15, 0x14, 0xff);
 
+// Dirty-Schutz beim Schliessen (R25-Audit #12). EIN Mutex fuer alle drei
+// Felder (Review: zwei getrennte Mutexe waren nicht atomar):
+//   pending = wir warten auf die Antwort der Seite auf 'app:close-requested'.
+//   acked   = die Seite hat die Anfrage quittiert ('ui:close-ack', erste Zeile
+//             ihres Listeners). Unterscheidet "Dialog steht offen" von "Seite
+//             ist tot": Doppelklick aufs X darf NIEMALS einen offenen Dialog
+//             uebergehen (Review-Fund: sonst stiller Datenverlust bei der
+//             ueblichsten Geste), aber eine tote Seite (Fehlerseite, JS-Crash)
+//             darf den Nutzer auch nicht einsperren -> ohne Ack schliesst der
+//             zweite Versuch hart.
+//   quit    = Menue "Beenden": nach bestaetigtem Close ganze App beenden
+//             (Electron-role-quit-Paritaet), nicht nur das Hauptfenster.
+#[derive(Default)]
+struct CloseState {
+    pending: bool,
+    acked: bool,
+    quit: bool,
+}
+
 struct Shell {
     child: Mutex<Option<Child>>,
     zoom: Mutex<f64>,
     data_dir: PathBuf,
+    close: Mutex<CloseState>,
 }
 
 // ── Datenordner (Kontinuitaet zum Electron-userData-Pfad!) ────────────────────
@@ -250,17 +270,72 @@ fn kill_sidecar(app: &AppHandle) {
     }
 }
 
+// ── Autostart-Altlast der Electron-Generation migrieren (R25-Audit #39) ───────
+// Der Electron-Wizard registrierte Autostart als HKCU-Run-Wert
+// "com.nexusapp.nexus" auf ...\Programs\Nexus\Nexus.exe. Bleibt der stehen,
+// startet beim Login weiter die ALTE Electron-App, besetzt Port 3000, und
+// diese App zeigt dann kommentarlos deren (alten) Server. Einmalig beim Start
+// der gepackten Tauri-App: Altlast entfernen und die Autostart-Absicht des
+// Nutzers auf die neue App uebertragen. Fremde/unerwartete Eintraege bleiben
+// unangetastet (Pfad-Signatur der Electron-Installation wird geprueft).
+#[cfg(windows)]
+fn migrate_electron_autostart(app: &AppHandle) {
+    use std::os::windows::process::CommandExt;
+    const KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+    const NAME: &str = "com.nexusapp.nexus";
+    // reg.exe absolut (Review-Haertung): per-user-Installationen liegen in
+    // schreibbaren Ordnern – kein PATH-/App-Dir-Lookup fuer Systemtools.
+    let reg = std::env::var("SystemRoot")
+        .map(|r| format!(r"{r}\System32\reg.exe"))
+        .unwrap_or_else(|_| "reg.exe".into());
+    let out = match Command::new(&reg)
+        .args(["query", KEY, "/v", NAME])
+        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return, // kein Alt-Eintrag -> nichts zu tun
+    };
+    let data = String::from_utf8_lossy(&out.stdout).to_lowercase();
+    if !data.contains(r"\programs\nexus\nexus.exe") {
+        return; // zeigt nicht auf die Electron-Installation -> nicht anfassen
+    }
+    let _ = Command::new(&reg)
+        .args(["delete", KEY, "/v", NAME, "/f"])
+        .creation_flags(0x0800_0000)
+        .output();
+    let _ = app.autolaunch().enable(); // Absicht uebertragen: Autostart war AN
+    log::info!("Autostart-Altlast migriert: Run-Wert '{NAME}' (Electron) entfernt, Tauri-Autostart aktiviert.");
+}
+
 // ── Fenster ───────────────────────────────────────────────────────────────────
 fn create_main_window(app: &AppHandle) -> tauri::Result<()> {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.set_focus();
         return Ok(());
     }
+    // Frisches Fenster -> etwaige Reste des Dirty-Schutz-Zustands verwerfen
+    // (z. B. macOS-Reopen nach bestaetigtem Close).
+    *app.state::<Shell>().close.lock().unwrap() = CloseState::default();
     let url: tauri::Url = format!("http://localhost:{PORT}").parse().unwrap();
     WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
         .title(APP_NAME)
         .inner_size(1280.0, 860.0)
         .background_color(BG_DARK)
+        // Paritaet zu Electron/Chromium (Live-Befund erster Tauri-Installtest):
+        // 1) Tauris OS-Drag-Drop-Handler faengt ALLE HTML5-Drag-Events ab ->
+        //    Tab-Reorder (R4), Themen-Kacheln, Notiz-in-Ordner-Verschieben und
+        //    Datei-Upload-Drop (R15) waren tot. Abschalten uebergibt Drag&Drop
+        //    nativ an die WebView (wie Chromium) – wir nutzen Tauris eigene
+        //    Drop-Events nirgends.
+        .disable_drag_drop_handler()
+        // 2) WebView2 hat Browser-Zoom per Default AUS (IsZoomControlEnabled) ->
+        //    Strg+Mausrad/Trackpad-Pinch kam nie in der Seite an; der Notiz-
+        //    Zoom-Handler (index.html onNoteWheel, erwartet wheel+ctrlKey wie
+        //    unter Chromium) blieb stumm. Electron hatte das implizit an.
+        .zoom_hotkeys_enabled(true)
+        // 3) Edge-Formular-Autofill aus (Electron/Chromium: aus) – R25-Audit #4.
+        .general_autofill_enabled(false)
         .build()?;
     set_app_menu(app)?;
     Ok(())
@@ -279,6 +354,7 @@ fn create_wizard_window(app: &AppHandle) -> tauri::Result<()> {
         .inner_size(620.0, 560.0)
         .resizable(false)
         .background_color(BG_WIZARD)
+        .general_autofill_enabled(false) // kein Edge-Autofill im Pfad-Feld
         .build()?;
     Ok(())
 }
@@ -298,11 +374,17 @@ fn create_help_window(app: &AppHandle) -> tauri::Result<()> {
     } else {
         WebviewUrl::App("help.html".into())
     };
-    let w = WebviewWindowBuilder::new(app, "help", url)
+    let mut b = WebviewWindowBuilder::new(app, "help", url)
         .title(format!("{APP_NAME} – Einrichtung & Anbindung"))
         .inner_size(640.0, 720.0)
         .background_color(BG_DARK)
-        .build()?;
+        .zoom_hotkeys_enabled(true); // wie Hauptfenster (Electron-Paritaet)
+    // Electron-Paritaet (parent: mainWindow): schwebt ueber dem Hauptfenster
+    // statt dahinter zu rutschen. Ohne Hauptfenster (Wizard-Pfad) ohne Parent.
+    if let Some(main) = app.get_webview_window("main") {
+        b = b.parent(&main)?;
+    }
+    let w = b.build()?;
     let _ = w.remove_menu(); // Hilfe-Fenster ohne Menueleiste (wie Electron setMenu(null))
     Ok(())
 }
@@ -322,7 +404,9 @@ fn set_app_menu(app: &AppHandle) -> tauri::Result<()> {
             &MenuItem::with_id(app, "menu_help", "Einrichtung & Usage-Key…", true, None::<&str>)?,
             &MenuItem::with_id(app, "menu_vault", "Vault-Ordner oeffnen", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::quit(app, Some("Beenden"))?,
+            // Eigenes Item statt PredefinedMenuItem::quit: laeuft durch den
+            // Dirty-Schutz (app:close-requested) statt hart zu beenden.
+            &MenuItem::with_id(app, "menu_quit", "Beenden", true, None::<&str>)?,
         ],
     )?;
     let view_menu = Submenu::with_items(
@@ -330,12 +414,18 @@ fn set_app_menu(app: &AppHandle) -> tauri::Result<()> {
         "Ansicht",
         true,
         &[
-            &MenuItem::with_id(app, "menu_reload", "Neu laden", true, Some("CmdOrCtrl+R"))?,
+            // Ohne Accelerator (Review): Strg+R/F5 handhabt WebView2 nativ –
+            // ein Menue-Accelerator dazu wuerde doppelt neu laden.
+            &MenuItem::with_id(app, "menu_reload", "Neu laden", true, None::<&str>)?,
             &MenuItem::with_id(app, "menu_devtools", "Entwicklerwerkzeuge", true, Some("CmdOrCtrl+Shift+I"))?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "menu_zoom_reset", "Zoom zuruecksetzen", true, Some("CmdOrCtrl+0"))?,
-            &MenuItem::with_id(app, "menu_zoom_in", "Vergroessern", true, Some("CmdOrCtrl+="))?,
-            &MenuItem::with_id(app, "menu_zoom_out", "Verkleinern", true, Some("CmdOrCtrl+-"))?,
+            // Zoom OHNE Accelerators (R25-Audit #20/21): Strg+0/=/− handhabt
+            // seit zoom_hotkeys_enabled(true) WebView2 selbst (echte Chromium-
+            // Zoomstufen inkl. Numpad-Plus auf DE-Layout) – Menue-Accelerators
+            // dazu wuerden doppelt zoomen. Menue-Klick bleibt als Fallback.
+            &MenuItem::with_id(app, "menu_zoom_reset", "Zoom zuruecksetzen", true, None::<&str>)?,
+            &MenuItem::with_id(app, "menu_zoom_in", "Vergroessern", true, None::<&str>)?,
+            &MenuItem::with_id(app, "menu_zoom_out", "Verkleinern", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "menu_fullscreen", "Vollbild", true, Some("F11"))?,
         ],
@@ -405,8 +495,12 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
         }
         "menu_vault" => open_vault_folder(app),
         "menu_reload" => {
+            // reload() statt eval (R25-Audit #18 + Review): eval ist genau
+            // dann tot, wenn man es braucht (Edge-Fehlerseite nach Server-
+            // Ausfall, haengendes JS). reload() retryt auch die Fehlerseite,
+            // pusht keinen History-Eintrag und respektiert beforeunload.
             if let Some(w) = app.get_webview_window("main") {
-                let _ = w.eval("window.location.reload()");
+                let _ = w.reload();
             }
         }
         "menu_devtools" => {
@@ -417,6 +511,27 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
         "menu_zoom_reset" => apply_zoom(app, 0.0),
         "menu_zoom_in" => apply_zoom(app, 1.1),
         "menu_zoom_out" => apply_zoom(app, 1.0 / 1.1),
+        "menu_quit" => {
+            // Wie der X-Klick durch den Dirty-Schutz. Ohne Hauptfenster direkt
+            // beenden; bei offener Rueckfrage (acked) Fenster fokussieren und
+            // die Absicht auf "ganz beenden" hochstufen; nur bei toter Seite
+            // (pending ohne ack) hart raus.
+            let Some(w) = app.get_webview_window("main") else {
+                app.exit(0);
+                return;
+            };
+            let shell = app.state::<Shell>();
+            let mut st = shell.close.lock().unwrap();
+            if st.pending && !st.acked {
+                app.exit(0); // Seite antwortet nicht -> nicht einsperren
+            } else if st.pending && st.acked {
+                st.quit = true; // Dialog steht offen -> Antwort abwarten
+                let _ = w.set_focus();
+            } else {
+                *st = CloseState { pending: true, acked: false, quit: true };
+                let _ = app.emit_to("main", "app:close-requested", ());
+            }
+        }
         "menu_fullscreen" => {
             if let Some(w) = app.get_webview_window("main") {
                 let fs = w.is_fullscreen().unwrap_or(false);
@@ -638,6 +753,44 @@ pub fn run() {
             wizard_browse,
             wizard_finish
         ])
+        .on_page_load(|webview, _payload| {
+            // Reload/Navigation im Hauptfenster verwirft eine haengende Close-
+            // Anfrage (Review-Fund: Ctrl+R bei offener Rueckfrage strandete
+            // pending=true -> der naechste X-Klick haette hart geschlossen).
+            if webview.label() == "main" {
+                *webview.state::<Shell>().close.lock().unwrap() = CloseState::default();
+            }
+        })
+        .on_window_event(|window, event| {
+            // Dirty-Schutz beim Schliessen (R25-Audit #12, Electron-Paritaet):
+            // Tauri wuerde das Hauptfenster sonst OHNE beforeunload zerstoeren –
+            // ungespeicherte Editor-Aenderungen waeren kommentarlos weg. Ablauf:
+            // Close anhalten -> 'app:close-requested' an die Seite -> die prueft
+            // isDirty()/fragt nach -> 'ui:close-confirmed'/'-cancelled' zurueck.
+            // Haengt die Seite (Fehlerseite, JS tot), schliesst der ZWEITE
+            // X-Klick hart – niemand wird eingesperrt. Nur "main": Wizard/Hilfe
+            // haben keinen Editor-Zustand.
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    let shell = window.state::<Shell>();
+                    let mut st = shell.close.lock().unwrap();
+                    if st.pending && !st.acked {
+                        return; // Seite tot (nie quittiert) -> Schliessen durchlassen
+                    }
+                    if st.pending && st.acked {
+                        // Rueckfrage steht offen (z. B. Doppelklick aufs X) ->
+                        // NICHT hart schliessen, nur den Dialog nach vorne holen.
+                        api.prevent_close();
+                        let _ = window.set_focus();
+                        return;
+                    }
+                    st.pending = true;
+                    st.acked = false;
+                    api.prevent_close();
+                    let _ = window.emit_to("main", "app:close-requested", ());
+                }
+            }
+        })
         .setup(|app| {
             let data_dir = resolve_data_dir();
             let _ = std::fs::create_dir_all(&data_dir);
@@ -647,6 +800,9 @@ pub fn run() {
             {
                 let mut lb = tauri_plugin_log::Builder::default()
                     .level(log::LevelFilter::Info)
+                    // Plugin-Default waeren winzige 40 kB (R25-Audit #46) –
+                    // Electron rotierte nie. 5 MB halten Wochen an Historie.
+                    .max_file_size(5_000_000)
                     .clear_targets()
                     .target(tauri_plugin_log::Target::new(
                         tauri_plugin_log::TargetKind::Folder {
@@ -666,14 +822,74 @@ pub fn run() {
                 child: Mutex::new(None),
                 zoom: Mutex::new(1.0),
                 data_dir: data_dir.clone(),
+                close: Mutex::new(CloseState::default()),
             });
             app.on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()));
+
+            // Nur gepackt (Release): Alt-Autostart der Electron-Installation
+            // uebernehmen. Dev fasst die Registry nie an.
+            #[cfg(windows)]
+            if !cfg!(debug_assertions) {
+                migrate_electron_autostart(app.handle());
+            }
 
             // "Hilfe oeffnen" aus der Haupt-UI: Event statt invoke (remote Origin,
             // siehe Kopfkommentar). index.html emittiert 'ui:open-help'.
             let help_handle = app.handle().clone();
             app.listen_any("ui:open-help", move |_| {
                 let _ = create_help_window(&help_handle);
+            });
+
+            // Antworten der Seite auf den Dirty-Schutz (siehe on_window_event):
+            // ack -> Anfrage kam an (unterscheidet offene Rueckfrage von toter
+            // Seite); bestaetigt -> Fenster wirklich zerstoeren (destroy loest
+            // KEIN erneutes CloseRequested aus), bei Menue-Beenden ganz raus.
+            // WICHTIG (Review): confirmed nur honorieren, wenn wirklich eine
+            // Close-Anfrage laeuft – sonst koennte beliebiger Seiten-Code das
+            // Fenster jederzeit wegreissen.
+            let ack_handle = app.handle().clone();
+            app.listen_any("ui:close-ack", move |_| {
+                let shell = ack_handle.state::<Shell>();
+                let mut st = shell.close.lock().unwrap();
+                if st.pending {
+                    st.acked = true;
+                }
+            });
+            let close_handle = app.handle().clone();
+            app.listen_any("ui:close-confirmed", move |_| {
+                let quit = {
+                    let shell = close_handle.state::<Shell>();
+                    let mut st = shell.close.lock().unwrap();
+                    if !st.pending {
+                        return; // nie angefragt -> ignorieren
+                    }
+                    let q = st.quit;
+                    *st = CloseState::default();
+                    q
+                };
+                if let Some(w) = close_handle.get_webview_window("main") {
+                    let _ = w.destroy();
+                }
+                if quit {
+                    close_handle.exit(0);
+                }
+            });
+            let cancel_handle = app.handle().clone();
+            app.listen_any("ui:close-cancelled", move |_| {
+                let shell = cancel_handle.state::<Shell>();
+                *shell.close.lock().unwrap() = CloseState::default();
+            });
+
+            // Zoom-Buchfuehrung angleichen (Review): Strg+Rad/Strg+± zoomen
+            // nativ an apply_zoom vorbei und tauri 2.11 hat keinen Getter –
+            // die Seite meldet den echten Faktor ueber devicePixelRatio.
+            let zoom_handle = app.handle().clone();
+            app.listen_any("ui:zoom-level", move |event| {
+                if let Ok(z) = event.payload().parse::<f64>() {
+                    if z.is_finite() && (0.1..=10.0).contains(&z) {
+                        *zoom_handle.state::<Shell>().zoom.lock().unwrap() = z;
+                    }
+                }
             });
 
             let first_run = !config_path(&data_dir).exists()

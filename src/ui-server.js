@@ -568,11 +568,14 @@ app.post('/api/open-external', async (req, res) => {
 
 // ── Externe URL im Standard-Browser oeffnen (Phase 1: REST statt Electron-IPC) ─
 // Nutzt dieselbe Electron-Erkennung wie oben (getShell), aber shell.openExternal
-// statt shell.openPath – bewusst nur https:// erlaubt (wie die alte IPC-Guard).
+// statt shell.openPath. Seit R25 auch http:// erlaubt: unter der Tauri-Shell
+// laufen ALLE externen Links ueber diese Route (WebView2 unterdrueckt
+// target=_blank ohne new-window-Handler), und der Markdown-Renderer verlinkt
+// http wie https. Andere Schemes (file:, javascript: ...) bleiben verboten.
 app.post('/api/open-external-url', async (req, res) => {
   try {
     const url = req.body?.url;
-    if (typeof url !== 'string' || !/^https:\/\//i.test(url)) return res.status(400).json({ error: 'Nur https:// URLs erlaubt' });
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'Nur http(s):// URLs erlaubt' });
     const sh = await getShell();
     if (sh) await sh.openExternal(url);
     else openInDefaultApp(url);
