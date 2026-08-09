@@ -5,7 +5,7 @@
 // Dateikoepfe – so bleibt der Test ohne Binaerdateien im Repo.
 // Lauf: node test/bild.test.mjs
 import { bildMasse, svgMasse, mimeFuer, istVektor, BILD_ENDUNGEN } from '../src/bildmasse.js';
-import { themenFilter, themenJeNotiz, sessionQueue, LERN_START } from '../src/lernen.js';
+import { themenFilter, themenJeNotiz, sessionQueue, themenAusGliederung } from '../src/lernen.js';
 
 let pass = 0, fail = 0;
 function ok(label, cond, detail = '') {
@@ -141,6 +141,61 @@ const q2 = sessionQueue({ sidecars: [sc], zustaende: new Map(), faecher: [], heu
 ok('mehrere Themen kombinierbar', q2.gesamt === 3, String(q2.gesamt));
 const q3 = sessionQueue({ sidecars: [sc], zustaende: new Map(), faecher: [], heute: '2026-08-09', uebung: true });
 ok('ohne Filter alle Karten', q3.gesamt === 4);
+
+console.log('\n── G. Themen aus der Skript-Gliederung nachtragen ──');
+const skript = [
+  '---', 'title: FAPS', '---',
+  '# FAPS – Klausurfragen',
+  '',
+  '## Robotik',
+  'Der **Knickarmroboter** hat sechs rotatorische Achsen.',
+  'Ein Portalroboter arbeitet translatorisch.',
+  '',
+  '## Fügetechnik',
+  'Beim Vibrationsschweissen wird Reibungswaerme erzeugt.',
+  '',
+  '### Kleben',                                  // tiefer als Ebene 2 -> zaehlt zu Fuegetechnik
+  'Klebstoffe brauchen eine vorbehandelte Oberflaeche.',
+].join('\n');
+const rohKarten = [
+  { id: 'k1', typ: 'janein', frage: 'F1', antwort: true, quelle: 'Knickarmroboter hat sechs rotatorische Achsen' },
+  { id: 'k2', typ: 'janein', frage: 'F2', antwort: true, quelle: 'Portalroboter arbeitet translatorisch' },
+  { id: 'k3', typ: 'janein', frage: 'F3', antwort: true, quelle: 'Vibrationsschweissen wird Reibungswaerme erzeugt' },
+  { id: 'k4', typ: 'janein', frage: 'F4', antwort: true, quelle: 'Klebstoffe brauchen eine vorbehandelte Oberflaeche' },
+  { id: 'k5', typ: 'bild', frage: 'F5', bild: 'x.png', labels: ['a', 'b'] },   // ohne quelle
+];
+const g = themenAusGliederung(skript, rohKarten);
+ok('Karten bekommen die Ueberschrift ueber ihrem Zitat',
+  g.karten[0].thema === 'Robotik' && g.karten[1].thema === 'Robotik', JSON.stringify(g.karten.map(k => k.thema)));
+ok('zweiter Abschnitt wird erkannt', g.karten[2].thema === 'Fügetechnik');
+ok('tiefere Ueberschrift zaehlt zum Abschnitt der gewaehlten Ebene', g.karten[3].thema === 'Fügetechnik', g.karten[3].thema);
+ok('Karte ohne Zitat bleibt ohne Thema', g.karten[4].thema === undefined);
+ok('Zaehler stimmen', g.zugeordnet === 4 && g.offen === 1, JSON.stringify({ z: g.zugeordnet, o: g.offen }));
+ok('Themenliste ohne Dubletten', g.themen.length === 2 && g.themen.includes('Robotik'));
+ok('Markdown im Zitat stoert nicht (die Notiz hat **Knickarmroboter**)', g.karten[0].thema === 'Robotik');
+ok('Kartentexte bleiben unveraendert', g.karten[0].frage === 'F1' && g.karten[0].id === 'k1' && g.karten[0].quelle === rohKarten[0].quelle);
+ok('Original wird nicht mutiert', rohKarten[0].thema === undefined);
+
+const g1 = themenAusGliederung(skript, rohKarten, { ebene: 1 });
+ok('ebene 1 fasst alles unter der obersten Ueberschrift zusammen',
+  g1.karten.slice(0, 4).every(k => k.thema === 'FAPS – Klausurfragen'), JSON.stringify(g1.themen));
+const g3 = themenAusGliederung(skript, rohKarten, { ebene: 3 });
+ok('ebene 3 trennt "Kleben" ab', g3.karten[3].thema === 'Kleben', g3.karten[3].thema);
+
+const zitatWeg = themenAusGliederung(skript, [
+  { id: 'x', typ: 'janein', frage: 'F', antwort: true, quelle: 'steht so gar nicht im Skript' }]);
+ok('nicht auffindbares Zitat -> kein Thema, wird gezaehlt', zitatWeg.karten[0].thema === undefined && zitatWeg.offen === 1);
+
+const vorHeading = themenAusGliederung('Text ganz oben ohne Ueberschrift.\n\n## Kapitel\nMehr Text.',
+  [{ id: 'y', typ: 'janein', frage: 'F', antwort: true, quelle: 'Text ganz oben ohne Ueberschrift' }]);
+ok('Zitat vor der ersten Ueberschrift -> kein Thema', vorHeading.karten[0].thema === undefined);
+
+ok('Zitat ueber einen Zeilenumbruch hinweg wird gefunden', (() => {
+  const s = '## Kapitel A\nDer Wirkungsgrad haengt\nnur von den Temperaturen ab.';
+  const r = themenAusGliederung(s, [{ id: 'z', typ: 'janein', frage: 'F', antwort: true,
+    quelle: 'Wirkungsgrad haengt nur von den Temperaturen ab' }]);
+  return r.karten[0].thema === 'Kapitel A';
+})());
 
 console.log(`\n${pass} bestanden, ${fail} fehlgeschlagen`);
 process.exit(fail ? 1 : 0);

@@ -15,7 +15,7 @@ const BILD_MAX_SVG   = 200 * 1024;
 import {
   validateKarten, mergeKartenIds, kartenSidecarPath, readKartenSidecar, KARTEN_VERSION, karteSpielbar,
   scanKartenSidecars, readFaecher, readReviews, foldReviews, fachFuerNotiz, fachKontext,
-  lernUebersicht, lernStatistik, heuteISO, LERN_STANDARD, LERN_STUFEN,
+  lernUebersicht, lernStatistik, heuteISO, LERN_STANDARD, LERN_STUFEN, themenAusGliederung,
 } from './lernen.js';
 
 const SNIPPET_LINES = 30;
@@ -342,6 +342,59 @@ export function makeTools(indexer, vaultPath) {
           + 'Sieh dir die Bilddatei an und liefere "regionen" (label/x/y/w/h, jeweils 0..1) direkt mit – '
           + 'alternativ zieht der Nutzer sie im Karten-Editor der App auf.',
       } : {}),
+    };
+  }
+
+  // Themen nachtragen, ohne die Karten neu zu schreiben: die Zuordnung kommt aus der
+  // Gliederung der Notiz selbst (Belegzitat lokalisieren -> Ueberschrift darueber).
+  // Kartentexte und IDs bleiben unveraendert, der Lernstand also auch.
+  function karteGliedern({ path, ebene, ueberschreiben } = {}) {
+    if (typeof path !== 'string' || !/\.md$/i.test(path))
+      return { error: 'path muss auf eine .md-Notiz zeigen: ' + path };
+    const full = safeFull(path);
+    if (!full) return { error: 'Pfad ausserhalb des Vaults' };
+    if (!existsSync(full)) return { error: 'Notiz existiert nicht: ' + path };
+    const alt = readKartenSidecar(vaultPath, path);
+    if (!alt || !Array.isArray(alt.karten) || !alt.karten.length)
+      return { error: 'Keine Karteikarten zu dieser Notiz: ' + path };
+
+    let roh;
+    try { roh = ohneBom(readFileSync(full, 'utf8')); } catch (e) { return { error: e.message }; }
+
+    // Ohne "ueberschreiben" bleiben bereits vergebene Themen unangetastet.
+    const vorher = alt.karten.map(k => k.thema || '');
+    const r = themenAusGliederung(roh, alt.karten, { ebene: Number.isFinite(ebene) ? ebene : 2 });
+    const karten = r.karten.map((k, i) => (
+      (!ueberschreiben && vorher[i]) ? { ...k, thema: vorher[i] } : k
+    ));
+
+    const sidecar = { ...alt, karten, aktualisiert: new Date().toISOString().slice(0, 10) };
+    const content = JSON.stringify(sidecar, null, 2) + '\n';
+    const sidecarFull = full.replace(/\.md$/i, '.karten.json');
+    try {
+      const tmp = sidecarFull + '.nexustmp';
+      writeFileSync(tmp, content, 'utf8');
+      renameSync(tmp, sidecarFull);
+      if (readFileSync(sidecarFull, 'utf8') !== content)
+        return { error: 'Schreib-Integritaet verletzt: Read-Back weicht ab.' };
+    } catch (e) { return { error: e.message }; }
+
+    // Verteilung zurueckmelden – so sieht man sofort, ob die Gliederung brauchbar ist.
+    const proThema = new Map();
+    for (const k of karten) {
+      const t = k.thema || '(ohne Thema)';
+      proThema.set(t, (proThema.get(t) || 0) + 1);
+    }
+    return {
+      ok: true,
+      path: kartenSidecarPath(path).replace(/\\/g, '/'),
+      karten: karten.length,
+      zugeordnet: r.zugeordnet,
+      ohneThema: karten.filter(k => !k.thema).length,
+      themen: [...proThema.entries()].map(([thema, anzahl]) => ({ thema, anzahl })),
+      ...(r.offen ? { hinweis: r.offen + ' Karte(n) ohne zuordenbares Zitat – meist Bild-Karten '
+        + '(die tragen kein quelle-Feld) oder Karten zu inzwischen geaenderten Stellen. '
+        + 'Deren Thema laesst sich mit write_karten von Hand setzen.' } : {}),
     };
   }
 
@@ -743,6 +796,6 @@ export function makeTools(indexer, vaultPath) {
     };
   }
 
-  return { search, outline, readNote, writeNote, writeVortrag, writeKarten, readBild, lernStatus, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, vaultCheck };
+  return { search, outline, readNote, writeNote, writeVortrag, writeKarten, karteGliedern, readBild, lernStatus, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, vaultCheck };
 }
 // rev: graph() fuer UI-Graph (Session 13)

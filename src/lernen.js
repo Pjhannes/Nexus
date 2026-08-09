@@ -25,7 +25,7 @@ import {
 } from 'fs';
 import { join, resolve, sep, dirname } from 'path';
 import { randomBytes } from 'node:crypto';
-import { vortragNorm } from './norm.js';
+import { vortragNorm, ohneFrontmatter } from './norm.js';
 
 export const KARTEN_VERSION = 1;
 export const KARTEN_TYPEN = ['janein', 'mc', 'freitext', 'bild'];
@@ -837,6 +837,74 @@ export function themenFilter(liste) {
     hatNotiz: (notiz) => notizen.has(notiz),
     passt: (notiz, thema) => paare.has(notiz + '::' + vortragNorm(thema || '')),
   };
+}
+
+/**
+ * Themen nachtragen, ohne die Karten anzufassen.
+ *
+ * Die Idee: Jede Karte traegt ihr Belegzitat (`quelle`), und das steht per Validierung
+ * WOERTLICH in der Notiz. Wo das Zitat steht, laesst sich also bestimmen – und die
+ * naechste Ueberschrift darueber ist der Abschnitt, aus dem die Karte stammt. Damit
+ * entsteht die Gliederung aus dem Skript selbst, ohne Raterei.
+ *
+ * Gesucht wird im normalisierten Text (gleiche Normalisierung wie die Validierung),
+ * darum wird Zeile fuer Zeile normalisiert und die Startposition jeder Zeile im
+ * Suchtext mitgefuehrt – so laesst sich ein Treffer auf seine Zeile zurueckrechnen.
+ *
+ * @param ebene  bis zu welcher Ueberschriften-Tiefe gruppiert wird (1 = nur "#",
+ *               2 = "#" und "##", …). Tiefere Ueberschriften zaehlen zum letzten
+ *               Abschnitt dieser Tiefe.
+ * @returns {{karten: Array, zugeordnet:number, offen:number, themen:string[]}}
+ */
+export function themenAusGliederung(noteContent, karten, { ebene = 2 } = {}) {
+  const rumpf = ohneFrontmatter(String(noteContent || ''));
+  const zeilen = rumpf.split(/\r?\n/);
+
+  // Ueberschriften einsammeln und parallel den normalisierten Suchtext aufbauen.
+  const kopf = [];                 // { pos, titel }  pos = Index im Suchtext
+  const teile = [];
+  let pos = 0;
+  let aktuell = null;
+  for (const zeile of zeilen) {
+    const m = /^(#{1,6})\s+(.+?)\s*#*$/.exec(zeile);
+    if (m && m[1].length <= ebene) {
+      const titel = vortragNorm(m[2]).trim();
+      // Roh-Titel (nur Markdown-Dekoration entfernt) – das ist der lesbare Name.
+      aktuell = m[2].replace(/[*_~`]/g, '').trim();
+      if (aktuell) kopf.push({ pos, titel, name: aktuell });
+    }
+    const norm = vortragNorm(zeile);
+    if (norm) {
+      teile.push({ start: pos, text: norm });
+      pos += norm.length + 1;      // +1 fuer das trennende Leerzeichen
+    }
+  }
+  const suchtext = teile.map(t => t.text).join(' ');
+
+  // Letzte Ueberschrift, die vor dieser Fundstelle beginnt.
+  const abschnittFuer = (index) => {
+    let treffer = null;
+    for (const k of kopf) { if (k.pos <= index) treffer = k; else break; }
+    return treffer ? treffer.name : '';
+  };
+
+  const themen = new Set();
+  let zugeordnet = 0, offen = 0;
+  const out = (karten || []).map(k => {
+    const kopie = { ...k };
+    const quelle = istText(k.quelle) ? vortragNorm(k.quelle) : '';
+    if (!quelle) { offen++; return kopie; }        // z. B. Bild-Karten ohne Zitat
+    const i = suchtext.indexOf(quelle);
+    if (i < 0) { offen++; return kopie; }          // Notiz seit dem Schreiben geaendert
+    const thema = abschnittFuer(i);
+    if (!thema) { offen++; return kopie; }
+    kopie.thema = thema;
+    themen.add(thema);
+    zugeordnet++;
+    return kopie;
+  });
+
+  return { karten: out, zugeordnet, offen, themen: [...themen] };
 }
 
 /**

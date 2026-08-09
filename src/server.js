@@ -217,6 +217,26 @@ server.tool(
 );
 
 server.tool(
+  'karten_gliedern',
+  'Traegt Themen fuer ein BESTEHENDES Kartenset nach, ohne die Karten zu veraendern: ' +
+  'Jede Karte wird ueber ihr Belegzitat in der Notiz lokalisiert und bekommt die Ueberschrift ' +
+  'darueber als Thema. Kartentexte und IDs bleiben unangetastet – der Lernstand bleibt erhalten. ' +
+  'Gedacht fuer Kartensaetze, die vor der Themen-Gliederung entstanden sind.',
+  {
+    path:  z.string().describe('Pfad der .md-Notiz, deren Karten gegliedert werden sollen'),
+    ebene: z.number().optional()
+           .describe('Bis zu welcher Ueberschriften-Tiefe gruppiert wird (Standard 2 = "#" und "##"). Tiefere Ueberschriften zaehlen zum letzten Abschnitt dieser Tiefe'),
+    ueberschreiben: z.boolean().optional()
+           .describe('Standard false: bereits vergebene Themen bleiben stehen. true setzt alle neu'),
+    vault: vaultParam,
+  },
+  async ({ path, ebene, ueberschreiben, vault }) => {
+    const e = registry.get(vault);
+    return withVault(e, e.tools.karteGliedern({ path, ebene, ueberschreiben }));
+  }
+);
+
+server.tool(
   'read_bild',
   'Zeigt eine Grafik aus dem Vault ALS BILD an (nicht als Pfad) und nennt ihre Pixelmasse. ' +
   'Damit lassen sich die Rechtecke fuer Bild-Karteikarten selbst bestimmen: Stelle im Bild ' +
