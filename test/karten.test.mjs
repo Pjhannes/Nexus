@@ -53,7 +53,8 @@ ok('KARTEN_TYPEN hat genau die vier V1-Typen',
 console.log('\n── A2. validateKarten: Grundfehler ──');
 ok('leeres Array -> Fehler', V([]).length === 1);
 ok('kein Array -> Fehler', V(null).length === 1);
-ok('>100 Karten -> Fehler', V(Array.from({ length: 101 }, (_, i) => ({ ...kJa, frage: 'F' + i }))).length === 1);
+ok('300 Karten sind erlaubt', V(Array.from({ length: 300 }, (_, i) => ({ ...kJa, frage: 'F' + i }))).length === 0);
+ok('>300 Karten -> Fehler', V(Array.from({ length: 301 }, (_, i) => ({ ...kJa, frage: 'F' + i }))).length === 1);
 const a1 = V([{ ...kJa, typ: 'raetsel' }]);
 ok('unbekannter typ nennt erlaubte Werte', a1.length === 1 && a1[0].includes('raetsel') && KARTEN_TYPEN.every(t => a1[0].includes(t)), a1.join(';'));
 const a2 = V([{ ...kJa, frage: '  ' }]);

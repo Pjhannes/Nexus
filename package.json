@@ -11,7 +11,8 @@
     "index": "node src/cli.js reindex",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "test": "node test/smoke.js",
+    "test": "node test/smoke.js && node test/karten.test.mjs && node test/bild.test.mjs && node test/vortrag.test.mjs && node test/lernen-api.test.mjs && node test/mcp-launch.test.mjs",
+    "test:smoke": "node test/smoke.js",
     "verify:html": "node scripts/verify-html.mjs public/index.html",
     "edit:html": "node scripts/safe-edit.mjs public/index.html",
     "prepare": "node scripts/install-hooks.mjs"

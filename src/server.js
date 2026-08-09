@@ -45,8 +45,8 @@ const vaultParam = z.string().optional()
 // Die eigentlichen Regeln leben editierbar im Vault unter _System/ – Scaffold im App-Ordner unter rules/.
 const NEXUS_INSTRUCTIONS = [
   'Du arbeitest auf persoenlichen Wissens-Vaults ueber die Nexus-Tools',
-  '(list_vaults, search, outline, read_note, write_note, write_vortrag, write_karten, append_to_section, patch, backlinks,',
-  'list_notes, query, dataview, reindex, create_folder, move, delete, vault_check).',
+  '(list_vaults, search, outline, read_note, read_bild, write_note, write_vortrag, write_karten, lern_status,',
+  'append_to_section, patch, backlinks, list_notes, query, dataview, reindex, create_folder, move, delete, vault_check).',
   'Der Server bedient ALLE Vaults der Nexus-App: list_vaults zeigt sie; jedes Tool',
   'hat einen optionalen vault-Parameter (Standard: der in der App aktive Vault).',
   'In der App neu angelegte Vaults sind sofort erreichbar. Prinzip: maximale',
@@ -62,8 +62,10 @@ const NEXUS_INSTRUCTIONS = [
   'Bittet der Nutzer um Karteikarten/Abfrage/Lernkarten zu einer Notiz oder einem Fach',
   '(fuer den Lernmodus der App): Notiz lesen, dann write_karten aufrufen – Fragen pruefungsnah',
   'formulieren (Verstaendnis statt Wortlaut), quelle WOERTLICH aus der Notiz zitieren (validiert).',
-  'Typen: janein | mc | freitext | bild. Bild-Karten liefern bild-Pfad + labels; die Regionen',
-  'auf dem Bild platziert der Nutzer selbst im Karten-Editor (ein LLM sieht die Bildpixel nicht).',
+  'Typen: janein | mc | freitext | bild. Karten mit "thema" gliedern (Kapitel der Notiz) – im',
+  'Lernmodus laesst sich damit gezielt ein Thema ueben. Fuer Bild-Karten ZUERST read_bild aufrufen:',
+  'das zeigt die Grafik und nennt ihre Pixelmasse, daraus die Rechtecke (x/y/w/h, 0..1) selbst',
+  'bestimmen und ueber die gedruckte Beschriftung legen – die App verdeckt sie beim Abfragen.',
   'Ein erneutes write_karten ueberschreibt das Kartenset, erhaelt aber IDs und damit den Lernstand.',
   '',
   'PFLICHT zu Beginn jeder Session: zuerst die Arbeitsregeln des Nutzers lesen und befolgen –',
@@ -182,6 +184,8 @@ server.tool(
       typ: z.enum(['janein', 'mc', 'freitext', 'bild'])
              .describe('janein = Aussage richtig/falsch · mc = Multiple Choice (auch mehrere richtige) · freitext = frei formulieren, der Nutzer bewertet sich selbst · bild = Begriffe Bildstellen zuordnen'),
       frage: z.string().describe('Die Frage bzw. die zu bewertende Aussage – pruefungsnah, Verstaendnis statt Wortlaut'),
+      thema: z.string().optional()
+             .describe('Kapitel/Abschnitt innerhalb der Notiz, z.B. "Robotik" oder "Fuegetechnik". Gliedert das Kartenset – im Lernmodus laesst sich damit gezielt ein Thema ueben. Gleiche Schreibweise fuer zusammengehoerige Karten verwenden'),
       antwort: z.union([z.boolean(), z.string()]).optional()
              .describe('janein: true/false · freitext: Musterloesung'),
       optionen: z.array(z.string()).optional().describe('mc: 2-8 Antwortoptionen (Distraktoren duerfen frei erfunden sein)'),
@@ -202,13 +206,38 @@ server.tool(
         w: z.number().describe('Breite, 0..1 (Anteil der Bildbreite)'),
         h: z.number().describe('Hoehe, 0..1 (Anteil der Bildhoehe)'),
       })).optional()
-             .describe('bild: Rechtecke auf der Grafik. SIEH DIR DIE BILDDATEI AN und lege sie selbst fest – ueber die Beschriftung, die dort steht, damit sie beim Abfragen verdeckt wird. Ohne Regionen ist die Karte nicht spielbar, bis der Nutzer sie im Karten-Editor platziert'),
+             .describe('bild: Rechtecke auf der Grafik. Ruf zuerst read_bild auf – damit siehst du die Grafik und bekommst ihre Pixelmasse; Pixelkoordinate durch Breite bzw. Hoehe geteilt ergibt x/y/w/h. Lege die Rechtecke ueber die Beschriftung, die dort gedruckt steht, damit sie beim Abfragen verdeckt wird. Ohne Regionen ist die Karte nicht spielbar, bis der Nutzer sie im Karten-Editor aufzieht'),
     })).describe('Alle Karten der Notiz (ersetzt das bisherige Set)'),
     vault: vaultParam,
   },
   async ({ path, titel, karten, vault }) => {
     const e = registry.get(vault);
     return withVault(e, e.tools.writeKarten({ path, titel, karten }));
+  }
+);
+
+server.tool(
+  'read_bild',
+  'Zeigt eine Grafik aus dem Vault ALS BILD an (nicht als Pfad) und nennt ihre Pixelmasse. ' +
+  'Damit lassen sich die Rechtecke fuer Bild-Karteikarten selbst bestimmen: Stelle im Bild ' +
+  'suchen, Pixelkoordinaten ablesen, durch Breite bzw. Hoehe teilen -> x/y/w/h fuer write_karten. ' +
+  'SVG kommt als Quelltext zurueck (dort stehen die Beschriftungen mit ihren Koordinaten).',
+  {
+    path:  z.string().describe('Vault-Pfad der Grafik (png, jpg, webp, gif, bmp, avif, svg)'),
+    vault: vaultParam,
+  },
+  async ({ path, vault }) => {
+    const e = registry.get(vault);
+    const r = e.tools.readBild({ path });
+    if (r.error) return asJson({ vault: e.vault.name, ...r });
+    const { base64, svg, ...info } = r;
+    const inhalt = [];
+    // Der Bild-Block MUSS vor dem Text stehen – so sieht das Modell erst die Grafik
+    // und liest die Masse danach als Rechenhilfe.
+    if (base64) inhalt.push({ type: 'image', data: base64, mimeType: r.mime });
+    inhalt.push({ type: 'text', text: JSON.stringify({ vault: e.vault.name, ...info }, null, 2) });
+    if (svg) inhalt.push({ type: 'text', text: svg });
+    return { content: inhalt };
   }
 );
 

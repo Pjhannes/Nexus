@@ -364,10 +364,15 @@ app.get('/api/lernen/session', (req, res) => {
     const { sidecars, faecher, zustaende, heute, standard } = lernKontext(req.query.vault);
     const filter = {};
     if (req.query.note) filter.notiz = String(req.query.note).replace(/\\/g, '/');
-    // Themenblock-Auswahl: mehrere Notizen gleichzeitig (Komma-getrennt).
+    // Themenblock-Auswahl: mehrere Notizen gleichzeitig (zeilengetrennt).
     if (req.query.notes) {
       const liste = String(req.query.notes).split('\n').map(s => s.trim().replace(/\\/g, '/')).filter(Boolean);
       if (liste.length) filter.notizen = liste;
+    }
+    // Feinere Auswahl: einzelne Themen als "<Notiz>::<Thema>" (leeres Thema = ohne Thema)
+    if (req.query.themen) {
+      const liste = String(req.query.themen).split('\n').map(s => s.trim().replace(/\\/g, '/')).filter(Boolean);
+      if (liste.length) filter.themen = liste;
     }
     // '__ohne__' = die Sammelkachel "Ohne Fach" im Dashboard (Karten ohne Fach-Zuordnung).
     if (req.query.fach) filter.fach = req.query.fach === '__ohne__' ? null : String(req.query.fach);

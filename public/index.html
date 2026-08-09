@@ -1086,6 +1086,21 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
 .lnt-zeile{display:flex;align-items:center;gap:10px;padding:8px 11px;border:1px solid var(--border);border-radius:9px;background:var(--panel2);cursor:pointer}
 .lnt-zeile:hover{border-color:var(--accent)}
 .lnt-zeile .lnt-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px}
+/* Ankreuzfelder duerfen NICHT auf 100% aufgeblasen werden – ".palette input" ist fuer
+   das Suchfeld der Befehlspalette gedacht und traf hier die Checkboxen, wodurch die
+   Namen der Bloecke aus der Zeile gedraengt wurden (unsichtbar). */
+.ln-modal input[type=checkbox]{width:auto;flex:0 0 auto;padding:0;margin:0;accent-color:var(--accent)}
+/* Zweite Ebene: Themen innerhalb eines Lernsets */
+.lnt-thema{display:flex;align-items:center;gap:10px;padding:6px 11px 6px 34px;border:1px solid transparent;border-radius:8px;cursor:pointer;font-size:12.5px}
+.lnt-thema:hover{background:var(--panel2)}
+.lnt-thema .lnt-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lnt-thema.ohne .lnt-name{color:var(--dim);font-style:italic}
+.lnt-pfeil{width:20px;height:20px;flex:0 0 auto;border:none;background:none;color:var(--dim);cursor:pointer;font-size:11px;line-height:1;padding:0;transition:transform .15s}
+.lnt-pfeil.auf{transform:rotate(90deg)}
+.lnt-pfeil:disabled{opacity:0;cursor:default}
+.lnt-gruppe{border:1px solid var(--border);border-radius:9px;background:var(--panel2);overflow:hidden}
+.lnt-gruppe .lnt-zeile{border:none;border-radius:0;background:none}
+.lnt-gruppe .lnt-themen{padding:0 6px 6px}
 /* Statistik */
 .ln-stat{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px;margin-bottom:18px}
 .ln-statbox{border:1px solid var(--border);border-radius:11px;padding:12px 14px;background:var(--panel)}
@@ -5908,50 +5923,128 @@ function lnStatusHtml(d){
 }
 
 // Vor dem Ueben: welche Themenbloecke sollen dran sein? (Notizen des Ausschnitts)
+// Zweistufige Auswahl: erste Ebene ein Lernset (in Pauls Fall je Lehrstuhl eines),
+// zweite Ebene die Themen darin – die vergibt Claude beim Erstellen ueber das Feld
+// "thema". Intern ist ALLES ein Themen-Schluessel "<Notiz>::<Thema>"; ein leeres Thema
+// meint die Karten ohne Thema. Damit braucht der Server nur einen Filter.
 function lnThemenWahl(opt){
   const alle=(_lnDash&&_lnDash.notizen)||[];
-  const liste=('fach' in opt)
+  const roh=('fach' in opt)
     ? alle.filter(n=>String(n.fach===null?'__ohne__':n.fach)===String(opt.fach))
     : alle;
-  if(!liste.length){toast('Hier gibt es keine Karten zum Üben');return;}
-  if(liste.length===1){lnStart({...opt,notiz:liste[0].notiz});return;}
-  const gewaehlt=new Set(liste.map(n=>n.notiz));
-  const zeilen=()=>liste.map((n,i)=>'<label class="lnt-zeile"><input type="checkbox" data-lt="an" data-i="'+i+'"'
-    +(gewaehlt.has(n.notiz)?' checked':'')+'>'
-    +'<span class="lnt-name">'+escHtml(n.titel||lnNotizName(n.notiz))+'<\/span>'
-    +'<span class="ln-badge">'+n.karten+' Karten<\/span><\/label>').join('');
+  if(!roh.length){toast('Hier gibt es keine Karten zum Üben');return;}
+  // Jede Notiz auf ihre Themen herunterbrechen; ohne Gliederung eine einzige Gruppe.
+  const liste=roh.map(n=>({
+    notiz:n.notiz,
+    name:n.titel||lnNotizName(n.notiz),
+    karten:n.karten,
+    themen:(Array.isArray(n.themen)&&n.themen.length)?n.themen:[{thema:'',karten:n.karten}],
+  }));
+  const schluessel=(notiz,thema)=>notiz+'::'+(thema||'');
+  const gewaehlt=new Set();
+  liste.forEach(n=>n.themen.forEach(t=>gewaehlt.add(schluessel(n.notiz,t.thema))));
+  const offen=new Set();
+  const gegliedert=liste.some(n=>n.themen.length>1||n.themen[0].thema);
+  // Nur ein Lernset und keine Gliederung -> nichts zu waehlen, direkt loslegen.
+  if(liste.length===1&&!gegliedert){lnStart({...opt,notiz:liste[0].notiz});return;}
+
+  const zaehleGewaehlt=(n)=>n.themen.filter(t=>gewaehlt.has(schluessel(n.notiz,t.thema))).length;
+  const kartenGewaehlt=()=>liste.reduce((s,n)=>s+n.themen.reduce((k,t)=>k+(gewaehlt.has(schluessel(n.notiz,t.thema))?t.karten:0),0),0);
+
+  const zeilen=()=>liste.map((n,i)=>{
+    const hatThemen=n.themen.length>1||!!n.themen[0].thema;
+    const an=zaehleGewaehlt(n),teil=an>0&&an<n.themen.length;
+    let h='<div class="lnt-gruppe">'
+      +'<div class="lnt-zeile" data-lt="notizzeile" data-i="'+i+'">'
+      +'<button class="lnt-pfeil'+(offen.has(n.notiz)?' auf':'')+'" data-lt="auf" data-i="'+i+'"'
+        +(hatThemen?'':' disabled')+' title="Themen anzeigen">&#9654;<\/button>'
+      +'<input type="checkbox" data-lt="anNotiz" data-i="'+i+'"'+(an?' checked':'')+'>'
+      +'<span class="lnt-name">'+escHtml(n.name)+'<\/span>'
+      +(hatThemen?'<span class="ln-badge">'+an+'/'+n.themen.length+' Themen<\/span>':'')
+      +'<span class="ln-badge">'+n.karten+' Karten<\/span><\/div>';
+    if(hatThemen&&offen.has(n.notiz)){
+      h+='<div class="lnt-themen">'+n.themen.map((t,j)=>
+        '<div class="lnt-thema'+(t.thema?'':' ohne')+'" data-lt="themazeile" data-i="'+i+'" data-j="'+j+'">'
+        +'<input type="checkbox" data-lt="anThema" data-i="'+i+'" data-j="'+j+'"'
+          +(gewaehlt.has(schluessel(n.notiz,t.thema))?' checked':'')+'>'
+        +'<span class="lnt-name">'+escHtml(t.thema||'ohne Thema')+'<\/span>'
+        +'<span class="ln-badge">'+t.karten+'<\/span><\/div>').join('')+'<\/div>';
+    }
+    return h+'<\/div>';
+  }).join('');
+
   const m=lnModalOeffnen(
-    '<div class="lnm-head">&#128260; '+(opt.uebung?'&Uuml;ben':'Lernen')+' &ndash; Themenbl&ouml;cke w&auml;hlen</div>'
+    '<div class="lnm-head">&#128260; '+(opt.uebung?'&Uuml;ben':'Lernen')+' &ndash; Auswahl</div>'
     +'<div class="lnm-body">'
       +'<div class="ln-hinweis" style="margin-bottom:10px">'
-      +(opt.uebung?'Nur &uuml;ben: Es werden <b>alle<\/b> Karten der gew&auml;hlten Bl&ouml;cke abgefragt und am Wiederholungsplan &auml;ndert sich <b>nichts<\/b>.'
-                 :'Es werden die f&auml;lligen Karten der gew&auml;hlten Bl&ouml;cke abgefragt.')+'</div>'
+      +(opt.uebung?'Nur &uuml;ben: Es werden <b>alle<\/b> Karten der Auswahl abgefragt und am Wiederholungsplan &auml;ndert sich <b>nichts<\/b>.'
+                 :'Es werden die f&auml;lligen Karten der Auswahl abgefragt.')
+      +(gegliedert?' Mit dem Pfeil ein Lernset aufklappen und einzelne Themen w&auml;hlen.'
+                  :' Die Karten dieser Notizen tragen noch keine Themen &ndash; beim n&auml;chsten Erstellen kann Claude sie gliedern.')+'</div>'
       +'<div class="ln-zeile" style="margin-bottom:8px"><button class="lnm-mini" data-lt="alle">Alle</button>'
-      +'<button class="lnm-mini" data-lt="keine">Keine</button></div>'
+      +'<button class="lnm-mini" data-lt="keine">Keine</button>'
+      +(gegliedert?'<button class="lnm-mini" data-lt="aufzu">Alle auf-/zuklappen</button>':'')+'</div>'
       +'<div class="lnt-liste" id="lnt-liste">'+zeilen()+'</div></div>'
     +'<div class="lnm-foot"><span class="lnm-sub" id="lnt-zahl"></span>'
       +'<button class="ln-btn" data-lt="abbruch">Abbrechen</button>'
       +'<button class="ln-btn primary" data-lt="los">Losgehen</button></div>');
+
   const zahl=()=>{
     const el=document.getElementById('lnt-zahl');
-    if(el)el.textContent=gewaehlt.size+' von '+liste.length+' Bl\u00f6cken';
+    if(!el)return;
+    const sets=liste.filter(n=>zaehleGewaehlt(n)>0).length;
+    el.textContent=kartenGewaehlt()+' Karten aus '+sets+' von '+liste.length+' Lernsets';
   };
   const neu=()=>{const l=document.getElementById('lnt-liste');if(l)l.innerHTML=zeilen();wire();zahl();};
   const wire=()=>{
     m.querySelectorAll('[data-lt]').forEach(el=>{
-      const a=el.dataset.lt;
-      if(a==='an')el.addEventListener('change',()=>{
-        const n=liste[+el.dataset.i];
-        if(el.checked)gewaehlt.add(n.notiz);else gewaehlt.delete(n.notiz);
-        zahl();
+      const a=el.dataset.lt,i=+el.dataset.i,j=+el.dataset.j;
+      if(a==='auf')el.addEventListener('click',ev=>{
+        ev.stopPropagation();
+        const n=liste[i];
+        if(offen.has(n.notiz))offen.delete(n.notiz);else offen.add(n.notiz);
+        neu();
       });
-      else if(a==='alle')el.addEventListener('click',()=>{liste.forEach(n=>gewaehlt.add(n.notiz));neu();});
+      else if(a==='anNotiz')el.addEventListener('change',ev=>{
+        ev.stopPropagation();
+        const n=liste[i];
+        n.themen.forEach(t=>{
+          if(el.checked)gewaehlt.add(schluessel(n.notiz,t.thema));
+          else gewaehlt.delete(schluessel(n.notiz,t.thema));
+        });
+        neu();
+      });
+      else if(a==='anThema')el.addEventListener('change',ev=>{
+        ev.stopPropagation();
+        const n=liste[i],t=n.themen[j];
+        if(el.checked)gewaehlt.add(schluessel(n.notiz,t.thema));
+        else gewaehlt.delete(schluessel(n.notiz,t.thema));
+        neu();
+      });
+      // Klick auf die Zeile schaltet die zugehoerige Checkbox (groessere Trefferflaeche)
+      else if(a==='notizzeile')el.addEventListener('click',ev=>{
+        if(ev.target.closest('input,button'))return;
+        const cb=el.querySelector('input[data-lt="anNotiz"]');
+        if(cb){cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));}
+      });
+      else if(a==='themazeile')el.addEventListener('click',ev=>{
+        if(ev.target.closest('input'))return;
+        const cb=el.querySelector('input[data-lt="anThema"]');
+        if(cb){cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));}
+      });
+      else if(a==='alle')el.addEventListener('click',()=>{
+        liste.forEach(n=>n.themen.forEach(t=>gewaehlt.add(schluessel(n.notiz,t.thema))));neu();
+      });
       else if(a==='keine')el.addEventListener('click',()=>{gewaehlt.clear();neu();});
+      else if(a==='aufzu')el.addEventListener('click',()=>{
+        if(offen.size)offen.clear();else liste.forEach(n=>offen.add(n.notiz));
+        neu();
+      });
       else if(a==='abbruch')el.addEventListener('click',lnModalClose);
       else if(a==='los')el.addEventListener('click',()=>{
-        if(!gewaehlt.size){toast('Bitte mindestens einen Themenblock wählen');return;}
+        if(!gewaehlt.size){toast('Bitte mindestens ein Thema wählen');return;}
         lnModalClose();
-        lnStart({...opt,notizen:[...gewaehlt]});
+        lnStart({...opt,themen:[...gewaehlt]});
       });
     });
   };
@@ -6076,6 +6169,7 @@ async function lnStart(filter){
   const p=new URLSearchParams({vault:activeVault,limit:uebung?'200':'60'});
   if(filter.notiz)p.set('note',filter.notiz);
   if(Array.isArray(filter.notizen)&&filter.notizen.length)p.set('notes',filter.notizen.join('\n'));
+  if(Array.isArray(filter.themen)&&filter.themen.length)p.set('themen',filter.themen.join('\n'));
   if(filter.fach)p.set('fach',filter.fach);
   if(uebung)p.set('uebung','1');
   let q;
@@ -6718,6 +6812,7 @@ function lnRenderEditor(){
       }
       body+='</div>';
     }
+    body+=keFeld(i,'thema','Thema / Kapitel (optional – gliedert die Auswahl im Lernmodus)',c.thema);
     body+=keFeld(i,'quelle','Quelle – w&ouml;rtliches Zitat aus der Notiz'+(c.typ==='bild'?' (optional)':''),c.quelle);
     body+=keFeld(i,'erklaerung','Erkl&auml;rung (optional)',c.erklaerung);
     body+='</div>';
@@ -6744,6 +6839,7 @@ function lnAktiveRegion(i){
 function lnWireEditor(m){
   m.querySelectorAll('[data-ke]').forEach(el=>{
     const a=el.dataset.ke,i=+el.dataset.i,j=+el.dataset.j;
+    if(a==='feld'&&el.dataset.f==='thema')el.addEventListener('change',()=>lnRenderEditor());
     if(a==='feld')el.addEventListener('input',()=>{
       const c=_ke.karten[i];if(!c)return;
       const f=el.dataset.f;
@@ -6866,6 +6962,7 @@ async function keSpeichern(){
     if(c.typ==='mc'){o.optionen=c.optionen||[];o.korrekt=(c.korrekt||[]).slice().sort((a,b)=>a-b);}
     if(c.typ==='bild'){o.bild=c.bild||'';o.labels=c.labels||[];o.regionen=c.regionen||[];
       o.modus=c.modus==='tippen'?'tippen':'zuordnen';o.abdecken=c.abdecken!==false;}
+    if(c.thema&&c.thema.trim())o.thema=c.thema.trim();
     if(c.quelle&&c.quelle.trim())o.quelle=c.quelle.trim();
     if(c.erklaerung&&c.erklaerung.trim())o.erklaerung=c.erklaerung.trim();
     return o;

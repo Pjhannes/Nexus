@@ -46,7 +46,7 @@ export const LERN_STANDARD = { zielKorrekt: 3, neueProTag: 20 };
 
 // Obergrenzen: kein Sicherheitsthema (lokaler Client), aber ein LLM-Ausreisser soll
 // keine Monster-JSON erzeugen, die die Lernsitzung unbrauchbar macht.
-const MAX_KARTEN      = 100;
+const MAX_KARTEN      = 300;    // 2026-08-09 von 100 angehoben: ganze Skripte brauchen mehr
 const MAX_FRAGE       = 500;
 const MAX_ANTWORT     = 2000;
 const MAX_OPTION      = 300;
@@ -54,6 +54,7 @@ const MAX_OPTIONEN    = 8;
 const MIN_OPTIONEN    = 2;
 const MAX_ERKLAERUNG  = 1000;
 const MAX_QUELLE      = 400;
+const MAX_THEMA       = 80;     // Kapitel/Abschnitt innerhalb einer Notiz
 const MAX_LABELS      = 12;
 const MIN_LABELS      = 2;
 const MAX_LABEL       = 80;
@@ -128,6 +129,16 @@ export function validateKarten(karten, noteContent, opts = {}) {
       return;
     }
     gesehen.set(nf, i + 1);
+
+    // Thema = Kapitel/Abschnitt innerhalb der Notiz. Optional, aber die Grundlage der
+    // zweistufigen Auswahl im Lernmodus (Lernset aufklappen -> Themen darunter).
+    if (k.thema !== undefined && k.thema !== null && k.thema !== '') {
+      if (typeof k.thema !== 'string') { errors.push(`${nr}: "thema" muss Text sein`); return; }
+      if (k.thema.trim().length > MAX_THEMA) {
+        errors.push(`${nr}: "thema" zu lang (${k.thema.trim().length} Zeichen, max ${MAX_THEMA})`);
+        return;
+      }
+    }
 
     if (k.erklaerung !== undefined && k.erklaerung !== null) {
       if (typeof k.erklaerung !== 'string') { errors.push(`${nr}: "erklaerung" muss Text sein`); return; }
@@ -329,6 +340,7 @@ function saubereKarte(k) {
     // Loesung schon aufgedruckt zu sehen. Nur bei echten Leerfolien abschaltbar.
     out.abdecken = k.abdecken !== false;
   }
+  if (istText(k.thema))      out.thema = k.thema.trim();
   if (istText(k.quelle))     out.quelle = k.quelle.trim();
   if (istText(k.erklaerung)) out.erklaerung = k.erklaerung.trim();
   return out;
@@ -728,9 +740,13 @@ export function lernUebersicht({ sidecars = [], zustaende = new Map(), faecher =
       if (z?.letztes && (!letztes || z.letztes > letztes)) letztes = z.letztes;
     }
     eintrag.notizen++;
+    const themen = themenJeNotiz(sc);
     notizen.push({
       notiz: sc.notiz,
       titel: sc.titel || sc.notiz.split('/').pop().replace(/\.md$/i, ''),
+      // Nur mitschicken, wenn es echte Themen gibt – eine einzige Gruppe "ohne Thema"
+      // ist keine Gliederung und wuerde die Auswahl nur aufblaehen.
+      ...(themen.length > 1 || (themen.length === 1 && themen[0].thema) ? { themen } : {}),
       fach: fach ? fach.id : null,
       fachName: fach ? fach.name : null,
       fachFarbe: fach ? (fach.farbe || null) : null,
@@ -800,7 +816,49 @@ export function kalenderVorschau({ sidecars = [], zustaende = new Map(), faecher
 }
 
 /**
- * Sitzungs-Queue. filter: { notiz } | { notizen: [...] } | { fach } | {} (= alles
+ * Themen-Auswahl aufbereiten. Eintraege sind "<Notiz>::<Thema>"; ein leerer Themen-Teil
+ * meint die Karten dieser Notiz, die kein Thema tragen. Rueckgabe kennt zwei Fragen:
+ * ist diese Notiz ueberhaupt dabei (spart das Durchlaufen) und passt diese Karte.
+ */
+export function themenFilter(liste) {
+  if (!Array.isArray(liste) || !liste.length) return null;
+  const paare = new Set();
+  const notizen = new Set();
+  for (const eintrag of liste) {
+    if (typeof eintrag !== 'string' || !eintrag) continue;
+    const i = eintrag.indexOf('::');
+    const notiz = i < 0 ? eintrag : eintrag.slice(0, i);
+    const thema = i < 0 ? '' : eintrag.slice(i + 2);
+    notizen.add(notiz);
+    paare.add(notiz + '::' + vortragNorm(thema));
+  }
+  if (!paare.size) return null;
+  return {
+    hatNotiz: (notiz) => notizen.has(notiz),
+    passt: (notiz, thema) => paare.has(notiz + '::' + vortragNorm(thema || '')),
+  };
+}
+
+/**
+ * Themen einer Notiz mit Kartenzahl – Grundlage der aufklappbaren Auswahl.
+ * Karten ohne Thema landen unter dem Schluessel '' ("Ohne Thema").
+ */
+export function themenJeNotiz(sidecar) {
+  const map = new Map();
+  for (const k of (sidecar && sidecar.karten) || []) {
+    const t = istText(k.thema) ? k.thema.trim() : '';
+    const e = map.get(t) || { thema: t, karten: 0, spielbar: 0 };
+    e.karten++;
+    if (karteSpielbar(k)) e.spielbar++;
+    map.set(t, e);
+  }
+  // Themen alphabetisch, "Ohne Thema" ans Ende
+  return [...map.values()].sort((a, b) =>
+    (a.thema === '') - (b.thema === '') || a.thema.localeCompare(b.thema, 'de'));
+}
+
+/**
+ * Sitzungs-Queue. filter: { notiz } | { notizen: [...] } | { themen: [...] } | { fach } | {} (= alles
  * Faellige im Vault). Reihenfolge: am laengsten ueberfaellig zuerst, dann neue Karten –
  * gedeckelt auf neueProTag je Fach ABZUEGLICH der heute bereits neu eingefuehrten
  * Karten (sonst schwemmt ein frisch generiertes Kartenset die Sitzung zu).
@@ -816,10 +874,15 @@ export function sessionQueue({ sidecars = [], zustaende = new Map(), faecher = [
   const neuHeute = new Map(); // fachId -> Anzahl heute bereits neu eingefuehrter Karten
   const nurNotizen = Array.isArray(filter.notizen) && filter.notizen.length
     ? new Set(filter.notizen) : null;
+  const nurThemen = themenFilter(filter.themen);
 
   for (const sc of sidecars) {
     if (filter.notiz && sc.notiz !== filter.notiz) continue;
     if (nurNotizen && !nurNotizen.has(sc.notiz)) continue;
+    // Themen-Auswahl: Eintraege der Form "<Notiz>::<Thema>"; "<Notiz>::" meint die
+    // Karten dieser Notiz ohne Thema. So bleibt eine Auswahl ueber mehrere Lernsets
+    // hinweg in einer flachen Liste beschreibbar.
+    if (nurThemen && !nurThemen.hatNotiz(sc.notiz)) continue;
     const fach = fachFuerNotiz(sc.notiz, faecher);
     const fachId = fach ? fach.id : null;
     // 'fach' in filter statt Wahrheitswert: so ist filter.fach===null ein gueltiger
@@ -829,6 +892,7 @@ export function sessionQueue({ sidecars = [], zustaende = new Map(), faecher = [
     for (const k of sc.karten || []) {
       const z = zustaende.get(k.id) || null;
       if (z && z.erstes === heute) neuHeute.set(fachId, (neuHeute.get(fachId) || 0) + 1);
+      if (nurThemen && !nurThemen.passt(sc.notiz, k.thema)) continue;
       if (!karteSpielbar(k)) { uebersprungenBild++; continue; }
       const eintrag = { karte: k, notiz: sc.notiz, titel: sc.titel || null, fach: fachId, zustand: z, ctx };
       if (uebung) { alle.push(eintrag); continue; }

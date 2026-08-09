@@ -40,6 +40,14 @@ const scratch = mkdtempSync(join(tmpdir(), 'nexus mcp test-'));
 const vaultDir = join(scratch, 'test vault');
 mkdirSync(vaultDir, { recursive: true });
 writeFileSync(join(vaultDir, 'Start Notiz.md'), '# Start Notiz\n\nHallo aus dem MCP-E2E-Test.\n', 'utf8');
+// Echtes 1x1-PNG (rot) – Kopf + gueltige Chunks, damit read_bild Masse UND Bytes liefert.
+const PNG_1x1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64');
+mkdirSync(join(vaultDir, 'Bilder'), { recursive: true });
+writeFileSync(join(vaultDir, 'Bilder', 'punkt.png'), PNG_1x1);
+writeFileSync(join(vaultDir, 'Bilder', 'skizze.svg'),
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900"><text x="352" y="315">Portalroboter</text></svg>', 'utf8');
 writeFileSync(join(scratch, 'nexus.config.json'), JSON.stringify({
   vaultsRoot: scratch,
   activeVault: 'testvault',
@@ -87,6 +95,34 @@ try {
   ok('write_karten kennt "modus" und "abdecken"', !!kartenProps.modus && !!kartenProps.abdecken);
   const regProps = kartenProps.regionen?.items?.properties ?? {};
   ok('Regionen sind Rechtecke (x/y/w/h)', ['x', 'y', 'w', 'h'].every(f => !!regProps[f]), Object.keys(regProps).join(','));
+
+  // ── read_bild: liefert das Bild WIRKLICH als Bild-Inhalt, nicht als Pfad ──
+  const bildAntwort = await session.request('tools/call', {
+    name: 'read_bild', arguments: { vault: 'testvault', path: 'Bilder/punkt.png' } });
+  const bildTeile = bildAntwort.result?.content ?? [];
+  const bildBlock = bildTeile.find(c => c.type === 'image');
+  ok('read_bild antwortet mit einem image-Block', !!bildBlock, JSON.stringify(bildTeile.map(c => c.type)));
+  ok('image-Block trägt den richtigen MIME-Typ', bildBlock?.mimeType === 'image/png', bildBlock?.mimeType);
+  ok('image-Block enthaelt base64-Daten', typeof bildBlock?.data === 'string' && bildBlock.data.length > 40);
+  ok('Bild-Block steht VOR dem Text', bildTeile[0]?.type === 'image', bildTeile[0]?.type);
+  const bildInfo = JSON.parse(bildTeile.find(c => c.type === 'text').text);
+  ok('Pixelmasse werden mitgeliefert', bildInfo.breite === 1 && bildInfo.hoehe === 1, JSON.stringify(bildInfo));
+  ok('Dateigroesse wird genannt', bildInfo.bytes === PNG_1x1.length, String(bildInfo.bytes));
+  ok('Vault wird benannt', bildInfo.vault === 'testvault');
+
+  const svgAntwort = (await session.request('tools/call', {
+    name: 'read_bild', arguments: { vault: 'testvault', path: 'Bilder/skizze.svg' } })).result?.content ?? [];
+  const svgInfo = JSON.parse(svgAntwort.find(c => c.type === 'text').text);
+  ok('SVG kommt als Text, nicht als Bild', !svgAntwort.some(c => c.type === 'image') && svgInfo.vektor === true);
+  ok('SVG-Masse aus der viewBox', svgInfo.breite === 1600 && svgInfo.hoehe === 900, JSON.stringify(svgInfo));
+  ok('SVG-Quelltext liegt bei', svgAntwort.some(c => c.type === 'text' && c.text.includes('Portalroboter')));
+
+  const keinBild = toolJson(await session.request('tools/call', {
+    name: 'read_bild', arguments: { vault: 'testvault', path: 'Start Notiz.md' } }));
+  ok('Nicht-Bild wird abgelehnt', /unterstuetzte Bilddatei/i.test(keinBild?.error ?? ''), JSON.stringify(keinBild).slice(0, 160));
+  const raus = toolJson(await session.request('tools/call', {
+    name: 'read_bild', arguments: { vault: 'testvault', path: '../../ausserhalb.png' } }));
+  ok('Pfad ausserhalb des Vaults wird geblockt', /ausserhalb|existiert nicht/i.test(raus?.error ?? ''), JSON.stringify(raus).slice(0, 160));
 
   // lern_status auf dem Scratch-Vault: keine Karten -> leere, aber gueltige Antwort
   const ls = toolJson(await session.request('tools/call', {

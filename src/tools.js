@@ -1,11 +1,17 @@
 // src/tools.js – MCP-Tool-Implementierungen (node:sqlite, positionale Parameter)
-import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, existsSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, dirname, resolve, sep, relative } from 'path';
 import { createHash } from 'node:crypto';
 import { transaction } from './db.js';
 import { runVaultCheck, renderReport, REPORT_REL } from './vault-check.js';
 import { evaluateDataview } from './dataview.js';
 import { vortragNorm, ohneBom, ohneFrontmatter } from './norm.js';
+import { bildMasse, svgMasse, mimeFuer, istVektor, BILD_ENDUNGEN } from './bildmasse.js';
+
+// Obergrenzen fuer read_bild: eine Vorlesungsfolie als PNG liegt bei 0,1-2 MB; 12 MB
+// laesst Luft nach oben, verhindert aber, dass ein Scan die Sitzung lahmlegt.
+const BILD_MAX_BYTES = 12 * 1024 * 1024;
+const BILD_MAX_SVG   = 200 * 1024;
 import {
   validateKarten, mergeKartenIds, kartenSidecarPath, readKartenSidecar, KARTEN_VERSION, karteSpielbar,
   scanKartenSidecars, readFaecher, readReviews, foldReviews, fachFuerNotiz, fachKontext,
@@ -336,6 +342,55 @@ export function makeTools(indexer, vaultPath) {
           + 'Sieh dir die Bilddatei an und liefere "regionen" (label/x/y/w/h, jeweils 0..1) direkt mit – '
           + 'alternativ zieht der Nutzer sie im Karten-Editor der App auf.',
       } : {}),
+    };
+  }
+
+  // Eine Grafik aus dem Vault so zurueckgeben, dass ein LLM sie WIRKLICH ansehen kann:
+  // als base64 im MCP-Bild-Content (server.js baut daraus den image-Block). Dazu die
+  // Pixelmasse aus dem Dateikopf – ohne die koennte Claude zwar das Bild sehen, aber
+  // keine exakten 0..1-Koordinaten fuer die Bild-Karten daraus ableiten.
+  function readBild({ path, maxBytes } = {}) {
+    if (typeof path !== 'string' || !path) return { error: 'path fehlt' };
+    const mime = mimeFuer(path);
+    if (!mime) {
+      return { error: 'Keine unterstuetzte Bilddatei: ' + path
+        + ' (moeglich: ' + BILD_ENDUNGEN.join(', ') + ')' };
+    }
+    const full = safeFull(path);
+    if (!full) return { error: 'Pfad ausserhalb des Vaults' };
+    if (!existsSync(full)) return { error: 'Bild existiert nicht: ' + path };
+
+    const deckel = Number.isFinite(maxBytes) ? Math.max(1, maxBytes) : BILD_MAX_BYTES;
+    let stat;
+    try { stat = statSync(full); } catch (e) { return { error: e.message }; }
+    if (stat.size > deckel) {
+      return { error: 'Bild ist zu gross (' + Math.round(stat.size / 1024) + ' KB, max '
+        + Math.round(deckel / 1024) + ' KB). Bitte verkleinert im Vault ablegen.' };
+    }
+
+    let buf;
+    try { buf = readFileSync(full); } catch (e) { return { error: e.message }; }
+    const rel = path.replace(/\\/g, '/');
+
+    // SVG ist Text: als Quelltext zurueck (Bild-Content waere hier unzuverlaessig).
+    // Das ist sogar oft praeziser – die Beschriftungen stehen mit Koordinaten drin.
+    if (istVektor(rel)) {
+      const quelltext = buf.toString('utf8');
+      const masse = svgMasse(quelltext);
+      return {
+        ok: true, path: rel, mime, bytes: stat.size, vektor: true,
+        ...(masse ? { breite: masse.breite, hoehe: masse.hoehe, masseAus: masse.quelle } : {}),
+        svg: quelltext.length > BILD_MAX_SVG ? quelltext.slice(0, BILD_MAX_SVG) : quelltext,
+        gekuerzt: quelltext.length > BILD_MAX_SVG,
+      };
+    }
+
+    const masse = bildMasse(buf);
+    return {
+      ok: true, path: rel, mime, bytes: stat.size,
+      ...(masse ? { breite: masse.breite, hoehe: masse.hoehe, format: masse.format }
+                : { hinweis: 'Masse nicht aus dem Dateikopf lesbar – Koordinaten anhand des Bildeindrucks schaetzen.' }),
+      base64: buf.toString('base64'),
     };
   }
 
@@ -688,6 +743,6 @@ export function makeTools(indexer, vaultPath) {
     };
   }
 
-  return { search, outline, readNote, writeNote, writeVortrag, writeKarten, lernStatus, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, vaultCheck };
+  return { search, outline, readNote, writeNote, writeVortrag, writeKarten, readBild, lernStatus, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, vaultCheck };
 }
 // rev: graph() fuer UI-Graph (Session 13)
