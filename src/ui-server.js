@@ -7,9 +7,18 @@ import { fileURLToPath } from 'url';
 import { spawn, spawnSync } from 'child_process';
 import { tmpdir } from 'os';
 import { readFileSync } from 'fs';
+import { createHash } from 'node:crypto';
 import { buildIndexer } from './indexer.js';
-import { makeTools } from './tools.js';
+import { makeTools, SIDECAR_SUFFIXES } from './tools.js';
 import { loadConfig, resolveDbPath, dataPath, CONFIG_PATH } from './paths.js';
+// R26: Lernmodus – Karteikarten-Sidecars, Review-Log und Faecher liegen im Vault,
+// die Auswertung (Faelligkeit, Pruefungs-Planung) ist pure Logik in lernen.js.
+import {
+  scanKartenSidecars, readReviews, foldReviews, appendReview, readFaecher, writeFaecher,
+  lernUebersicht, sessionQueue, lernStatistik, storniereReview, ankiExport,
+  fachFuerNotiz, fachKontext, kartenSidecarPath, heuteISO,
+  LERN_STANDARD, LERN_LOGDIR, FAECHER_REL, karteSpielbar,
+} from './lernen.js';
 // Phase 1: Piper-TTS + Claude-Connect laufen als REST statt Electron-IPC – dieselbe
 // Route funktioniert in-process unter Electron UND spaeter als eigenstaendiger
 // Tauri-Sidecar-Prozess (computeLaunchSpec() unten erkennt die Umgebung selbst).
@@ -64,6 +73,12 @@ app.use(express.static(join(__dir, '..', 'public'), {
 }));
 
 // ── Dateibaum ─────────────────────────────────────────────────────────────────
+// Sidecar-Erkennung an EINER Stelle: buildTree und treeSignature muessen exakt
+// dieselbe Menge ausblenden (siehe Kommentar in buildTree).
+function istSidecar(name) {
+  return SIDECAR_SUFFIXES.some(s => name.endsWith(s) || name.endsWith(s + '.nexustmp'));
+}
+
 function buildTree(root, relBase, ignoreSet, depth = 0) {
   if (depth > 8) return [];
   let entries;
@@ -77,11 +92,11 @@ function buildTree(root, relBase, ignoreSet, depth = 0) {
     if (e.isDirectory()) {
       result.push({ name: e.name, path: rel, type: 'folder', children: buildTree(root, rel, ignoreSet, depth + 1) });
     } else {
-      // R24: Vortragsskript-Sidecars sind Maschinen-Dateien – nicht im Baum zeigen.
-      // Auch .vortrag.json.nexustmp (Crash-Leiche des atomaren Writes) mitfiltern.
+      // R24/R26: Sidecars (Vortragsskript, Karteikarten) sind Maschinen-Dateien –
+      // nicht im Baum zeigen. Auch die .nexustmp-Crash-Leichen der atomaren Writes.
       // (Gleiche Regel in treeSignature spiegeln, sonst feuert das SSE-Polling
       // tree-changed-Events fuer unsichtbare Dateien.)
-      if (e.name.endsWith('.vortrag.json') || e.name.endsWith('.vortrag.json.nexustmp')) continue;
+      if (istSidecar(e.name)) continue;
       const ext = extname(e.name).toLowerCase();
       result.push({ name: e.name, path: rel, type: 'file', ext });
     }
@@ -98,24 +113,42 @@ function buildTree(root, relBase, ignoreSet, depth = 0) {
 // stat pro Datei) -> sehr guenstig, auch bei tausenden Dateien. Aendert sich genau
 // dann, wenn Dateien/Ordner hinzukommen, verschwinden oder umbenannt/verschoben
 // werden (Inhalts-Edits ohne Pfadaenderung lassen den Baum – korrekt – unberuehrt).
-function treeSignature(root, ignoreSet, depth = 0, rel = '', state = { h: 0x811c9dc5 >>> 0, n: 0 }) {
+// R26: derselbe Lauf berechnet eine ZWEITE Signatur fuer die Lern-Daten
+// (*.karten.json, _System/Lernen/**). Die muss getrennt sein, weil die Karten-
+// Sidecars aus dem sichtbaren Baum ausgeblendet sind – eine von Claude geschriebene
+// Karte wuerde sonst nie ein Event ausloesen und das Dashboard bliebe veraltet.
+// Hier zaehlt der INHALT (mtime+size), nicht nur der Pfad: eine geaenderte Karte
+// oder eine neue Antwortzeile im Log aendert den Pfad ja nicht.
+function mixStr(state, key, s) {
+  for (let i = 0; i < s.length; i++) { state[key] ^= s.charCodeAt(i); state[key] = Math.imul(state[key], 0x01000193) >>> 0; }
+}
+function treeSignature(root, ignoreSet, depth = 0, rel = '', state = { h: 0x811c9dc5 >>> 0, n: 0, lh: 0x811c9dc5 >>> 0 }) {
   if (depth > 8) return state;
   let entries;
   try { entries = readdirSync(rel === '' ? root : join(root, rel), { withFileTypes: true }); }
   catch { return state; }
   for (const e of entries) {
     if (ignoreSet.has(e.name) || e.name.startsWith('.')) continue;
-    if (!e.isDirectory() && (e.name.endsWith('.vortrag.json') || e.name.endsWith('.vortrag.json.nexustmp'))) continue; // R24: wie buildTree
     const r = rel ? rel + '/' + e.name : e.name;
+    if (!e.isDirectory() && istSidecar(e.name)) {                       // R24/R26: wie buildTree
+      if (e.name.endsWith('.karten.json')) mixLern(state, root, r);
+      continue;
+    }
+    if (!e.isDirectory() && (r === FAECHER_REL || r.startsWith(LERN_LOGDIR + '/'))) mixLern(state, root, r);
     state.n++;
-    for (let i = 0; i < r.length; i++) { state.h ^= r.charCodeAt(i); state.h = Math.imul(state.h, 0x01000193) >>> 0; }
+    mixStr(state, 'h', r);
     if (e.isDirectory()) treeSignature(root, ignoreSet, depth + 1, r, state);
   }
   return state;
 }
+function mixLern(state, root, rel) {
+  let st;
+  try { st = statSync(join(root, rel)); } catch { return; }
+  mixStr(state, 'lh', rel + ':' + st.size + ':' + Math.floor(st.mtimeMs));
+}
 function treeSigString(root, ignoreSet) {
   const s = treeSignature(root, ignoreSet);
-  return s.n + ':' + s.h;
+  return { tree: s.n + ':' + s.h, lern: String(s.lh) };
 }
 
 app.get('/api/vaults', (_req, res) => {
@@ -261,6 +294,210 @@ app.post('/api/reindex', (req, res) => {
     const { tools } = getVault(req.body?.vault);
     const result = tools.reindex();
     res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── R26: Lernmodus (Karteikarten + Spaced Repetition) ─────────────────────────
+// Alle Daten liegen im Vault (Karten neben der Notiz, Antworten als JSONL, Faecher
+// in _System/Lernen/faecher.json) – hier wird nur gelesen, gefaltet und gerechnet.
+// Ein-Schreiber-Prinzip: den Antwort-Log schreibt AUSSCHLIESSLICH dieser Prozess.
+const _kartenCache = {};   // Vault -> Map(sidecarPfad -> {mtime, sidecar}), mtime-invalidiert
+const _reviewCache = {};   // Vault -> {sig, reviews}
+
+// Der Log waechst mit jeder Antwort; ihn bei jedem Dashboard-Poll komplett neu zu
+// parsen waere Verschwendung. Signatur = Dateinamen + Groesse + mtime im Log-Ordner.
+function readReviewsCached(vaultPath, name) {
+  let sig = '';
+  try {
+    for (const f of readdirSync(join(vaultPath, ...LERN_LOGDIR.split('/'))).sort()) {
+      if (!/\.jsonl$/i.test(f)) continue;
+      const st = statSync(join(vaultPath, ...LERN_LOGDIR.split('/'), f));
+      sig += `${f}:${st.size}:${Math.floor(st.mtimeMs)}|`;
+    }
+  } catch { sig = ''; }
+  const hit = _reviewCache[name];
+  if (hit && hit.sig === sig) return hit.reviews;
+  const reviews = readReviews(vaultPath);
+  _reviewCache[name] = { sig, reviews };
+  return reviews;
+}
+
+function lernKontext(vaultName) {
+  const { vault, tools } = getVault(vaultName);
+  const cache = (_kartenCache[vault.name] ||= new Map());
+  const sidecars = scanKartenSidecars(vault.path, cache);
+  const faecher  = readFaecher(vault.path);
+  // Karten-ID -> Fach-Kontext: die Pruefungs-Kappung braucht ihn schon beim Falten
+  // des Logs, nicht erst beim Anzeigen.
+  const ctxById = new Map();
+  for (const sc of sidecars) {
+    const ctx = fachKontext(fachFuerNotiz(sc.notiz, faecher), LERN_STANDARD);
+    for (const k of sc.karten) ctxById.set(k.id, ctx);
+  }
+  const reviews = readReviewsCached(vault.path, vault.name);
+  const zustaende = foldReviews(reviews, id => ctxById.get(id) || {});
+  return { vault, tools, sidecars, faecher, zustaende, reviews, heute: heuteISO(), standard: LERN_STANDARD };
+}
+
+app.get('/api/lernen/statistik', (req, res) => {
+  try {
+    const { sidecars, faecher, zustaende, reviews, heute, standard } = lernKontext(req.query.vault);
+    const tage = Math.min(365, Math.max(7, Number(req.query.tage) || 30));
+    // fach fehlt => alles; '__ohne__' => Karten ohne Fach-Zuordnung
+    const fach = req.query.fach === undefined ? undefined
+      : (req.query.fach === '__ohne__' ? null : String(req.query.fach));
+    res.json(lernStatistik({ sidecars, zustaende, reviews, faecher, heute, tage, fach, standard }));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/lernen/uebersicht', (req, res) => {
+  try {
+    const { sidecars, faecher, zustaende, heute, standard } = lernKontext(req.query.vault);
+    res.json(lernUebersicht({ sidecars, zustaende, faecher, heute, standard }));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Sitzungs-Queue. Ohne Filter: alles, was heute im ganzen Vault faellig ist –
+// das ist der "Alles lernen"-Knopf der Abfrage-Uebersicht.
+app.get('/api/lernen/session', (req, res) => {
+  try {
+    const { sidecars, faecher, zustaende, heute, standard } = lernKontext(req.query.vault);
+    const filter = {};
+    if (req.query.note) filter.notiz = String(req.query.note).replace(/\\/g, '/');
+    // Themenblock-Auswahl: mehrere Notizen gleichzeitig (Komma-getrennt).
+    if (req.query.notes) {
+      const liste = String(req.query.notes).split('\n').map(s => s.trim().replace(/\\/g, '/')).filter(Boolean);
+      if (liste.length) filter.notizen = liste;
+    }
+    // '__ohne__' = die Sammelkachel "Ohne Fach" im Dashboard (Karten ohne Fach-Zuordnung).
+    if (req.query.fach) filter.fach = req.query.fach === '__ohne__' ? null : String(req.query.fach);
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 60));
+    // uebung=1: alles abfragen, nichts einplanen (der Client schreibt dann keine Antworten)
+    const uebung = req.query.uebung === '1' || req.query.uebung === 'true';
+    const q = sessionQueue({ sidecars, zustaende, faecher, heute, standard, filter, limit, uebung });
+    // Der Client braucht den Fach-Kontext nicht – nur Karte, Herkunft und Zustand.
+    res.json({
+      ...q,
+      karten: q.karten.map(e => ({
+        karte: e.karte, notiz: e.notiz, titel: e.titel, fach: e.fach,
+        neu: !e.zustand || !e.zustand.due,
+        due: e.zustand?.due ?? null,
+        stufe: e.zustand?.stufe ?? 0,
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/lernen/antwort', (req, res) => {
+  try {
+    const { vault: vaultName, notiz, kartenId, korrekt, dauerMs, session, detail } = req.body || {};
+    if (typeof kartenId !== 'string' || !kartenId) return res.status(400).json({ error: 'kartenId fehlt' });
+    if (typeof korrekt !== 'boolean') return res.status(400).json({ error: 'korrekt muss true/false sein' });
+    const { vault } = getVault(vaultName);
+    const heute = heuteISO();
+    const r = appendReview(vault.path, { tag: heute, karte: kartenId, korrekt, notiz, dauerMs, session, detail });
+    if (r.error) return res.status(500).json(r);
+    // Neu falten statt inkrementell rechnen: eine Quelle der Wahrheit (der Log).
+    const { zustaende, sidecars, faecher, standard } = lernKontext(vaultName);
+    broadcastEvent({ type: 'lernen-changed', vault: vault.name });
+    res.json({
+      ok: true,
+      t: r.t,                       // fuer /api/lernen/undo, falls sich der Nutzer verklickt
+      zustand: zustaende.get(kartenId) ?? null,
+      offen: sessionQueue({ sidecars, zustaende, faecher, heute, standard, limit: 500 }).gesamt,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Verklickt? Die Antwort wird nicht geloescht (append-only Log), sondern storniert.
+app.post('/api/lernen/undo', (req, res) => {
+  try {
+    const { vault: vaultName, kartenId, t } = req.body || {};
+    const { vault } = getVault(vaultName);
+    const r = storniereReview(vault.path, { karte: kartenId, t });
+    if (r.error) return res.status(400).json(r);
+    const { zustaende } = lernKontext(vaultName);
+    broadcastEvent({ type: 'lernen-changed', vault: vault.name });
+    res.json({ ok: true, zustand: zustaende.get(kartenId) ?? null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/lernen/anki', (req, res) => {
+  try {
+    const { sidecars, faecher } = lernKontext(req.query.vault);
+    const fach = req.query.fach === undefined ? undefined
+      : (req.query.fach === '__ohne__' ? null : String(req.query.fach));
+    const r = ankiExport({ sidecars, faecher, fach });
+    const name = 'nexus-karten' + (req.query.fach ? '-' + String(req.query.fach).replace(/[^\w-]+/g, '_') : '') + '.txt';
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="' + name + '"');
+    res.setHeader('X-Nexus-Karten', String(r.karten));
+    res.send(r.tsv);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/lernen/faecher', (req, res) => {
+  try {
+    const { vault } = getVault(req.query.vault);
+    res.json({ faecher: readFaecher(vault.path), standard: LERN_STANDARD });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/lernen/faecher', (req, res) => {
+  try {
+    const { vault } = getVault(req.body?.vault);
+    const faecher = req.body?.faecher;
+    if (!Array.isArray(faecher)) return res.status(400).json({ error: 'faecher fehlt' });
+    for (const f of faecher) {
+      for (const o of (Array.isArray(f?.ordner) ? f.ordner : [])) {
+        const full = safeFull(vault.path, o);
+        if (!full) return res.status(400).json({ error: `Ordner ausserhalb des Vaults: ${o}` });
+        if (!existsSync(full)) return res.status(400).json({ error: `Ordner existiert nicht: ${o}` });
+      }
+    }
+    const r = writeFaecher(vault.path, faecher);
+    if (r.error) return res.status(400).json(r);
+    broadcastEvent({ type: 'lernen-changed', vault: vault.name });
+    res.json({ ...r, faecherListe: readFaecher(vault.path) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Karten einer Notiz fuer den Editor: Inhalt + Veraltungs-Hinweis + Lernstand.
+app.get('/api/karten', (req, res) => {
+  try {
+    const { vault } = getVault(req.query.vault);
+    const relNote = String(req.query.path || '').replace(/\\/g, '/');
+    if (!/\.md$/i.test(relNote)) return res.status(400).json({ error: 'path muss auf eine .md-Notiz zeigen' });
+    const noteFull = safeFull(vault.path, relNote);
+    if (!noteFull || !existsSync(noteFull)) return res.status(404).json({ error: 'Notiz nicht gefunden' });
+    const scFull = safeFull(vault.path, kartenSidecarPath(relNote));
+    let sidecar = null;
+    if (scFull && existsSync(scFull)) { try { sidecar = JSON.parse(readFileSync(scFull, 'utf8')); } catch { sidecar = null; } }
+    let stale = false;
+    if (sidecar?.notizHash) {
+      const roh = readFileSync(noteFull, 'utf8').replace(/^﻿/, '');
+      stale = sidecar.notizHash !== 'sha256:' + createHash('sha256').update(roh, 'utf8').digest('hex');
+    }
+    const { zustaende } = lernKontext(req.query.vault);
+    const karten = (sidecar?.karten ?? []).map(k => ({
+      ...k,
+      spielbar: karteSpielbar(k),
+      zustand: zustaende.get(k.id) ?? null,
+    }));
+    res.json({ notiz: relNote, titel: sidecar?.titel ?? null, erstellt: sidecar?.erstellt ?? null, stale, karten });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Editor-Speichern laeuft durch DIESELBE Validierung + denselben ID-Merge wie das
+// MCP-Tool – es gibt nur einen Schreibpfad fuer Karteikarten.
+app.post('/api/karten/save', (req, res) => {
+  try {
+    const { vault: vaultName, path: relNote, titel, karten } = req.body || {};
+    const { vault, tools } = getVault(vaultName);
+    const r = tools.writeKarten({ path: String(relNote || '').replace(/\\/g, '/'), titel, karten });
+    if (r.error) return res.status(400).json(r);
+    broadcastEvent({ type: 'lernen-changed', vault: vault.name });
+    res.json(r);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -453,12 +690,15 @@ app.post('/api/rename', (req, res) => {
     if (existsSync(to)) return res.status(409).json({ error: 'Ziel existiert bereits' });
     mkdirSync(dirname(to), { recursive: true });
     renameSync(from, to);
-    // R24: Vortragsskript-Sidecar der Notiz mit umbenennen (im Baum unsichtbar).
-    // Der gestempelte Hash haengt am Inhalt, nicht am Pfad – bleibt also gueltig.
+    // R24/R26: Sidecars der Notiz mit umbenennen (im Baum unsichtbar). Der gestempelte
+    // Hash haengt am Inhalt, nicht am Pfad – bleibt also gueltig. Der Lernstand haengt
+    // an den Karten-IDs, nicht am Pfad – bleibt ebenfalls unberuehrt.
     if (/\.md$/i.test(from) && /\.md$/i.test(to)) {
-      const scFrom = from.replace(/\.md$/i, '.vortrag.json');
-      const scTo   = to.replace(/\.md$/i, '.vortrag.json');
-      if (existsSync(scFrom) && !existsSync(scTo)) { try { renameSync(scFrom, scTo); } catch {} }
+      for (const suf of SIDECAR_SUFFIXES) {
+        const scFrom = from.replace(/\.md$/i, suf);
+        const scTo   = to.replace(/\.md$/i, suf);
+        if (existsSync(scFrom) && !existsSync(scTo)) { try { renameSync(scFrom, scTo); } catch {} }
+      }
     }
     const result = tools.reindex();
     res.json({ ok: true, oldPath: oldPath.replace(/\\/g, '/'), newPath: newPath.replace(/\\/g, '/'), indexed: result.indexed });
@@ -476,10 +716,12 @@ app.post('/api/delete', (req, res) => {
     // maxRetries/retryDelay faengt kurzzeitige Windows-Locks (EPERM/EBUSY) ab,
     // z.B. wenn ein Datei-Watcher den Ordner gerade noch losgelassen hat.
     rmSync(full, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 });
-    // R24: Vortragsskript-Sidecar der geloeschten Notiz mit entfernen (unsichtbar im Baum).
+    // R24/R26: Sidecars der geloeschten Notiz mit entfernen (unsichtbar im Baum).
     if (/\.md$/i.test(full)) {
-      const sc = full.replace(/\.md$/i, '.vortrag.json');
-      if (existsSync(sc)) { try { rmSync(sc, { force: true, maxRetries: 5, retryDelay: 120 }); } catch {} }
+      for (const suf of SIDECAR_SUFFIXES) {
+        const sc = full.replace(/\.md$/i, suf);
+        if (existsSync(sc)) { try { rmSync(sc, { force: true, maxRetries: 5, retryDelay: 120 }); } catch {} }
+      }
     }
     const result = tools.reindex();
     res.json({ ok: true, path: relPath.replace(/\\/g, '/'), indexed: result.indexed });
@@ -678,7 +920,7 @@ const _ignoreSet = new Set(cfg.ignore ?? []);
 const _treeSig = {};
 for (const v of cfg.vaults) {
   if (!indexers[v.name]) continue;
-  try { _treeSig[v.name] = treeSigString(v.path, _ignoreSet); } catch { _treeSig[v.name] = ''; }
+  try { _treeSig[v.name] = treeSigString(v.path, _ignoreSet); } catch { _treeSig[v.name] = { tree: '', lern: '' }; }
 }
 setInterval(() => {
   if (sseClients.size === 0) return;
@@ -686,10 +928,12 @@ setInterval(() => {
     if (!indexers[v.name]) continue;
     let sig;
     try { sig = treeSigString(v.path, _ignoreSet); } catch { continue; }
-    if (sig !== _treeSig[v.name]) {
-      _treeSig[v.name] = sig;
-      broadcastEvent({ type: 'tree-changed', vault: v.name });
-    }
+    const vorher = _treeSig[v.name] ?? { tree: '', lern: '' };
+    _treeSig[v.name] = sig;
+    if (sig.tree !== vorher.tree) broadcastEvent({ type: 'tree-changed', vault: v.name });
+    // R26: eigenes Event – die Karten-Sidecars sind aus dem Baum ausgeblendet, ein
+    // per MCP geschriebenes Kartenset wuerde sonst kein Update ausloesen.
+    if (sig.lern !== vorher.lern) broadcastEvent({ type: 'lernen-changed', vault: v.name });
   }
 }, 2000).unref?.();
 

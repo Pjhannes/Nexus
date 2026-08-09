@@ -7,6 +7,7 @@ import { parseNote } from '../src/parse.js';
 import { buildIndexer } from '../src/indexer.js';
 import { makeTools } from '../src/tools.js';
 import { makeVaultRegistry } from '../src/vault-registry.js';
+import { appendReview, readReviews, foldReviews, writeFaecher, readFaecher, scanKartenSidecars } from '../src/lernen.js';
 
 // ── Farben ────────────────────────────────────────────────────────────────────
 const G = s => `\x1b[32m${s}\x1b[0m`;
@@ -273,6 +274,102 @@ assert('R24: delete entfernt Sidecar mit', !existsSync(join(vault, 'Uni', 'Therm
 // Notiz fuer nachfolgende Tests wiederherstellen (Originalinhalt nach patch-Tests)
 const vtRestore = tools.writeNote({ path: 'Uni/Thermodynamik.md', content: vtNoteRaw, create: true });
 assert('R24: Notiz wiederhergestellt', vtRestore.ok === true, JSON.stringify(vtRestore).slice(0, 120));
+
+// ═════════════════════════════════════════════════════════════════════════════
+console.log(B('\n── 3c. R26: write_karten + Lernstand-Dateien ─────────────────'));
+// ═════════════════════════════════════════════════════════════════════════════
+mkdirSync(join(vault, 'Uni', 'Bilder'), { recursive: true });
+writeFileSync(join(vault, 'Uni', 'Bilder', 'carnot.png'), 'FAKE-PNG');
+const kt1 = tools.writeKarten({
+  path: 'Uni/Thermodynamik.md',
+  titel: 'Karten: Thermodynamik',
+  karten: [
+    { typ: 'janein', frage: 'Energie kann vernichtet werden.', antwort: false, quelle: 'dU = deltaQ minus deltaW' },
+    { typ: 'mc', frage: 'Wovon haengt Carnot ab?', optionen: ['Temperaturen', 'Medium'], korrekt: [0], quelle: 'Carnot-Wirkungsgrad (eta)' },
+    { typ: 'bild', frage: 'Ordne zu.', bild: 'Uni/Bilder/carnot.png', labels: ['isotherm', 'adiabat'] },
+  ],
+});
+assert('R26: writeKarten ok=true', kt1.ok === true, JSON.stringify(kt1).slice(0, 220));
+assert('R26: Sidecar-Pfad korrekt', kt1.path === 'Uni/Thermodynamik.karten.json', kt1.path);
+const ktFull = join(vault, 'Uni', 'Thermodynamik.karten.json');
+assert('R26: Sidecar existiert auf Platte', existsSync(ktFull));
+const ktJson = JSON.parse(readFileSync(ktFull, 'utf8'));
+assert('R26: version=1 + 3 Karten', ktJson.version === 1 && ktJson.karten.length === 3);
+assert('R26: jede Karte hat eine ID', ktJson.karten.every(k => /^k[0-9a-f]{10}$/.test(k.id)), JSON.stringify(ktJson.karten.map(k => k.id)));
+const ktNoteRaw = readFileSync(join(vault, 'Uni', 'Thermodynamik.md'), 'utf8');
+assert('R26: notizHash = sha256 des Notiz-Inhalts',
+  ktJson.notizHash === 'sha256:' + createHash('sha256').update(ktNoteRaw, 'utf8').digest('hex'), ktJson.notizHash);
+assert('R26: Bild-Karte ohne Regionen wird gemeldet',
+  Array.isArray(kt1.bildOhneRegionen) && kt1.bildOhneRegionen.length === 1 && !!kt1.hinweis, JSON.stringify(kt1.bildOhneRegionen));
+
+// Grounding + Pfad-Sicherheit
+const kt2 = tools.writeKarten({ path: 'Uni/Thermodynamik.md', karten: [{ typ: 'janein', frage: 'X?', antwort: true, quelle: 'GIBT ES NICHT XYZ' }] });
+assert('R26: falsche quelle -> error nennt Karte + Zitat', !!kt2.error && kt2.error.includes('Karte 1') && kt2.error.includes('GIBT ES NICHT XYZ'), kt2.error);
+assert('R26: Traversal-Pfad -> error', !!tools.writeKarten({ path: '../evil.md', karten: [] }).error);
+assert('R26: Nicht-.md-Ziel -> error', !!tools.writeKarten({ path: 'Uni/Thermodynamik.karten.json', karten: [] }).error);
+assert('R26: fehlende Notiz -> error', !!tools.writeKarten({ path: 'Nicht-Da.md', karten: [] }).error);
+const kt3 = tools.writeKarten({ path: 'Uni/Thermodynamik.md', karten: [{ typ: 'bild', frage: 'B?', bild: '../ausserhalb.png', labels: ['a', 'b'] }] });
+assert('R26: Bild ausserhalb des Vaults -> error', !!kt3.error && kt3.error.includes('nicht im Vault'), kt3.error);
+
+// ID-Stabilitaet: unveraenderte Frage behaelt ID -> Lernstand ueberlebt Regeneration
+const idVorher = ktJson.karten[0].id;
+const kt4 = tools.writeKarten({
+  path: 'Uni/Thermodynamik.md',
+  karten: [
+    { typ: 'janein', frage: 'Energie kann **vernichtet** werden.', antwort: false, quelle: 'dU = deltaQ minus deltaW' },
+    { typ: 'freitext', frage: 'Was besagt der erste Hauptsatz?', antwort: 'Energiebilanz.', quelle: 'Erster Hauptsatz (Thermodynamik)' },
+  ],
+});
+assert('R26: Regeneration ok', kt4.ok === true, JSON.stringify(kt4).slice(0, 200));
+const ktJson2 = JSON.parse(readFileSync(ktFull, 'utf8'));
+assert('R26: unveraenderte Frage behaelt ihre ID', ktJson2.karten[0].id === idVorher, `${ktJson2.karten[0].id} vs ${idVorher}`);
+assert('R26: Zaehler neu/uebernommen stimmen', kt4.uebernommen === 1 && kt4.neu === 1, JSON.stringify({ u: kt4.uebernommen, n: kt4.neu }));
+assert('R26: erstellt bleibt, aktualisiert wird gesetzt', ktJson2.erstellt === ktJson.erstellt && !!ktJson2.aktualisiert);
+
+tools.reindex();
+assert('R26: Karten-Sidecar landet NICHT im Index',
+  !tools.listNotes({ prefix: 'Uni/' }).some(n => n.path.endsWith('.karten.json')));
+
+// Sidecar-Lifecycle: beide Sorten (.vortrag.json UND .karten.json) ziehen mit
+tools.writeVortrag({ path: 'Uni/Thermodynamik.md', segmente: [{ sprich: 'Intro.', art: 'keine' }] });
+const ktMv = tools.move({ from: 'Uni/Thermodynamik.md', to: 'Uni/Thermo-R26.md' });
+assert('R26: move der Notiz ok', ktMv.ok === true, JSON.stringify(ktMv));
+assert('R26: move zieht BEIDE Sidecars mit',
+  existsSync(join(vault, 'Uni', 'Thermo-R26.karten.json')) && existsSync(join(vault, 'Uni', 'Thermo-R26.vortrag.json')) &&
+  !existsSync(ktFull) && !existsSync(join(vault, 'Uni', 'Thermodynamik.vortrag.json')));
+tools.delete({ path: 'Uni/Thermo-R26.md' });
+assert('R26: delete entfernt BEIDE Sidecars',
+  !existsSync(join(vault, 'Uni', 'Thermo-R26.karten.json')) && !existsSync(join(vault, 'Uni', 'Thermo-R26.vortrag.json')));
+tools.writeNote({ path: 'Uni/Thermodynamik.md', content: ktNoteRaw, create: true });
+
+// Lernstand: Log (append-only, monatsrotiert) + Faecher-Datei
+const rv1 = appendReview(vault, { t: '2026-08-09T10:00:00.000Z', karte: idVorher, korrekt: true, notiz: 'Uni/Thermodynamik.md', dauerMs: 4100, session: 's1' });
+const rv2 = appendReview(vault, { t: '2026-08-10T10:00:00.000Z', karte: idVorher, korrekt: false, session: 's2' });
+assert('R26: appendReview ok', rv1.ok === true && rv2.ok === true, JSON.stringify([rv1, rv2]));
+assert('R26: Log-Datei monatsrotiert', existsSync(join(vault, '_System', 'Lernen', 'log', '2026-08.jsonl')));
+assert('R26: appendReview validiert', !!appendReview(vault, { karte: 'kX' }).error && !!appendReview(vault, { korrekt: true }).error);
+// Syncthing-Konfliktkopie: Zeilen daraus duerfen nicht verloren gehen
+writeFileSync(join(vault, '_System', 'Lernen', 'log', '2026-08.sync-conflict-20260810-120000-ABCDEFG.jsonl'),
+  JSON.stringify({ t: '2026-08-09T10:00:00.000Z', karte: idVorher, korrekt: true }) + '\n' +   // Dublette
+  JSON.stringify({ t: '2026-08-11T09:00:00.000Z', karte: idVorher, korrekt: true }) + '\n' +   // nur hier
+  'halbe Zeile ohne JSON\n');
+const reviews = readReviews(vault);
+assert('R26: readReviews liest Konfliktkopien mit', reviews.length === 3, JSON.stringify(reviews.map(r => r.t)));
+assert('R26: readReviews dedupliziert + sortiert',
+  reviews[0].t < reviews[1].t && reviews[1].t < reviews[2].t &&
+  new Set(reviews.map(r => r.t + '|' + r.karte)).size === 3);
+const zst = foldReviews(reviews, () => ({}));
+assert('R26: Zustand aus dem Log gefaltet', zst.get(idVorher)?.antworten === 3 && zst.get(idVorher)?.lapses === 1,
+  JSON.stringify(zst.get(idVorher)));
+
+const fw = writeFaecher(vault, [{ id: 'thermo', name: 'Thermodynamik', ordner: ['Uni'], pruefung: '2026-09-01', zielKorrekt: 3 }]);
+assert('R26: writeFaecher ok', fw.ok === true, JSON.stringify(fw));
+assert('R26: readFaecher liest zurueck', readFaecher(vault)[0]?.id === 'thermo');
+assert('R26: writeFaecher validiert (kaputtes Datum)',
+  !!writeFaecher(vault, [{ id: 'x', name: 'X', ordner: ['Uni'], pruefung: '01.09.2026' }]).error);
+assert('R26: kein .nexustmp-Rest', !existsSync(join(vault, '_System', 'Lernen', 'faecher.json.nexustmp')));
+const scans = scanKartenSidecars(vault);
+assert('R26: scanKartenSidecars findet nichts mehr (Notiz wurde geloescht/neu)', scans.length === 0, JSON.stringify(scans.map(s => s.notiz)));
 
 // ═════════════════════════════════════════════════════════════════════════════
 console.log(B('\n── 3a. R14: Schreib-Integrität (keine stille Trunkierung) ────'));

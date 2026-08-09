@@ -5,31 +5,27 @@ import { createHash } from 'node:crypto';
 import { transaction } from './db.js';
 import { runVaultCheck, renderReport, REPORT_REL } from './vault-check.js';
 import { evaluateDataview } from './dataview.js';
+import { vortragNorm, ohneBom, ohneFrontmatter } from './norm.js';
+import {
+  validateKarten, mergeKartenIds, kartenSidecarPath, readKartenSidecar, KARTEN_VERSION, karteSpielbar,
+  scanKartenSidecars, readFaecher, readReviews, foldReviews, fachFuerNotiz, fachKontext,
+  lernUebersicht, lernStatistik, heuteISO, LERN_STANDARD, LERN_STUFEN,
+} from './lernen.js';
 
 const SNIPPET_LINES = 30;
 
+// Die Normalisierung wohnt in src/norm.js (damit auch lernen.js sie nutzen kann,
+// ohne Zirkelimport) – hier weiter exportiert, damit bestehende Importe aus
+// tools.js (test/vortrag.test.mjs) gueltig bleiben.
+export { vortragNorm };
+
+// Sidecar-Dateien, die zu einer Notiz gehoeren, aber im Dateibaum unsichtbar sind.
+// JEDE neue Sorte muss an SECHS Stellen bekannt sein, sonst bleiben unsichtbare
+// Waisen zurueck: ui-server.js buildTree + treeSignature + /api/rename + /api/delete
+// sowie hier in move() und deleteEntry().
+export const SIDECAR_SUFFIXES = ['.vortrag.json', '.karten.json'];
+
 // ---- R24: Vortragsskript (<Notiz>.vortrag.json) – pure Helfer, ohne FS/DB testbar ----
-// Normalisierung fuer den Anker-Vergleich. Sie muss ROH-Markdown und gerenderten
-// Sichttext (DOM textContent) auf dieselbe Form bringen, damit ein Anker, der hier
-// beim Schreiben validiert wurde, auch im Player (vtNorm in public/index.html –
-// MUSS identisch bleiben, Paritaets-Test in test/vortrag.test.mjs) gefunden wird.
-// Inline-Marker (*_~`=) -> '' (Rendern entfernt sie ersatzlos, auch mitten im Wort);
-// Struktur-Marker (# > |) -> ' ' (Ueberschriften-/Zitat-/Tabellenzeichen trennen Woerter).
-// NFC vorweg: sonst lehnt die Validierung visuell identische Anker in NFD ab
-// (z. B. von macOS kopierte Umlaute: 'ä' als 'a'+Kombinationszeichen).
-export function vortragNorm(t) {
-  return (t || '')
-    .normalize('NFC')
-    .replace(/!\[\[[^\]]+\]\]/g, ' ')                            // Embeds weg
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')                       // Bilder weg
-    .replace(/\[\[([^\]#|]+)(?:#[^\]|]*)?\|([^\]]+)\]\]/g, '$2') // [[Ziel|Alias]] -> Alias
-    .replace(/\[\[([^\]#|]+)(?:#[^\]|]*)?\]\]/g, '$1')           // [[Ziel]] -> Ziel
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')                     // [Text](url) -> Text
-    .replace(/[*_~`=]/g, '')
-    .replace(/[#>|]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim().toLowerCase();
-}
 
 export const VORTRAG_ARTEN = ['absatz', 'wort', 'tabelle', 'ueberschrift', 'keine'];
 
@@ -246,21 +242,17 @@ export function makeTools(indexer, vaultPath) {
     if (!existsSync(full)) return { error: 'Notiz existiert nicht: ' + path };
     let raw;
     try { raw = readFileSync(full, 'utf8'); } catch (e) { return { error: e.message }; }
-    // BOM strippen: fetch().text() im Player entfernt die UTF-8-BOM per Spec –
-    // ein Hash ueber den BOM-behafteten String waere client-seitig NIE reproduzierbar
-    // (Skript stuende dauerhaft auf "veraltet").
-    const ohneBom = raw.replace(/^﻿/, '');
-    // Frontmatter fuer die ANKER-Validierung ausblenden: die Leseansicht rendert es
-    // als Chip, ein Anker daraus waere serverseitig "gueltig", aber im Player nie
-    // auffindbar. Der Hash laeuft weiter ueber den vollen Inhalt (ohne BOM).
-    const rumpf = ohneBom.replace(/^---\r?\n[\s\S]*?\r?\n---(\r?\n|$)/, '');
+    // BOM strippen (Hash muss im Player reproduzierbar sein) und Frontmatter fuer die
+    // ANKER-Validierung ausblenden – der Hash laeuft weiter ueber den vollen Inhalt.
+    const roh = ohneBom(raw);
+    const rumpf = ohneFrontmatter(roh);
     const errors = validateVortragSegmente(segmente, rumpf);
     if (errors.length)
       return { error: 'Vortragsskript ungueltig:\n- ' + errors.join('\n- ') };
     const skript = {
       version: 1,
       notiz: path.replace(/\\/g, '/'),
-      notizHash: 'sha256:' + createHash('sha256').update(ohneBom, 'utf8').digest('hex'),
+      notizHash: 'sha256:' + createHash('sha256').update(roh, 'utf8').digest('hex'),
       erstellt: new Date().toISOString().slice(0, 10),
       ...(titel && String(titel).trim() ? { titel: String(titel).trim() } : {}),
       segmente: segmente.map(s => {
@@ -284,6 +276,124 @@ export function makeTools(indexer, vaultPath) {
         return { error: 'Schreib-Integritaet verletzt: Read-Back des Vortragsskripts weicht ab – bitte erneut schreiben.' };
     } catch (e) { return { error: e.message }; }
     return { ok: true, path: vortragSidecarPath(path).replace(/\\/g, '/'), segmente: skript.segmente.length, notizHash: skript.notizHash };
+  }
+
+  // R26: Karteikarten-Sidecar (<Notiz>.karten.json) fuer den Lernmodus schreiben.
+  // Analog zu writeVortrag – zusaetzlich der ID-MERGE: Karten mit unveraenderter
+  // Frage behalten ihre alte ID, damit der Lernstand (der nur IDs kennt, siehe
+  // src/lernen.js) eine Regeneration ueberlebt. Bild-Karten behalten dabei die vom
+  // Nutzer platzierten Regionen, die ein LLM nicht liefern kann.
+  // Bewusst OHNE indexer.indexFile: .json gehoert nicht in Index/FTS/Graph.
+  function writeKarten({ path, titel, karten }) {
+    if (typeof path !== 'string' || !/\.md$/i.test(path))
+      return { error: 'path muss auf eine .md-Notiz zeigen: ' + path };
+    const full = safeFull(path);
+    if (!full) return { error: 'Pfad ausserhalb des Vaults' };
+    if (!existsSync(full)) return { error: 'Notiz existiert nicht: ' + path };
+    let raw;
+    try { raw = readFileSync(full, 'utf8'); } catch (e) { return { error: e.message }; }
+    const roh = ohneBom(raw);
+    const rumpf = ohneFrontmatter(roh);
+    const errors = validateKarten(karten, rumpf, {
+      bildExists: (p) => { const f = safeFull(p); return !!f && existsSync(f); },
+    });
+    if (errors.length)
+      return { error: 'Karteikarten ungueltig:\n- ' + errors.join('\n- ') };
+
+    const alt = readKartenSidecar(vaultPath, path);
+    const { karten: merged, neu, uebernommen } = mergeKartenIds(karten, alt?.karten ?? []);
+    const heute = new Date().toISOString().slice(0, 10);
+    const sidecar = {
+      version: KARTEN_VERSION,
+      notiz: path.replace(/\\/g, '/'),
+      notizHash: 'sha256:' + createHash('sha256').update(roh, 'utf8').digest('hex'),
+      erstellt: alt?.erstellt || heute,
+      aktualisiert: heute,
+      ...(titel && String(titel).trim() ? { titel: String(titel).trim() } : {}),
+      karten: merged,
+    };
+    const content = JSON.stringify(sidecar, null, 2) + '\n';
+    const sidecarFull = full.replace(/\.md$/i, '.karten.json');
+    try {
+      const tmp = sidecarFull + '.nexustmp';
+      writeFileSync(tmp, content, 'utf8');
+      renameSync(tmp, sidecarFull);
+      const back = readFileSync(sidecarFull, 'utf8');
+      if (back !== content)
+        return { error: 'Schreib-Integritaet verletzt: Read-Back der Karteikarten weicht ab – bitte erneut schreiben.' };
+    } catch (e) { return { error: e.message }; }
+
+    const offen = merged.filter(k => !karteSpielbar(k));
+    return {
+      ok: true,
+      path: kartenSidecarPath(path).replace(/\\/g, '/'),
+      karten: merged.length,
+      neu, uebernommen,
+      notizHash: sidecar.notizHash,
+      ...(offen.length ? {
+        bildOhneRegionen: offen.map(k => ({ id: k.id, frage: k.frage.slice(0, 60) })),
+        hinweis: 'Diese Bild-Karten haben noch nicht fuer jedes Label ein Rechteck und sind darum nicht spielbar. '
+          + 'Sieh dir die Bilddatei an und liefere "regionen" (label/x/y/w/h, jeweils 0..1) direkt mit – '
+          + 'alternativ zieht der Nutzer sie im Karten-Editor der App auf.',
+      } : {}),
+    };
+  }
+
+  // Lesender Lernstand fuer Claude: dieselbe Rechnung wie das Dashboard der App,
+  // nur als kompaktes JSON – bewusst ohne Kartentexte (Prinzip: Information pro Token).
+  function lernStatus({ fach, tage } = {}) {
+    const sidecars = scanKartenSidecars(vaultPath);
+    const faecher  = readFaecher(vaultPath);        // liefert die Liste direkt
+    const reviews  = readReviews(vaultPath);
+    const heute    = heuteISO();
+    const ctxById  = new Map();
+    for (const sc of sidecars) {
+      const f = fachFuerNotiz(sc.notiz, faecher);
+      const kontext = fachKontext(f, LERN_STANDARD);
+      for (const k of sc.karten || []) ctxById.set(k.id, kontext);
+    }
+    const zustaende = foldReviews(reviews, id => ctxById.get(id) || {});
+    const ueber = lernUebersicht({ sidecars, faecher, zustaende, heute, standard: LERN_STANDARD });
+
+    // Fach-Filter darf Name ODER ID sein – Claude kennt meist nur den Namen.
+    let gewaehlt;
+    if (fach !== undefined && fach !== null && String(fach).trim() !== '') {
+      const such = vortragNorm(String(fach));
+      const treffer = ueber.faecher.find(f => vortragNorm(f.name) === such || vortragNorm(String(f.id)) === such);
+      if (!treffer) {
+        return { error: 'Fach nicht gefunden: ' + fach + ' (bekannt: ' + ueber.faecher.map(f => f.name).join(', ') + ')' };
+      }
+      gewaehlt = treffer.id;
+    }
+    const stat = lernStatistik({
+      sidecars, zustaende, reviews, faecher, heute,
+      tage: Math.min(365, Math.max(7, Number(tage) || 30)),
+      fach: gewaehlt, standard: LERN_STANDARD,
+    });
+    const faecherAus = ueber.faecher
+      .filter(f => gewaehlt === undefined || f.id === gewaehlt)
+      .map(f => ({
+        name: f.name, pruefung: f.pruefung || null, resttage: f.resttage,
+        notizen: f.notizen, karten: f.karten, faellig: f.faellig, neu: f.neu,
+        stufenBisDurch: LERN_STUFEN.length, offeneStufen: f.fehlend,
+        proTagNoetig: f.proTagNoetig, aufKurs: f.aufKurs, quote: f.quote,
+        ...(f.bildOffen ? { bildOhneRegionen: f.bildOffen } : {}),
+      }));
+    const faellige = ueber.faellige.filter(n => gewaehlt === undefined || n.fach === gewaehlt);
+    return {
+      heute,
+      faecher: faecherAus,
+      heuteFaellig: faellige.reduce((s, n) => s + n.faellig + n.neu, 0),
+      notizenFaellig: faellige
+        .map(n => ({ notiz: n.notiz, fach: n.fachName || null, faellig: n.faellig, neu: n.neu })),
+      verteilung: stat.verteilung,
+      quote: stat.gesamt.quote,
+      serie: stat.gesamt.serie,
+      zuletztGelernt: stat.gesamt.letzteAntwort,
+      problemKarten: stat.problemKarten.map(p => ({
+        frage: p.frage, notiz: p.notiz, falsch: p.lapses, quote: p.quote,
+      })),
+    };
   }
 
   function appendToSection({ path, section, text }) {
@@ -360,12 +470,14 @@ export function makeTools(indexer, vaultPath) {
     try {
       mkdirSync(dirname(dst), { recursive: true });
       renameSync(src, dst);
-      // R24: Vortragsskript-Sidecar der Notiz mitziehen (im Baum unsichtbar, wuerde
-      // sonst als Waisen-Datei zurueckbleiben). Hash haengt am Inhalt -> bleibt gueltig.
+      // R24/R26: Sidecars der Notiz mitziehen (im Baum unsichtbar, wuerden sonst als
+      // Waisen-Dateien zurueckbleiben). Hash haengt am Inhalt -> bleibt gueltig.
       if (/\.md$/i.test(src) && /\.md$/i.test(dst)) {
-        const scSrc = src.replace(/\.md$/i, '.vortrag.json');
-        const scDst = dst.replace(/\.md$/i, '.vortrag.json');
-        if (existsSync(scSrc) && !existsSync(scDst)) { try { renameSync(scSrc, scDst); } catch {} }
+        for (const suf of SIDECAR_SUFFIXES) {
+          const scSrc = src.replace(/\.md$/i, suf);
+          const scDst = dst.replace(/\.md$/i, suf);
+          if (existsSync(scSrc) && !existsSync(scDst)) { try { renameSync(scSrc, scDst); } catch {} }
+        }
       }
     } catch (e) { return { error: e.message }; }
     const n = indexer.reindex();
@@ -379,10 +491,12 @@ export function makeTools(indexer, vaultPath) {
     if (!existsSync(full)) return { error: 'Nicht gefunden: ' + path };
     try {
       rmSync(full, { recursive: true, force: true });
-      // R24: Sidecar der geloeschten Notiz mit entfernen (unsichtbarer Zombie sonst).
+      // R24/R26: Sidecars der geloeschten Notiz mit entfernen (unsichtbare Zombies sonst).
       if (/\.md$/i.test(full)) {
-        const sc = full.replace(/\.md$/i, '.vortrag.json');
-        if (existsSync(sc)) { try { rmSync(sc, { force: true }); } catch {} }
+        for (const suf of SIDECAR_SUFFIXES) {
+          const sc = full.replace(/\.md$/i, suf);
+          if (existsSync(sc)) { try { rmSync(sc, { force: true }); } catch {} }
+        }
       }
     } catch (e) { return { error: e.message }; }
     const n = indexer.reindex();
@@ -574,6 +688,6 @@ export function makeTools(indexer, vaultPath) {
     };
   }
 
-  return { search, outline, readNote, writeNote, writeVortrag, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, vaultCheck };
+  return { search, outline, readNote, writeNote, writeVortrag, writeKarten, lernStatus, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, vaultCheck };
 }
 // rev: graph() fuer UI-Graph (Session 13)

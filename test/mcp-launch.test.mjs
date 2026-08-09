@@ -77,9 +77,26 @@ try {
   const tools = await session.request('tools/list', {});
   const names = (tools.result?.tools ?? []).map(t => t.name);
   ok('tools/list liefert Werkzeuge', names.length >= 15, `nur ${names.length}`);
-  for (const t of ['list_vaults', 'search', 'read_note', 'write_note', 'write_vortrag', 'dataview', 'vault_check']) {
+  for (const t of ['list_vaults', 'search', 'read_note', 'write_note', 'write_vortrag', 'write_karten', 'lern_status', 'dataview', 'vault_check']) {
     ok(`Tool vorhanden: ${t}`, names.includes(t));
   }
+  // write_karten muss Bild-Regionen entgegennehmen – sonst koennte Claude sie nicht selbst setzen
+  const wk = (tools.result?.tools ?? []).find(t => t.name === 'write_karten');
+  const kartenProps = wk?.inputSchema?.properties?.karten?.items?.properties ?? {};
+  ok('write_karten kennt "regionen"', !!kartenProps.regionen, Object.keys(kartenProps).join(','));
+  ok('write_karten kennt "modus" und "abdecken"', !!kartenProps.modus && !!kartenProps.abdecken);
+  const regProps = kartenProps.regionen?.items?.properties ?? {};
+  ok('Regionen sind Rechtecke (x/y/w/h)', ['x', 'y', 'w', 'h'].every(f => !!regProps[f]), Object.keys(regProps).join(','));
+
+  // lern_status auf dem Scratch-Vault: keine Karten -> leere, aber gueltige Antwort
+  const ls = toolJson(await session.request('tools/call', {
+    name: 'lern_status', arguments: { vault: 'testvault' } }));
+  ok('lern_status antwortet mit heute-Datum', /^\d{4}-\d{2}-\d{2}$/.test(ls?.heute ?? ''), JSON.stringify(ls).slice(0, 200));
+  ok('lern_status liefert Faecher-Liste', Array.isArray(ls?.faecher));
+  ok('lern_status ohne Karten meldet 0 faellig', ls?.heuteFaellig === 0, String(ls?.heuteFaellig));
+  const lsFehler = toolJson(await session.request('tools/call', {
+    name: 'lern_status', arguments: { vault: 'testvault', fach: 'GibtsNicht' } }));
+  ok('lern_status meldet unbekanntes Fach als Fehler', /nicht gefunden/i.test(lsFehler?.error ?? ''), JSON.stringify(lsFehler).slice(0, 160));
 
   const lv = toolJson(await session.request('tools/call', { name: 'list_vaults', arguments: {} }));
   const vaults = Array.isArray(lv) ? lv : (lv.vaults ?? []);
