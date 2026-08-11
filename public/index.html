@@ -143,8 +143,8 @@ body.col-resizing{cursor:col-resize;user-select:none}
    Notiz >= Fenster -> Raender 0 (max(0px,..)) -> normaler Overflow-Scroll wie gehabt. */
 .note-content{padding:16px 46px 90px;width:var(--note-w,min(1000px,100%));max-width:none;margin-inline:max(0px,100% - var(--note-w,min(1000px,100%)))}
 /* ── Lesemodus (Vollbild-Fokus auf die aktuelle Notiz) ───────────────────────── */
-#read-toggle,#vortrag-toggle{-webkit-app-region:no-drag;background:var(--panel2);border:1px solid var(--border);color:var(--dim);border-radius:99px;padding:5px 13px;font-size:12.5px;cursor:pointer;transition:.18s;white-space:nowrap;flex-shrink:0}
-#read-toggle:hover,#vortrag-toggle:hover{border-color:var(--accent);color:var(--text);box-shadow:0 0 18px var(--accent-20)}
+#read-toggle,#vortrag-toggle,#karten-toggle{-webkit-app-region:no-drag;background:var(--panel2);border:1px solid var(--border);color:var(--dim);border-radius:99px;padding:5px 13px;font-size:12.5px;cursor:pointer;transition:.18s;white-space:nowrap;flex-shrink:0}
+#read-toggle:hover,#vortrag-toggle:hover,#karten-toggle:hover{border-color:var(--accent);color:var(--text);box-shadow:0 0 18px var(--accent-20)}
 .app.reading #read-toggle{background:var(--accent-14);border-color:var(--accent);color:var(--text)}
 /* Chrom ausblenden, Mitte auf volle Fensterbreite, Schrift +2px. !important schlaegt die
    layout-spezifischen Regeln (classic/softdark) unabhaengig von der Quellreihenfolge. */
@@ -1097,10 +1097,33 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
 .lnt-thema.ohne .lnt-name{color:var(--dim);font-style:italic}
 .lnt-pfeil{width:20px;height:20px;flex:0 0 auto;border:none;background:none;color:var(--dim);cursor:pointer;font-size:11px;line-height:1;padding:0;transition:transform .15s}
 .lnt-pfeil.auf{transform:rotate(90deg)}
+.ln-sec.ln-klapp{cursor:pointer;display:flex;align-items:center;gap:7px;user-select:none}
+.ln-sec.ln-klapp:hover{color:var(--text)}
+.ln-sec.ln-klapp .lnt-pfeil{width:auto;height:auto;font-size:10px}
 .lnt-pfeil:disabled{opacity:0;cursor:default}
 .lnt-gruppe{border:1px solid var(--border);border-radius:9px;background:var(--panel2);overflow:hidden}
 .lnt-gruppe .lnt-zeile{border:none;border-radius:0;background:none}
 .lnt-gruppe .lnt-themen{padding:0 6px 6px}
+.ln-badge.ok{border-color:var(--lern-ok);color:var(--lern-ok)}
+/* Auswahl-Dialog einer Sitzung: erst die drei Entscheidungen (Modus, Umfang,
+   Kartenzahl), darunter der Auswahlbaum. Jede Zeile traegt ihre eigene Erklaerung -
+   ohne die raet man, was "Umfang" bedeutet. */
+.lnw-optionen{display:flex;flex-direction:column;gap:9px;padding:12px 13px;border:1px solid var(--border);border-radius:11px;background:var(--panel2);margin-bottom:14px}
+.lnw-zeile{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+.lnw-zeile .lnw-lab{width:82px;flex:0 0 auto;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--dim)}
+.lnw-hint{font-size:11.5px;color:var(--dim);flex:1 1 220px;min-width:0;line-height:1.45}
+.lnw-hint b{color:var(--text)}
+.lnw-seg{display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden;flex:0 0 auto}
+.lnw-seg button{background:var(--panel);border:none;border-right:1px solid var(--border);color:var(--dim);font-size:12.5px;font-family:inherit;padding:7px 13px;cursor:pointer;transition:.14s;white-space:nowrap}
+.lnw-seg button:last-child{border-right:none}
+.lnw-seg button:hover{color:var(--text)}
+.lnw-seg button.aktiv{background:var(--accent-14);color:var(--text);font-weight:600}
+.lnw-chips{display:inline-flex;gap:6px;flex:0 0 auto}
+.lnw-chip{background:var(--panel);border:1px solid var(--border);color:var(--dim);border-radius:99px;font-size:12px;font-family:inherit;padding:5px 12px;cursor:pointer;transition:.14s}
+.lnw-chip:hover{color:var(--text);border-color:var(--accent)}
+.lnw-chip.aktiv{background:var(--accent-14);border-color:var(--accent);color:var(--text);font-weight:600}
+.lnw-titel{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);margin:0 0 7px}
+.lnt-zeile .ln-badge,.lnt-thema .ln-badge{flex:0 0 auto}
 /* Statistik */
 .ln-stat{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px;margin-bottom:18px}
 .ln-statbox{border:1px solid var(--border);border-radius:11px;padding:12px 14px;background:var(--panel)}
@@ -1149,6 +1172,7 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
     <div class="crumb" id="crumb">&mdash;</div>
     <button id="read-toggle" title="Lesemodus – Vollbild-Fokus (Esc beendet)" style="display:none" onclick="toggleReading()">&#128214; Lesen</button>
     <button id="vortrag-toggle" title="Vortrag &ndash; Notiz vorlesen &amp; mitzeigen (Esc stoppt)" style="display:none" onclick="toggleVortrag()">&#127908; Vortrag</button>
+    <button id="karten-toggle" title="Karteikarten zu dieser Notiz lernen" style="display:none" onclick="lnKartenZuNotiz()">&#127891; Karten</button>
     <button id="lern-toggle" title="Lernmodus &ndash; Karteikarten abfragen (Abfrage-&Uuml;bersicht)" onclick="openLernDashboard()">&#127891; Lernen</button>
     <div class="search-btn" onclick="openPalette()">&#8981; &nbsp;Suchen oder Befehl&hellip; <kbd>Ctrl K</kbd></div>
   </div>
@@ -1660,6 +1684,11 @@ function startLiveUpdates(){
         clearTimeout(_liveTimer);
         _liveTimer=setTimeout(()=>{refreshTree().catch(()=>{});},250);
       }else if(m&&m.type==='lernen-changed'&&m.vault===activeVault){
+        lnSetsVerwerfen();
+        // Karten-Knopf nur nachfuehren, wenn gerade wirklich eine Notiz gelesen wird
+        // (read-toggle ist genau dann sichtbar) – sonst blendete er sich im Dashboard ein.
+        const _rt=document.getElementById('read-toggle');
+        if(_curNotePath&&!_ln.aktiv&&_rt&&_rt.style.display!=='none')lnKartenKnopf(_curNotePath);
         if(_lnDashAktiv&&!_ln.aktiv){clearTimeout(_lnLiveTimer);_lnLiveTimer=setTimeout(()=>{lnLadeDashboard().catch(()=>{});},300);}
       }else if(m&&m.type==='piper-progress'){
         handlePiperProgress(m);
@@ -4408,6 +4437,7 @@ function showPalDefault(){
   palItems.push({group:'Befehle',icon:'🔄',tile:palTint('var(--accent)'),label:'Reindexieren',fn:()=>{closePalette();reindex();}});
   palItems.push({group:'Befehle',icon:'📥',tile:palTint('var(--accent)'),label:'Dateien hochladen',fn:()=>{closePalette();triggerUpload();}});
   palItems.push({group:'Befehle',icon:'🎓',tile:palTint('var(--accent)'),label:'Lernen – Abfrage-Übersicht',sub:'Was ist heute fällig?',fn:()=>{closePalette();openLernDashboard();}});
+  if(_curNotePath)palItems.push({group:'Befehle',icon:'🎓',tile:palTint('var(--accent)'),label:'Karteikarten dieser Notiz lernen',sub:_curNotePath,fn:()=>{closePalette();lnKartenZuNotiz();}});
   if(_curNotePath)palItems.push({group:'Befehle',icon:'🎓',tile:palTint('var(--accent)'),label:'Karteikarten dieser Notiz bearbeiten',sub:_curNotePath,fn:()=>{closePalette();openKartenEditor(_curNotePath);}});
   palSel=0;renderPalItems();
 }
@@ -5097,10 +5127,10 @@ function onNoteWheel(e){
   smartAxisScroll(e.currentTarget,e);
 }
 // Bearbeiten-Button (Overlay im Tab-Band): nur in der Markdown-Leseansicht sichtbar.
-function showEditFab(path){const f=document.getElementById('note-edit-fab');if(!f)return;f.style.display='inline-block';f.onclick=()=>openEditor(path);const ec=document.getElementById('edit-controls');if(ec)ec.style.display='none';const rt=document.getElementById('read-toggle');if(rt)rt.style.display='inline-block';const vtb=document.getElementById('vortrag-toggle');if(vtb)vtb.style.display=(window.speechSynthesis?'inline-block':'none');updateReadToggle();}
+function showEditFab(path){const f=document.getElementById('note-edit-fab');if(!f)return;f.style.display='inline-block';f.onclick=()=>openEditor(path);const ec=document.getElementById('edit-controls');if(ec)ec.style.display='none';const rt=document.getElementById('read-toggle');if(rt)rt.style.display='inline-block';const vtb=document.getElementById('vortrag-toggle');if(vtb)vtb.style.display=(window.speechSynthesis?'inline-block':'none');lnKartenKnopf(path);updateReadToggle();}
 // Versteckt FAB UND Editier-Cluster: hideEditFab feuert auf jedem Ansichtswechsel (Tabs,
 // PDF, Placeholder ...) - das Cluster darf dort genauso wenig stehen bleiben wie der FAB.
-function hideEditFab(){const f=document.getElementById('note-edit-fab');if(f)f.style.display='none';const ec=document.getElementById('edit-controls');if(ec)ec.style.display='none';const rt=document.getElementById('read-toggle');if(rt)rt.style.display='none';const vtb=document.getElementById('vortrag-toggle');if(vtb)vtb.style.display='none';vtStop();}
+function hideEditFab(){const f=document.getElementById('note-edit-fab');if(f)f.style.display='none';const ec=document.getElementById('edit-controls');if(ec)ec.style.display='none';const rt=document.getElementById('read-toggle');if(rt)rt.style.display='none';const vtb=document.getElementById('vortrag-toggle');if(vtb)vtb.style.display='none';const kt=document.getElementById('karten-toggle');if(kt)kt.style.display='none';vtStop();}
 // E3: Editiermodus-Overlay an der FAB-Stelle (ersetzt die alte .editor-toolbar).
 // Bindet die Buttons bei jedem Aufruf neu - onclick-Zuweisung ist idempotent.
 function setEditControls(mode){
@@ -5110,6 +5140,7 @@ function setEditControls(mode){
     if(f)f.style.display='none';
     const rt=document.getElementById('read-toggle');if(rt)rt.style.display='none';
     const vtb=document.getElementById('vortrag-toggle');if(vtb)vtb.style.display='none';vtStop();
+    const kt=document.getElementById('karten-toggle');if(kt)kt.style.display='none';
     ec.style.display='flex';
     document.getElementById('ed-save').onclick=()=>saveEditor();
     document.getElementById('ed-preview').onclick=()=>togglePreview();
@@ -5701,6 +5732,7 @@ const _ln={aktiv:false,queue:[],idx:0,session:'',richtig:0,falsch:0,requeued:nul
            phase:'frage',gewaehlt:[],zuordnung:{},markAktiv:null,bildAr:1,start:0,
            ergebnisse:[],tipp:[],letzte:null};
 let _lnDash=null;        // zuletzt geladene Uebersicht (Re-Render bei SSE)
+let _lnAlleAuf=false;    // steht die Gesamtliste "Alle Kartensaetze" offen?
 let _lnDashAktiv=false;  // steht die Uebersicht gerade in der Mittelspalte?
 let _ke=null;            // Karten-Editor-Modell
 let _lnFaecher=null;     // Faecher-Modell im Modal
@@ -5714,6 +5746,52 @@ function lnMische(arr){
   return a;
 }
 function lnNotizName(p){return (p||'').split('/').pop().replace(/\.md$/i,'');}
+
+// Welche Notizen haben ueberhaupt Karteikarten? Die Antwort steht in der Uebersicht,
+// die ohnehin alle Kartensaetze kennt – einmal je Vault geladen und bei
+// "lernen-changed" verworfen. Damit kann die Titelleiste den Karten-Knopf zeigen,
+// ohne bei jedem Notiz-Wechsel eine Anfrage zu stellen.
+let _lnSets=null,_lnSetsVault='',_lnSetsLaden=null;
+function lnSetsVerwerfen(){_lnSets=null;_lnSetsVault='';}
+function lnSets(){
+  if(_lnSets&&_lnSetsVault===activeVault)return Promise.resolve(_lnSets);
+  if(!_lnSetsLaden){
+    const v=activeVault;
+    _lnSetsLaden=api('/api/lernen/uebersicht?vault='+encodeURIComponent(v))
+      .then(d=>{
+        _lnDash=d;                       // die Auswahl braucht denselben Stand
+        _lnSets=new Map(((d&&d.notizen)||[]).map(n=>[n.notiz,n]));
+        _lnSetsVault=v;
+        return _lnSets;
+      })
+      .catch(()=>new Map())
+      .finally(()=>{_lnSetsLaden=null;});
+  }
+  return _lnSetsLaden;
+}
+// Karten-Knopf in der Titelleiste: nur sichtbar, wenn es zur offenen Notiz auch
+// wirklich Karten gibt. Schliesst die Schleife "erst die Notiz, dann davon lernen".
+async function lnKartenKnopf(path){
+  const b=document.getElementById('karten-toggle');
+  if(!b)return;
+  b.style.display='none';
+  if(!path||!/\.(md|markdown)$/i.test(path))return;
+  const sets=await lnSets();
+  if(_curNotePath!==path)return;         // inzwischen woanders – Knopf nicht nachtragen
+  const n=sets.get(path);
+  if(!n||!n.karten)return;
+  const off=(n.faellig||0)+(n.neu||0);
+  b.innerHTML='&#127891; Karten'+(off?' <b>'+off+'</b>':'');
+  b.title=n.karten+' Karteikarten zu dieser Notiz'
+    +(off?(' – '+off+' offen'):' – heute nichts fällig')+'. Klicken zum Lernen.';
+  b.style.display='inline-block';
+}
+// Aus der offenen Notiz direkt in die Auswahl fuer genau dieses Lernset.
+function lnKartenZuNotiz(){
+  const p=_curNotePath;
+  if(!p){toast('Keine Notiz offen');return;}
+  lnSets().then(()=>lnSitzungWahl({notiz:p}));
+}
 
 // ── 1. Abfrage-Uebersicht ────────────────────────────────────────────────────
 // Welche Notiz war offen, bevor der Lernmodus aufging? Nur beim ERSTEN Betreten merken –
@@ -5737,6 +5815,8 @@ async function lnLadeDashboard(){
   const area=document.getElementById('note-area');if(!area)return;
   if(!d||d.error){area.innerHTML='<div class="note-content"><div class="placeholder"><span class="big">&#9888;</span>'+escHtml(d&&d.error||'Lernstand nicht ladbar')+'</div></div>';return;}
   _lnDash=d;
+  // Gleicher Stand fuer den Karten-Knopf in der Titelleiste.
+  _lnSets=new Map(((d&&d.notizen)||[]).map(n=>[n.notiz,n]));_lnSetsVault=activeVault;
   lnRenderDashboard(d);
 }
 function lnRenderDashboard(d){
@@ -5763,28 +5843,33 @@ function lnRenderDashboard(d){
   }
 
   h+='<div class="ln-heute"><div><div class="ln-zahl'+(offen?'':' leer')+'">'+offen+'</div>'
-    +'<div class="ln-sub">'+(offen?('heute f&auml;llig'+(d.gesamt.neu?' &middot; davon '+d.gesamt.neu+' neu':'')):'heute nichts mehr offen &#127881;')+'</div></div>'
+    +'<div class="ln-sub">'+(offen?('offen &middot; '+d.gesamt.faellig+' f&auml;llig, '+d.gesamt.neu+' noch nie gefragt')
+                                  :'heute nichts mehr offen &#127881;')+'</div></div>'
     +'<div class="ln-grow"></div>'
-    +'<button class="ln-btn primary gross" data-ln="alles"'+(offen?'':' disabled')+'>Alles lernen</button>'
-    +'<button class="ln-btn gross" data-ln="ueben-alles" title="Alle Karten des Vaults abfragen, ohne dass sich am Wiederholungsplan etwas &auml;ndert">&#128260; Nur &uuml;ben</button></div>';
+    +'<button class="ln-btn primary gross" data-ln="lernen-wahl" title="Fach, Lernset und Thema w&auml;hlen &ndash; und dann lernen">&#127891; Lernen &hellip;</button>'
+    +'<button class="ln-btn gross" data-ln="alles"'+(offen?'':' disabled')+' title="Ohne Umweg loslegen: f&auml;llige Wiederholungen aus dem ganzen Vault plus neue Karten im Tagesrahmen des jeweiligen Fachs">Tagespensum</button>'
+    +'<button class="ln-btn gross" data-ln="ueben-alles" title="Karten abfragen, ohne dass sich am Wiederholungsplan etwas &auml;ndert">&#128260; &Uuml;ben &hellip;</button></div>';
 
   h+=lnStatusHtml(d);
 
+  // Erst bauen, dann in der gewuenschten Reihenfolge anhaengen (siehe unten).
   const faellige=d.faellige||[];
-  h+='<div class="ln-sec">Heute f&auml;llige Notizen</div>';
+  let hFaellig='<div class="ln-sec">Heute f&auml;llige Notizen</div>';
   if(!faellige.length){
-    h+='<div class="ln-hinweis">Alles erledigt. Die n&auml;chsten Wiederholungen stehen automatisch an, sobald sie f&auml;llig sind.</div>';
+    hFaellig+='<div class="ln-hinweis">Alles erledigt. Die n&auml;chsten Wiederholungen stehen automatisch an, sobald sie f&auml;llig sind.</div>';
   }else{
     for(const n of faellige){
-      h+='<div class="ln-row"><div style="flex:1;min-width:0">'
+      hFaellig+='<div class="ln-row"><div style="flex:1;min-width:0">'
         +'<div class="ln-titel">'+escHtml(n.titel||lnNotizName(n.notiz))+'</div>'
         +'<div class="ln-pfad">'+escHtml(n.notiz)+'</div></div>'
         +(n.fachName?'<span class="ln-badge">'+escHtml(n.fachName)+'</span>':'')
         +(n.faellig?'<span class="ln-badge faellig">'+n.faellig+' f&auml;llig</span>':'')
         +(n.neu?'<span class="ln-badge neu">'+n.neu+' neu</span>':'')
         +(n.bildOffen?'<span class="ln-badge warn">'+n.bildOffen+' &#128444;</span>':'')
-        +'<button class="ln-btn" data-ln="notiz" data-notiz="'+aq(escHtml(n.notiz))+'">Lernen</button>'
+        +(Array.isArray(n.themen)&&n.themen.length>1?'<span class="ln-badge">'+n.themen.length+' Themen</span>':'')
+        +'<button class="ln-btn" data-ln="notiz-wahl" data-notiz="'+aq(escHtml(n.notiz))+'">Lernen</button>'
         +'<button class="lnm-mini" data-ln="ueben-notiz" data-notiz="'+aq(escHtml(n.notiz))+'" title="Nur &uuml;ben – ohne &Auml;nderung am Wiederholungsplan">&#128260;</button>'
+        +'<button class="lnm-mini" data-ln="oeffnen" data-notiz="'+aq(escHtml(n.notiz))+'" title="Notiz &ouml;ffnen">&#128196;</button>'
         +'<button class="lnm-mini" data-ln="edit" data-notiz="'+aq(escHtml(n.notiz))+'" title="Karten bearbeiten">&#9998;</button>'
         +'</div>';
     }
@@ -5801,7 +5886,7 @@ function lnRenderDashboard(d){
           ?('Pr&uuml;fung <b>'+escHtml(f.pruefung)+'</b> &middot; '+(f.resttage>0?('noch <b>'+f.resttage+'</b> Tage'):(f.resttage===0?'<b>heute</b>':'vorbei')))
           :'kein Pr&uuml;fungstermin')+'</div>'
       +'<div class="ln-bar"><i style="width:'+anteil+'%"></i></div>'
-      +'<div class="ln-sub" style="font-size:11.5px;color:var(--dim)">'+f.fertig+' von '+f.karten+' Karten durch'
+      +'<div class="ln-sub" style="font-size:11.5px;color:var(--dim)">'+f.fertig+' von '+f.karten+' Karten gelernt'
       +(f.proTagNoetig!==null&&f.proTagNoetig!==undefined?(' &middot; '+(f.aufKurs?'auf Kurs':'<b style="color:var(--lern-warn)">R&uuml;ckstand</b>')+', '+f.proTagNoetig+'/Tag n&ouml;tig'):'')+'</div>'
       +'<div class="ln-zeile" style="margin-top:9px">'
         +(f.faellig?'<span class="ln-badge faellig">'+f.faellig+' f&auml;llig</span>':'')
@@ -5809,8 +5894,8 @@ function lnRenderDashboard(d){
         +(f.bildOffen?'<span class="ln-badge warn">'+f.bildOffen+' ohne Regionen</span>':'')
         +(off?'':'<span class="ln-badge">nichts offen</span>')
       +'</div>'
-      +'<div class="ln-akt"><button class="ln-btn" data-ln="fach" data-fach="'+aq(escHtml(f.id===null?'__ohne__':f.id))+'"'+(off?'':' disabled')+'>Fach lernen</button>'
-      +'<button class="ln-btn" data-ln="ueben-fach" data-fach="'+aq(escHtml(f.id===null?'__ohne__':f.id))+'" title="Themenbl&ouml;cke w&auml;hlen und abfragen, ohne den Wiederholungsplan zu &auml;ndern">&#128260; &Uuml;ben</button>'
+      +'<div class="ln-akt"><button class="ln-btn" data-ln="fach-wahl" data-fach="'+aq(escHtml(f.id===null?'__ohne__':f.id))+'" title="Lernsets und Themen dieses Fachs w&auml;hlen">Lernen &hellip;</button>'
+      +'<button class="ln-btn" data-ln="ueben-fach" data-fach="'+aq(escHtml(f.id===null?'__ohne__':f.id))+'" title="Themen w&auml;hlen und abfragen, ohne den Wiederholungsplan zu &auml;ndern">&#128260; &Uuml;ben</button>'
       +'<button class="lnm-mini" data-ln="statistik" data-fach="'+aq(escHtml(f.id===null?'__ohne__':f.id))+'" title="Statistik dieses Fachs">&#128202;</button>'
       +(f.id!==null?'<button class="lnm-mini" data-ln="faecher">Bearbeiten</button>':'')+'</div>'
       +'</div>';
@@ -5819,7 +5904,20 @@ function lnRenderDashboard(d){
     +'<button class="ln-btn" data-ln="faecher">&#9881; F&auml;cher &amp; Pr&uuml;fungstermine verwalten</button>'
     +'<button class="ln-btn" data-ln="statistik">&#128202; Statistik &amp; Verlauf</button>'
     +'<button class="ln-btn" data-ln="anki" title="Alle Karten als Textdatei f&uuml;r Ankis Import – zum Lernen am Handy. Der Lernstand bleibt in Nexus.">&#11015; Anki-Export</button></div>';
-  h+='<div class="ln-sec">Alle Kartens&auml;tze</div>';
+
+  h+=hFaellig;
+
+  // "Alle Kartensaetze" ganz unten und eingeklappt: die Liste waechst mit jedem
+  // Lernset und schiebt sonst alles Wichtige aus dem Blick.
+  const alleN=(d.notizen||[]).length;
+  h+='<div class="ln-sec ln-klapp" data-ln="alle-auf" title="Liste ein-/ausklappen">'
+    +'<span class="lnt-pfeil'+(_lnAlleAuf?' auf':'')+'">&#9654;</span> Alle Kartens&auml;tze'
+    +'<span class="ln-badge" style="margin-left:8px">'+alleN+'</span></div>';
+  if(!_lnAlleAuf){
+    area.innerHTML=h+'</div>';
+    lnWire(area);
+    return;
+  }
   for(const n of (d.notizen||[])){
     const off=n.faellig+n.neu;
     h+='<div class="ln-row"><div style="flex:1;min-width:0">'
@@ -5828,8 +5926,11 @@ function lnRenderDashboard(d){
       +'<span class="ln-badge">'+n.karten+' Karten</span>'
       +(n.letztes?'<span class="ln-badge">zuletzt '+escHtml(n.letztes)+'</span>':'<span class="ln-badge neu">nie gelernt</span>')
       +(n.bildOffen?'<span class="ln-badge warn">'+n.bildOffen+' &#128444;</span>':'')
-      +'<button class="ln-btn" data-ln="notiz" data-notiz="'+aq(escHtml(n.notiz))+'"'+(off?'':' disabled')+'>Lernen</button>'
+      +(Array.isArray(n.themen)&&n.themen.length>1?'<span class="ln-badge">'+n.themen.length+' Themen</span>':'')
+      +(off?'<span class="ln-badge faellig">'+off+' offen</span>':'')
+      +'<button class="ln-btn" data-ln="notiz-wahl" data-notiz="'+aq(escHtml(n.notiz))+'">Lernen</button>'
       +'<button class="lnm-mini" data-ln="ueben-notiz" data-notiz="'+aq(escHtml(n.notiz))+'" title="Nur &uuml;ben – ohne &Auml;nderung am Wiederholungsplan">&#128260;</button>'
+      +'<button class="lnm-mini" data-ln="oeffnen" data-notiz="'+aq(escHtml(n.notiz))+'" title="Notiz &ouml;ffnen">&#128196;</button>'
       +'<button class="lnm-mini" data-ln="edit" data-notiz="'+aq(escHtml(n.notiz))+'" title="Karten bearbeiten">&#9998;</button>'
       +'</div>';
   }
@@ -5841,17 +5942,22 @@ function lnWire(area){
   area.querySelectorAll('[data-ln]').forEach(el=>el.addEventListener('click',()=>{
     const a=el.dataset.ln;
     if(a==='alles')lnStart({});
-    else if(a==='notiz')lnStart({notiz:el.dataset.notiz});
+    else if(a==='lernen-wahl')lnSitzungWahl({});
+    else if(a==='notiz')lnStart({notiz:el.dataset.notiz,alleNeuen:true});
+    else if(a==='notiz-wahl')lnSitzungWahl({notiz:el.dataset.notiz});
     else if(a==='fach')lnStart({fach:el.dataset.fach});
+    else if(a==='fach-wahl')lnSitzungWahl({fach:el.dataset.fach});
     else if(a==='edit')openKartenEditor(el.dataset.notiz);
+    else if(a==='oeffnen')openFile(el.dataset.notiz);
     else if(a==='faecher')openFaecherModal();
     else if(a==='statistik')openLernStatistik(el.dataset.fach);
     else if(a==='anki')lnAnkiExport(el.dataset.fach);
     else if(a==='zurueck')openLernDashboard();
     else if(a==='verlassen')lnModusVerlassen();
-    else if(a==='ueben-alles')lnThemenWahl({uebung:true});
-    else if(a==='ueben-notiz')lnStart({notiz:el.dataset.notiz,uebung:true});
-    else if(a==='ueben-fach')lnThemenWahl({fach:el.dataset.fach,uebung:true});
+    else if(a==='alle-auf'){_lnAlleAuf=!_lnAlleAuf;lnRenderDashboard(_lnDash);}
+    else if(a==='ueben-alles')lnSitzungWahl({uebung:true});
+    else if(a==='ueben-notiz')lnSitzungWahl({notiz:el.dataset.notiz,uebung:true});
+    else if(a==='ueben-fach')lnSitzungWahl({fach:el.dataset.fach,uebung:true});
   }));
 }
 
@@ -5880,7 +5986,7 @@ function lnStufenNamen(tage){
   const t=(Array.isArray(tage)&&tage.length)?tage:LN_LEITER_FALLBACK;
   return ['neu / zur&uuml;ckgefallen']
     .concat(t.map((n,i)=>'Stufe '+(i+1)+' &middot; '+n+(n===1?' Tag':' Tage')))
-    .concat(['durch']);
+    .concat(['gelernt']);
 }
 function lnStatusHtml(d){
   const stufen=(d.gesamt&&d.gesamt.stufen)||[];
@@ -5922,34 +6028,66 @@ function lnStatusHtml(d){
   return h;
 }
 
-// Vor dem Ueben: welche Themenbloecke sollen dran sein? (Notizen des Ausschnitts)
+// Kleine Zahlenspalte in der Auswahl: faellig / neu / gelernt. Genau die drei Zahlen,
+// nach denen man entscheidet, ob ein Thema heute drankommt.
+function lnZahlenBadges(t,mitGesamt){
+  return (mitGesamt?'<span class="ln-badge">'+(t.karten||0)+' Karten<\/span>':'')
+    +(t.faellig?'<span class="ln-badge faellig">'+t.faellig+' f&auml;llig<\/span>':'')
+    +(t.neu?'<span class="ln-badge neu">'+t.neu+' neu<\/span>':'')
+    +(t.gelernt?'<span class="ln-badge ok">'+t.gelernt+' gelernt<\/span>':'')
+    +(mitGesamt?'':'<span class="ln-badge">'+(t.karten||0)+'<\/span>');
+}
+
+// Auswahl-Dialog JEDER Sitzung – fuer Lernen genauso wie fuers Ueben. Drei
+// Entscheidungen an einem Ort:
+//   1. Modus  – Lernen (Antworten zaehlen, Wiederholungen werden geplant) oder
+//               Ueben (es wird nichts gespeichert).
+//   2. Umfang – nur Faelliges oder alles Offene: Letzteres nimmt ALLE noch nie
+//               gefragten Karten der Auswahl mit, ohne Tagesdeckel. Genau der Fall
+//               "heute ist diese Vorlesung dran, die will ich jetzt ganz lernen".
+//   3. Auswahl – Lernset und Thema.
 // Zweistufige Auswahl: erste Ebene ein Lernset (in Pauls Fall je Lehrstuhl eines),
 // zweite Ebene die Themen darin – die vergibt Claude beim Erstellen ueber das Feld
 // "thema". Intern ist ALLES ein Themen-Schluessel "<Notiz>::<Thema>"; ein leeres Thema
 // meint die Karten ohne Thema. Damit braucht der Server nur einen Filter.
-function lnThemenWahl(opt){
+function lnSitzungWahl(opt){
+  opt=opt||{};
   const alle=(_lnDash&&_lnDash.notizen)||[];
-  const roh=('fach' in opt)
-    ? alle.filter(n=>String(n.fach===null?'__ohne__':n.fach)===String(opt.fach))
-    : alle;
-  if(!roh.length){toast('Hier gibt es keine Karten zum Üben');return;}
+  const roh=opt.notiz
+    ? alle.filter(n=>n.notiz===opt.notiz)
+    : (('fach' in opt)
+        ? alle.filter(n=>String(n.fach===null?'__ohne__':n.fach)===String(opt.fach))
+        : alle);
+  if(!roh.length){toast('Hier gibt es keine Karteikarten');return;}
+  // Dialog-Zustand. menge 0 = alle (kein Deckel) – das ist die Voreinstellung.
+  const st={modus:opt.uebung?'ueben':'lernen',umfang:opt.umfang||'faellig',menge:0};
   // Jede Notiz auf ihre Themen herunterbrechen; ohne Gliederung eine einzige Gruppe.
   const liste=roh.map(n=>({
     notiz:n.notiz,
     name:n.titel||lnNotizName(n.notiz),
     karten:n.karten,
-    themen:(Array.isArray(n.themen)&&n.themen.length)?n.themen:[{thema:'',karten:n.karten}],
+    themen:(Array.isArray(n.themen)&&n.themen.length)?n.themen
+      :[{thema:'',karten:n.karten,spielbar:n.karten-(n.bildOffen||0),
+         faellig:n.faellig||0,neu:n.neu||0,gelernt:n.fertig||0}],
   }));
   const schluessel=(notiz,thema)=>notiz+'::'+(thema||'');
   const gewaehlt=new Set();
   liste.forEach(n=>n.themen.forEach(t=>gewaehlt.add(schluessel(n.notiz,t.thema))));
-  const offen=new Set();
   const gegliedert=liste.some(n=>n.themen.length>1||n.themen[0].thema);
-  // Nur ein Lernset und keine Gliederung -> nichts zu waehlen, direkt loslegen.
-  if(liste.length===1&&!gegliedert){lnStart({...opt,notiz:liste[0].notiz});return;}
+  // Ein einzelnes Lernset steht offen da – sonst muesste man immer erst aufklappen.
+  const offen=new Set(liste.length===1?[liste[0].notiz]:[]);
+  // Nur ein Lernset und keine Gliederung -> es gibt nichts zu waehlen, direkt loslegen.
+  // Ohne Tagesdeckel: wer diese eine Notiz anklickt, meint sie auch ganz.
+  if(liste.length===1&&!gegliedert){lnStart({...opt,notiz:liste[0].notiz,alleNeuen:true});return;}
 
   const zaehleGewaehlt=(n)=>n.themen.filter(t=>gewaehlt.has(schluessel(n.notiz,t.thema))).length;
-  const kartenGewaehlt=()=>liste.reduce((s,n)=>s+n.themen.reduce((k,t)=>k+(gewaehlt.has(schluessel(n.notiz,t.thema))?t.karten:0),0),0);
+  // Wie viele Karten bringt ein Thema in DIESER Einstellung? Ueben nimmt alles,
+  // Lernen nur das Faellige – oder zusaetzlich die neuen, wenn "alles Offene" laeuft.
+  const dran=(t)=>st.modus==='ueben'?(t.spielbar!==undefined?t.spielbar:t.karten)
+    :(st.umfang==='alles'?((t.faellig||0)+(t.neu||0)):(t.faellig||0));
+  const summe=(feld)=>liste.reduce((s,n)=>s+n.themen.reduce((k,t)=>
+    k+(gewaehlt.has(schluessel(n.notiz,t.thema))?(feld?(t[feld]||0):dran(t)):0),0),0);
+  const kartenGewaehlt=()=>summe(null);
 
   const zeilen=()=>liste.map((n,i)=>{
     const hatThemen=n.themen.length>1||!!n.themen[0].thema;
@@ -5961,43 +6099,86 @@ function lnThemenWahl(opt){
       +'<input type="checkbox" data-lt="anNotiz" data-i="'+i+'"'+(an?' checked':'')+'>'
       +'<span class="lnt-name">'+escHtml(n.name)+'<\/span>'
       +(hatThemen?'<span class="ln-badge">'+an+'/'+n.themen.length+' Themen<\/span>':'')
-      +'<span class="ln-badge">'+n.karten+' Karten<\/span><\/div>';
+      +lnZahlenBadges({karten:n.karten,
+        faellig:n.themen.reduce((s,t)=>s+(t.faellig||0),0),
+        neu:n.themen.reduce((s,t)=>s+(t.neu||0),0),
+        gelernt:n.themen.reduce((s,t)=>s+(t.gelernt||0),0)},true)+'<\/div>';
     if(hatThemen&&offen.has(n.notiz)){
       h+='<div class="lnt-themen">'+n.themen.map((t,j)=>
         '<div class="lnt-thema'+(t.thema?'':' ohne')+'" data-lt="themazeile" data-i="'+i+'" data-j="'+j+'">'
         +'<input type="checkbox" data-lt="anThema" data-i="'+i+'" data-j="'+j+'"'
           +(gewaehlt.has(schluessel(n.notiz,t.thema))?' checked':'')+'>'
         +'<span class="lnt-name">'+escHtml(t.thema||'ohne Thema')+'<\/span>'
-        +'<span class="ln-badge">'+t.karten+'<\/span><\/div>').join('')+'<\/div>';
+        +lnZahlenBadges(t)+'<\/div>').join('')+'<\/div>';
     }
     return h+'<\/div>';
   }).join('');
 
+  // Kopfbereich: die drei Entscheidungen. Wird bei jeder Aenderung neu gezeichnet,
+  // weil sich damit auch die Zahlen im Auswahlbaum bedeuten (faellig vs. alles).
+  const kopf=()=>'<div class="lnw-optionen">'
+    +'<div class="lnw-zeile"><span class="lnw-lab">Modus</span><div class="lnw-seg">'
+      +'<button data-lt="modus" data-v="lernen"'+(st.modus==='lernen'?' class="aktiv"':'')+'>&#127891; Lernen</button>'
+      +'<button data-lt="modus" data-v="ueben"'+(st.modus==='ueben'?' class="aktiv"':'')+'>&#128260; &Uuml;ben</button>'
+      +'</div><span class="lnw-hint">'+(st.modus==='lernen'
+        ?'Antworten z&auml;hlen: richtig auf Anhieb schiebt eine Karte eine Stufe weiter.'
+        :'Es wird <b>nichts<\/b> gespeichert &ndash; der Wiederholungsplan bleibt, wie er ist.')+'<\/span><\/div>'
+    +(st.modus==='lernen'
+      ?'<div class="lnw-zeile"><span class="lnw-lab">Umfang</span><div class="lnw-seg">'
+        +'<button data-lt="umfang" data-v="faellig"'+(st.umfang==='faellig'?' class="aktiv"':'')+'>Nur F&auml;lliges</button>'
+        +'<button data-lt="umfang" data-v="alles"'+(st.umfang==='alles'?' class="aktiv"':'')+'>Alles Offene</button>'
+        +'</div><span class="lnw-hint">'+(st.umfang==='faellig'
+          ?'Nur die Karten, deren Wiederholung heute ansteht.'
+          :'Dazu <b>alle<\/b> noch nie gefragten Karten der Auswahl &ndash; ohne Tagesdeckel.')+'<\/span><\/div>'
+      :'')
+    +'<div class="lnw-zeile"><span class="lnw-lab">Kartenzahl</span><div class="lnw-chips">'
+      +[0,20,40,60].map(v=>'<button class="lnw-chip'+(st.menge===v?' aktiv':'')+'" data-lt="menge" data-v="'+v+'">'
+        +(v?v:'alle')+'<\/button>').join('')
+      +'<\/div><span class="lnw-hint">H&ouml;chstzahl f&uuml;r diese Sitzung. &bdquo;alle&ldquo; nimmt die ganze Auswahl.<\/span><\/div>'
+    +'<\/div>';
+
   const m=lnModalOeffnen(
-    '<div class="lnm-head">&#128260; '+(opt.uebung?'&Uuml;ben':'Lernen')+' &ndash; Auswahl</div>'
+    '<div class="lnm-head">&#127891; Lernsitzung'
+      +(opt.notiz?' <span class="lnm-sub">'+escHtml(lnNotizName(opt.notiz))+'</span>':'')+'</div>'
     +'<div class="lnm-body">'
-      +'<div class="ln-hinweis" style="margin-bottom:10px">'
-      +(opt.uebung?'Nur &uuml;ben: Es werden <b>alle<\/b> Karten der Auswahl abgefragt und am Wiederholungsplan &auml;ndert sich <b>nichts<\/b>.'
-                 :'Es werden die f&auml;lligen Karten der Auswahl abgefragt.')
-      +(gegliedert?' Mit dem Pfeil ein Lernset aufklappen und einzelne Themen w&auml;hlen.'
-                  :' Die Karten dieser Notizen tragen noch keine Themen &ndash; beim n&auml;chsten Erstellen kann Claude sie gliedern.')+'</div>'
+      +'<div id="lnt-kopf">'+kopf()+'</div>'
+      +'<div class="lnw-titel">Auswahl</div>'
       +'<div class="ln-zeile" style="margin-bottom:8px"><button class="lnm-mini" data-lt="alle">Alle</button>'
       +'<button class="lnm-mini" data-lt="keine">Keine</button>'
-      +(gegliedert?'<button class="lnm-mini" data-lt="aufzu">Alle auf-/zuklappen</button>':'')+'</div>'
+      +(gegliedert?'<button class="lnm-mini" data-lt="aufzu">Alle auf-/zuklappen</button>'
+                  +'<span class="lnw-hint">Mit dem Pfeil ein Lernset aufklappen und einzelne Themen w&auml;hlen.</span>'
+                  :'<span class="lnw-hint">Diese Karten tragen noch keine Themen &ndash; beim n&auml;chsten Erstellen kann Claude sie gliedern.</span>')+'</div>'
       +'<div class="lnt-liste" id="lnt-liste">'+zeilen()+'</div></div>'
     +'<div class="lnm-foot"><span class="lnm-sub" id="lnt-zahl"></span>'
       +'<button class="ln-btn" data-lt="abbruch">Abbrechen</button>'
-      +'<button class="ln-btn primary" data-lt="los">Losgehen</button></div>');
+      +'<button class="ln-btn primary" data-lt="los" id="lnt-los">Losgehen</button></div>');
 
   const zahl=()=>{
-    const el=document.getElementById('lnt-zahl');
+    const el=document.getElementById('lnt-zahl'),btn=document.getElementById('lnt-los');
     if(!el)return;
     const sets=liste.filter(n=>zaehleGewaehlt(n)>0).length;
-    el.textContent=kartenGewaehlt()+' Karten aus '+sets+' von '+liste.length+' Lernsets';
+    const n=kartenGewaehlt();
+    const deckel=(st.menge&&n>st.menge)?(' &rarr; '+st.menge+' in dieser Sitzung'):'';
+    el.innerHTML=n+' Karte'+(n===1?'':'n')+' aus '+sets+' von '+liste.length+' Lernset'+(liste.length===1?'':'s')
+      +(st.modus==='lernen'?(' &middot; '+summe('faellig')+' f&auml;llig, '+summe('neu')+' neu, '+summe('gelernt')+' gelernt'):'')
+      +deckel;
+    if(btn){
+      btn.disabled=!n;
+      btn.title=n?'':(st.modus==='lernen'&&st.umfang==='faellig'
+        ?'Hier ist heute nichts fällig – auf „Alles Offene“ stellen oder üben'
+        :'Nichts ausgewählt');
+    }
   };
-  const neu=()=>{const l=document.getElementById('lnt-liste');if(l)l.innerHTML=zeilen();wire();zahl();};
-  const wire=()=>{
-    m.querySelectorAll('[data-lt]').forEach(el=>{
+  // Nur den neu gezeichneten Teil verdrahten. Wuerde hier jedes Mal der ganze Dialog
+  // verdrahtet, saeumelten sich auf "Losgehen" mit jeder Aenderung weitere Klick-
+  // Handler an – die Sitzung startete dann mehrfach.
+  const neu=()=>{
+    const k=document.getElementById('lnt-kopf');if(k)k.innerHTML=kopf();
+    const l=document.getElementById('lnt-liste');if(l)l.innerHTML=zeilen();
+    wire(k);wire(l);zahl();
+  };
+  const wire=(root)=>{
+    (root||m).querySelectorAll('[data-lt]').forEach(el=>{
       const a=el.dataset.lt,i=+el.dataset.i,j=+el.dataset.j;
       if(a==='auf')el.addEventListener('click',ev=>{
         ev.stopPropagation();
@@ -6040,11 +6221,15 @@ function lnThemenWahl(opt){
         if(offen.size)offen.clear();else liste.forEach(n=>offen.add(n.notiz));
         neu();
       });
+      else if(a==='modus')el.addEventListener('click',()=>{st.modus=el.dataset.v;neu();});
+      else if(a==='umfang')el.addEventListener('click',()=>{st.umfang=el.dataset.v;neu();});
+      else if(a==='menge')el.addEventListener('click',()=>{st.menge=+el.dataset.v||0;neu();});
       else if(a==='abbruch')el.addEventListener('click',lnModalClose);
       else if(a==='los')el.addEventListener('click',()=>{
         if(!gewaehlt.size){toast('Bitte mindestens ein Thema wählen');return;}
         lnModalClose();
-        lnStart({...opt,themen:[...gewaehlt]});
+        lnStart({...opt,uebung:st.modus==='ueben',themen:[...gewaehlt],
+                 alleNeuen:st.umfang==='alles',limit:st.menge});
       });
     });
   };
@@ -6111,7 +6296,7 @@ function lnRenderStatistik(d,fach){
       +'<i style="width:'+((v.neu/summe)*100)+'%;background:var(--lern-neu)"></i>'
     +'</div>'
     +'<div class="ln-legende">'
-      +'<span style="--lg:var(--lern-ok)">'+v.sitzt+' sitzt (Ziel erreicht)</span>'
+      +'<span style="--lg:var(--lern-ok)">'+v.sitzt+' gelernt (Ziel erreicht)</span>'
       +'<span style="--lg:var(--accent)">'+v.amLernen+' am Lernen</span>'
       +'<span style="--lg:var(--lern-neu)">'+v.neu+' noch nie gefragt</span>'
       +(v.bildOffen?'<span style="--lg:var(--lern-warn)">'+v.bildOffen+' Bild-Karten ohne Regionen</span>':'')
@@ -6166,12 +6351,17 @@ function lnRenderStatistik(d,fach){
 // ── 2. Sitzung ───────────────────────────────────────────────────────────────
 async function lnStart(filter){
   const uebung=!!filter.uebung;
-  const p=new URLSearchParams({vault:activeVault,limit:uebung?'200':'60'});
+  // Kein festes Limit mehr: 0 heisst "die ganze Auswahl". Wer weniger will, stellt
+  // die Kartenzahl im Auswahl-Dialog ein.
+  const menge=Number.isFinite(filter.limit)&&filter.limit>0?filter.limit:0;
+  const p=new URLSearchParams({vault:activeVault,limit:String(menge)});
   if(filter.notiz)p.set('note',filter.notiz);
   if(Array.isArray(filter.notizen)&&filter.notizen.length)p.set('notes',filter.notizen.join('\n'));
   if(Array.isArray(filter.themen)&&filter.themen.length)p.set('themen',filter.themen.join('\n'));
   if(filter.fach)p.set('fach',filter.fach);
   if(uebung)p.set('uebung','1');
+  // Bewusste Auswahl schlaegt das Tagesbudget "neue Karten pro Tag".
+  if(filter.alleNeuen)p.set('ohneTageslimit','1');
   let q;
   try{q=await api('/api/lernen/session?'+p.toString());}catch(e){toast('Sitzung nicht ladbar: '+e.message,'err');return;}
   if(!q||q.error){toast('Fehler: '+(q&&q.error||'unbekannt'),'err');return;}
@@ -6547,8 +6737,9 @@ function lnWeiter(){
   _ln.idx++;
   if(_ln.idx>=_ln.queue.length)lnEnde();else lnRenderKarte();
 }
-// Nach dem letzten Kartendurchlauf beim Server nachfragen, was jetzt noch faellig ist
-// (das Sitzungslimit ist 60 – bei einem grossen Stapel ist danach eben NICHT alles weg).
+// Nach dem letzten Kartendurchlauf beim Server nachfragen, was jetzt noch offen ist.
+// Wichtig: mit DEMSELBEN Ausschnitt wie die gerade gelaufene Sitzung (auch Themen),
+// sonst meldet die Restanzeige Karten, die gar nicht drankommen sollten.
 async function lnEnde(){
   let rest=0;
   if(_ln.uebung){_ln.rest=0;lnRenderEnde();return;}
@@ -6557,6 +6748,9 @@ async function lnEnde(){
     const f=_ln.filter||{};
     if(f.notiz)pr.set('note',f.notiz);
     if(f.fach)pr.set('fach',f.fach);
+    if(Array.isArray(f.notizen)&&f.notizen.length)pr.set('notes',f.notizen.join('\n'));
+    if(Array.isArray(f.themen)&&f.themen.length)pr.set('themen',f.themen.join('\n'));
+    if(f.alleNeuen)pr.set('ohneTageslimit','1');
     const q=await api('/api/lernen/session?'+pr.toString());
     rest=(q&&typeof q.gesamt==='number')?q.gesamt:0;
   }catch(e){rest=0;}
@@ -6655,7 +6849,7 @@ function lnRenderFaecher(fehler){
     +'<label class="lnm-feld" style="flex:1;min-width:150px"><span>Pr&uuml;fungstermin</span><input type="date" value="'+aq(escHtml(f.pruefung||''))+'" data-lf="pruefung" data-i="'+i+'"></label>'
     +'<div class="lnm-feld" style="flex:1;min-width:180px"><span>Wiederholungsleiter</span>'
       +'<div style="padding:8px 11px;border:1px solid var(--border);border-radius:8px;background:var(--panel2);font-size:12.5px;color:var(--dim)">'
-      +(((_lnDash&&_lnDash.stufenTage)||[1,3,5,7]).join(' &middot; '))+' Tage &rarr; durch</div></div>'
+      +(((_lnDash&&_lnDash.stufenTage)||[1,3,5,7]).join(' &middot; '))+' Tage &rarr; gelernt</div></div>'
     +'<label class="lnm-feld" style="flex:1;min-width:120px"><span>neue Karten/Tag</span><input type="number" min="0" max="500" value="'+(f.neueProTag||20)+'" data-lf="neueProTag" data-i="'+i+'"></label>'
     +'</div></div>').join('');
   const m=lnModalOeffnen(

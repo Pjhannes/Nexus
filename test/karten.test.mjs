@@ -340,6 +340,25 @@ ok('Notiz-Eintrag kennt sein Fach', ueb.notizen.find(n => n.notiz.endsWith('VL02
 ok('Notiz ohne Titel faellt auf den Dateinamen zurueck', ueb.notizen.find(n => n.notiz.endsWith('VL02.md')).titel === 'VL02');
 ok('Quote aus richtig/antworten', ueb.gesamt.quote === Math.round((5 / 6) * 100), String(ueb.gesamt.quote));
 
+// R26b: Die Auswahl entscheidet je THEMA, ob es heute drankommt - dafuer braucht
+// jeder Themen-Eintrag seine eigenen Zahlen (faellig / neu / gelernt).
+const themenSc = [{ notiz: 'Uni/6. Semester/NHM/VL04.md', titel: 'VL 4', karten: [
+  { ...kJa, id: 't1', thema: 'Kapitel A' },
+  { ...kJa, id: 't2', thema: 'Kapitel A' },
+  { ...kJa, id: 't3', thema: 'Kapitel B' },
+] }];
+const themenZ = new Map([
+  ['t1', { ...LERN_START, due: '2026-08-01', stufe: 1, antworten: 1, korrektGesamt: 1 }],
+  ['t2', { ...LERN_START, due: null, stufe: LERN_STUFEN.length + 1, antworten: 4, korrektGesamt: 4 }],
+]);
+const themenNotiz = lernUebersicht({ sidecars: themenSc, zustaende: themenZ, faecher, heute: H }).notizen[0].themen;
+ok('Themen je Notiz mit Kartenzahl', themenNotiz.length === 2 &&
+  themenNotiz[0].thema === 'Kapitel A' && themenNotiz[0].karten === 2, JSON.stringify(themenNotiz));
+ok('Thema kennt faellig/neu/gelernt', themenNotiz[0].faellig === 1 && themenNotiz[0].gelernt === 1 &&
+  themenNotiz[0].neu === 0, JSON.stringify(themenNotiz[0]));
+ok('zweites Thema: eine noch nie gefragte Karte', themenNotiz[1].faellig === 0 &&
+  themenNotiz[1].neu === 1 && themenNotiz[1].gelernt === 0, JSON.stringify(themenNotiz[1]));
+
 console.log('\n── D3. sessionQueue ──');
 const q = sessionQueue({ sidecars, zustaende, faecher, heute: H });
 ok('Queue enthaelt faellige + neue, keine Bild-Karten ohne Regionen',
@@ -360,6 +379,16 @@ ok('neueProTag deckelt neue Karten (Fach: 2)', qCap.karten.length === 2 && qCap.
 const heuteSchon = new Map([['n0', { ...LERN_START, due: tagPlus(H, 3), erstes: H, letztes: H, antworten: 1, korrektGesamt: 1, reps: 1 }]]);
 const qCap2 = sessionQueue({ sidecars: vieleNeu, zustaende: heuteSchon, faecher, heute: H });
 ok('heute bereits eingefuehrte Karten zaehlen aufs Tagesbudget', qCap2.karten.length === 1, String(qCap2.karten.length));
+// R26b: wer ein Thema bewusst waehlt, will es ganz lernen - kein Tagesdeckel, kein Limit.
+const qOhne = sessionQueue({ sidecars: vieleNeu, zustaende: new Map(), faecher, heute: H, ohneTageslimit: true });
+ok('ohneTageslimit hebt neueProTag auf', qOhne.karten.length === 10 && qOhne.neuZurueckgehalten === 0,
+  JSON.stringify({ k: qOhne.karten.length, z: qOhne.neuZurueckgehalten }));
+ok('ohneTageslimit laesst den Deckel sonst unangetastet',
+  sessionQueue({ sidecars: vieleNeu, zustaende: new Map(), faecher, heute: H }).karten.length === 2);
+const qOhneLimit = sessionQueue({ sidecars: vieleNeu, zustaende: new Map(), faecher, heute: H, ohneTageslimit: true, limit: 0 });
+ok('limit 0 heisst: keine Obergrenze', qOhneLimit.karten.length === 10, String(qOhneLimit.karten.length));
+ok('limit 0 gilt auch im Uebungsmodus',
+  sessionQueue({ sidecars: vieleNeu, zustaende: new Map(), faecher, heute: H, uebung: true, limit: 0 }).karten.length === 10);
 
 console.log('\n── D2b. Uebungsmodus + Themenbloecke + Kalender ──');
 const uebQ = sessionQueue({ sidecars, zustaende, faecher, heute: H, uebung: true, limit: 60 });

@@ -211,6 +211,35 @@ try {
   ok('Themenblock-Filter greift', nurEine.karten.every(e => e.notiz === 'Uni/NHM/VL 01.md') && nurEine.gesamt > 0,
     JSON.stringify(nurEine.karten.map(e => e.notiz)));
 
+  // R26b: Themen-Auswahl und Tagesdeckel gelten auch beim LERNEN, nicht nur beim Ueben.
+  console.log('\n── 9. Lernen nach Thema, ohne Tagesdeckel ──');
+  const vl2 = 'Uni/NHM/VL 02.md';
+  const qz = 'Die EU-Taxonomie ist verpflichtend';
+  const saveT = await post('/api/karten/save', { vault: V, path: vl2, titel: 'VL 02', karten: [
+    { typ: 'janein', frage: 'Ist die EU-Taxonomie verpflichtend?', antwort: true, quelle: qz, thema: 'Kapitel A' },
+    { typ: 'janein', frage: 'Gilt die EU-Taxonomie ohne Ausnahme?', antwort: true, quelle: qz, thema: 'Kapitel A' },
+    { typ: 'janein', frage: 'Ist die EU-Taxonomie freiwillig?', antwort: false, quelle: qz, thema: 'Kapitel B' },
+  ] });
+  ok('Karten mit Themen gespeichert', saveT.json.ok === true, JSON.stringify(saveT.json));
+  const nT = (await get(`/api/lernen/uebersicht?vault=${V}`)).notizen.find(n => n.notiz === vl2);
+  ok('Uebersicht gliedert die Notiz in Themen mit eigenen Zahlen',
+    Array.isArray(nT.themen) && nT.themen.length === 2 && nT.themen[0].thema === 'Kapitel A' &&
+    nT.themen[0].neu === 2 && nT.themen[1].neu === 1, JSON.stringify(nT.themen));
+  await post('/api/lernen/faecher', { vault: V, faecher: [{ id: 'nhm', name: 'NHM', farbe: '#7ec8a0', ordner: ['Uni/NHM'], pruefung, zielKorrekt: 3, neueProTag: 1 }] });
+  const themaA = encodeURIComponent(vl2 + '::Kapitel A');
+  const mitDeckel = await get(`/api/lernen/session?vault=${V}&themen=${themaA}`);
+  ok('Lernen laesst sich auf ein einzelnes Thema einschraenken',
+    mitDeckel.karten.every(e => e.notiz === vl2), JSON.stringify(mitDeckel.karten.map(e => e.notiz)));
+  ok('ohne Flag deckelt neueProTag weiterhin', mitDeckel.karten.length === 1 && mitDeckel.neuZurueckgehalten === 1,
+    JSON.stringify({ k: mitDeckel.karten.length, z: mitDeckel.neuZurueckgehalten }));
+  const ohneDeckel = await get(`/api/lernen/session?vault=${V}&themen=${themaA}&ohneTageslimit=1&limit=0`);
+  ok('ohneTageslimit=1 holt das ganze Thema', ohneDeckel.karten.length === 2 && ohneDeckel.neuZurueckgehalten === 0,
+    JSON.stringify({ k: ohneDeckel.karten.length, z: ohneDeckel.neuZurueckgehalten }));
+  ok('das andere Thema bleibt draussen', !ohneDeckel.karten.some(e => /freiwillig/.test(e.karte.frage)),
+    JSON.stringify(ohneDeckel.karten.map(e => e.karte.frage)));
+  ok('limit=0 wird angenommen (keine Obergrenze)',
+    (await get(`/api/lernen/session?vault=${V}&uebung=1&limit=0`)).karten.length >= 3);
+
   // ── Storno: verklickte Antwort zuruecknehmen (append-only, nichts wird geloescht) ──
   const vorStorno = await get(`/api/karten?vault=${V}&path=${encodeURIComponent('Uni/NHM/VL 01.md')}`);
   const zVor = vorStorno.karten.find(k => k.id === kId)?.zustand;

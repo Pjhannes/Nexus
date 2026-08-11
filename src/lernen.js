@@ -740,7 +740,7 @@ export function lernUebersicht({ sidecars = [], zustaende = new Map(), faecher =
       if (z?.letztes && (!letztes || z.letztes > letztes)) letztes = z.letztes;
     }
     eintrag.notizen++;
-    const themen = themenJeNotiz(sc);
+    const themen = themenJeNotiz(sc, { zustaende, heute });
     notizen.push({
       notiz: sc.notiz,
       titel: sc.titel || sc.notiz.split('/').pop().replace(/\.md$/i, ''),
@@ -910,14 +910,28 @@ export function themenAusGliederung(noteContent, karten, { ebene = 2 } = {}) {
 /**
  * Themen einer Notiz mit Kartenzahl – Grundlage der aufklappbaren Auswahl.
  * Karten ohne Thema landen unter dem Schluessel '' ("Ohne Thema").
+ *
+ * Mit `zustaende`+`heute` kommen zusaetzlich die Zahlen dazu, nach denen der Nutzer
+ * in der Auswahl entscheidet: was ist heute faellig, was ist noch nie gefragt worden,
+ * was sitzt schon. Ohne diese Angaben bleibt es bei der reinen Kartenzahl (so rufen
+ * es aeltere Aufrufer auf).
  */
-export function themenJeNotiz(sidecar) {
+export function themenJeNotiz(sidecar, { zustaende = null, heute = null } = {}) {
   const map = new Map();
   for (const k of (sidecar && sidecar.karten) || []) {
     const t = istText(k.thema) ? k.thema.trim() : '';
-    const e = map.get(t) || { thema: t, karten: 0, spielbar: 0 };
+    const e = map.get(t) || { thema: t, karten: 0, spielbar: 0, faellig: 0, neu: 0, gelernt: 0 };
     e.karten++;
-    if (karteSpielbar(k)) e.spielbar++;
+    if (karteSpielbar(k)) {
+      e.spielbar++;
+      if (zustaende) {
+        const z = zustaende.get(k.id) || null;
+        // Gleiche Reihenfolge wie in zaehle(): "gelernt" hat ebenfalls kein due.
+        if (istFertig(z)) e.gelernt++;
+        else if (!z || !z.due) e.neu++;
+        else if (heute && z.due <= heute) e.faellig++;
+      }
+    }
     map.set(t, e);
   }
   // Themen alphabetisch, "Ohne Thema" ans Ende
@@ -935,8 +949,15 @@ export function themenJeNotiz(sidecar) {
  * Ausschnitts, unabhaengig von Faelligkeit, Stufe und Tagesbudget – und gemischt,
  * weil es hier ums Wiederholen geht, nicht ums Nachholen. Der Aufrufer schreibt in
  * diesem Modus keine Antworten weg, der Lernstand bleibt also unberuehrt.
+ *
+ * `ohneTageslimit: true`: das Tagesbudget `neueProTag` wird ignoriert. Gedacht fuer den
+ * Fall "heute ist genau DIESE Vorlesung dran" – wer ein Thema bewusst auswaehlt, will
+ * es ganz lernen und nicht nach 20 Karten ausgebremst werden. Der Wiederholungsplan
+ * bleibt davon unberuehrt, es kommt nur mehr auf einmal dran.
+ *
+ * `limit <= 0`: keine Obergrenze (der Aufrufer deckelt selbst, siehe ui-server).
  */
-export function sessionQueue({ sidecars = [], zustaende = new Map(), faecher = [], heute, standard = LERN_STANDARD, filter = {}, limit = 60, uebung = false }) {
+export function sessionQueue({ sidecars = [], zustaende = new Map(), faecher = [], heute, standard = LERN_STANDARD, filter = {}, limit = 60, uebung = false, ohneTageslimit = false }) {
   const faellig = [], neu = [], alle = [];
   let uebersprungenBild = 0;
   const neuHeute = new Map(); // fachId -> Anzahl heute bereits neu eingefuehrter Karten
@@ -977,7 +998,7 @@ export function sessionQueue({ sidecars = [], zustaende = new Map(), faecher = [
       .map((e, i) => ({ e, s: ((i * 2654435761) % 4294967296) ^ (e.karte.id ? e.karte.id.charCodeAt(1) * 7919 : 0) }))
       .sort((a, b) => a.s - b.s)
       .map(x => x.e);
-    const q = gemischt.slice(0, limit);
+    const q = limit > 0 ? gemischt.slice(0, limit) : gemischt;
     return {
       heute, uebung: true, karten: q, gesamt: alle.length,
       faellig: 0, neu: 0, uebersprungenBild,
@@ -988,7 +1009,7 @@ export function sessionQueue({ sidecars = [], zustaende = new Map(), faecher = [
                          (b.zustand.lapses || 0) - (a.zustand.lapses || 0));
 
   const budget = new Map();
-  const neuGefiltert = neu.filter(e => {
+  const neuGefiltert = ohneTageslimit ? neu : neu.filter(e => {
     const max = e.ctx.neueProTag;
     if (!Number.isFinite(max)) return true;
     const schon = budget.get(e.fach) ?? (neuHeute.get(e.fach) || 0);
@@ -997,7 +1018,8 @@ export function sessionQueue({ sidecars = [], zustaende = new Map(), faecher = [
     return true;
   });
 
-  const queue = [...faellig, ...neuGefiltert].slice(0, limit);
+  const zusammen = [...faellig, ...neuGefiltert];
+  const queue = limit > 0 ? zusammen.slice(0, limit) : zusammen;
   return {
     heute,
     karten: queue,

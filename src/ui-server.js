@@ -302,6 +302,9 @@ app.post('/api/reindex', (req, res) => {
 // in _System/Lernen/faecher.json) – hier wird nur gelesen, gefaltet und gerechnet.
 // Ein-Schreiber-Prinzip: den Antwort-Log schreibt AUSSCHLIESSLICH dieser Prozess.
 const _kartenCache = {};   // Vault -> Map(sidecarPfad -> {mtime, sidecar}), mtime-invalidiert
+// Obergrenze einer einzelnen Sitzung. Kein fachliches Limit mehr (das entscheidet der
+// Nutzer ueber seine Auswahl), nur ein Riegel gegen versehentlich riesige Queues.
+const MAX_SITZUNG = 2000;
 const _reviewCache = {};   // Vault -> {sig, reviews}
 
 // Der Log waechst mit jeder Antwort; ihn bei jedem Dashboard-Poll komplett neu zu
@@ -376,10 +379,16 @@ app.get('/api/lernen/session', (req, res) => {
     }
     // '__ohne__' = die Sammelkachel "Ohne Fach" im Dashboard (Karten ohne Fach-Zuordnung).
     if (req.query.fach) filter.fach = req.query.fach === '__ohne__' ? null : String(req.query.fach);
-    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 60));
+    // limit=0 (bzw. "alle") heisst: keine Obergrenze. Wer ein Thema bewusst waehlt, will
+    // es ganz durcharbeiten; gedeckelt wird nur noch gegen Ausreisser (MAX_SITZUNG).
+    const roh = String(req.query.limit ?? '').trim();
+    const limit = (roh === '0' || roh.toLowerCase() === 'alle') ? MAX_SITZUNG
+      : Math.min(MAX_SITZUNG, Math.max(1, Number(roh) || 60));
     // uebung=1: alles abfragen, nichts einplanen (der Client schreibt dann keine Antworten)
     const uebung = req.query.uebung === '1' || req.query.uebung === 'true';
-    const q = sessionQueue({ sidecars, zustaende, faecher, heute, standard, filter, limit, uebung });
+    // ohneTageslimit=1: das Tagesbudget "neue Karten pro Tag" ignorieren (bewusste Themenwahl)
+    const ohneTageslimit = req.query.ohneTageslimit === '1' || req.query.ohneTageslimit === 'true';
+    const q = sessionQueue({ sidecars, zustaende, faecher, heute, standard, filter, limit, uebung, ohneTageslimit });
     // Der Client braucht den Fach-Kontext nicht – nur Karte, Herkunft und Zustand.
     res.json({
       ...q,
