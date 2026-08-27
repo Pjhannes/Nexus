@@ -63,12 +63,37 @@ function getVault(name) {
 // ── Express ───────────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json());
+
+// ── Web-Betrieb (Container hinter Reverse-Proxy): NEXUS_WEB=1 ────────────────
+// Auf dem Heimserver laeuft derselbe Server, aber ohne Desktop drumherum. Routen,
+// die dort sinnlos sind oder auf dem SERVER Prozesse/Programme starten wuerden,
+// werden hart gesperrt – unabhaengig davon, was der Proxy durchlaesst (Guertel und
+// Hosentraeger). Ohne die Variable aendert sich nichts, die Desktop-App ist unberuehrt.
+const WEB_GESPERRT = new Set([
+  '/api/open-external',      // startet das Standardprogramm des SERVERS
+  '/api/open-external-url',
+  '/api/connect-claude',     // schreibt Claude-Desktop-Konfiguration des SERVERS
+  '/api/claude-usage',       // Session-Key im Query-String
+  '/api/claude-orgs',
+  '/api/vaults/create', '/api/vaults/remove', '/api/vaults/active',
+]);
+if (process.env.NEXUS_WEB === '1') {
+  app.use((req, res, next) => {
+    if (WEB_GESPERRT.has(req.path) || (req.method === 'POST' && req.path === '/api/settings/vaultsRoot')) {
+      return res.status(403).json({ error: 'Im Web-Betrieb deaktiviert (NEXUS_WEB=1).' });
+    }
+    next();
+  });
+  console.log('[nexus] Web-Betrieb: geraetegebundene Routen gesperrt (NEXUS_WEB=1)');
+}
 // index.html nie cachen – sonst lädt Electron nach UI-Änderungen eine veraltete Version (stale CSS/JS)
 app.use(express.static(join(__dir, '..', 'public'), {
   etag: false,
   lastModified: false,
   setHeaders(res, path) {
-    if (path.endsWith('.html')) res.setHeader('Cache-Control', 'no-store, must-revalidate');
+    // .html und die geteilte Lern-Logik nie cachen – etag/lastModified sind aus, es gaebe
+    // sonst gar keinen Validator und Handy/Desktop liefen auf alter Wertungslogik.
+    if (path.endsWith('.html') || path.endsWith('lernen-kern.js')) res.setHeader('Cache-Control', 'no-store, must-revalidate');
   }
 }));
 
@@ -221,6 +246,9 @@ app.get('/api/version', (_req, res) => {
   res.json({ version: APP_VERSION });
 });
 
+// Kurzlink fuer das Handy-Lesezeichen; die Seite selbst liefert express.static.
+app.get('/lernen', (_req, res) => res.redirect(302, '/lernen.html'));
+
 app.post('/api/settings/vaultsRoot', (req, res) => {
   try {
     const raw = req.body?.vaultsRoot;
@@ -300,7 +328,9 @@ app.post('/api/reindex', (req, res) => {
 // ── R26: Lernmodus (Karteikarten + Spaced Repetition) ─────────────────────────
 // Alle Daten liegen im Vault (Karten neben der Notiz, Antworten als JSONL, Faecher
 // in _System/Lernen/faecher.json) – hier wird nur gelesen, gefaltet und gerechnet.
-// Ein-Schreiber-Prinzip: den Antwort-Log schreibt AUSSCHLIESSLICH dieser Prozess.
+// Mehrgeraete-Betrieb (R26b): je Geraet schreibt genau ein Prozess seinen Antwort-Log
+// append-only; Syncthing bringt die Dateien zusammen, readReviews bildet die Vereinigung
+// ueber ALLE *.jsonl (inkl. Konfliktkopien) und dedupliziert per t|karte.
 const _kartenCache = {};   // Vault -> Map(sidecarPfad -> {mtime, sidecar}), mtime-invalidiert
 // Obergrenze einer einzelnen Sitzung. Kein fachliches Limit mehr (das entscheidet der
 // Nutzer ueber seine Auswahl), nur ein Riegel gegen versehentlich riesige Queues.

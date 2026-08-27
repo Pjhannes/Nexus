@@ -3,8 +3,8 @@
 // Teil B: Scheduler SM-2-Lite + Pruefungs-Kappung + foldReviews
 // Teil C: mergeKartenIds (ID-Stabilitaet, Regionen-Erhalt)
 // Teil D: Uebersicht + Sitzungs-Queue
-// Teil E: Paritaet UI (lnTrefferRegion/lnMcWertung/lnBildWertung aus public/index.html)
-//         – wird erst ab Phase 4 geprueft, vorher uebersprungen.
+// Teil E: Paritaet UI – die geteilte Auswertungs-Logik aus public/lernen-kern.js,
+//         die Desktop (index.html) und Handy (lernen.html) gemeinsam benutzen.
 // Lauf: node test/karten.test.mjs
 import { readFileSync } from 'fs';
 import {
@@ -509,52 +509,53 @@ ok('case-insensitiv (.MD)', kartenSidecarPath('B.MD') === 'B.karten.json');
 ok('Rueckweg aus dem Dateinamen', notizAusSidecarPath('Uni/A.karten.json') === 'Uni/A.md');
 ok('Log-Datei rotiert monatlich', logDateiFuer('2026-08-09') === '_System/Lernen/log/2026-08.jsonl');
 
-console.log('\n── E. Paritaet UI (Phase 4) ──');
-const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
-const ia = html.indexOf('//__LERN_START__');
-const ib = html.indexOf('//__LERN_END__');
-if (ia === -1 || ib === -1) {
-  console.log('  \x1b[33m•\x1b[0m LERN-Marker noch nicht in index.html – Phase 4 ausstehend, uebersprungen');
-} else {
-  const core = html.slice(ia, ib);
-  const mod = await import('data:text/javascript,' + encodeURIComponent(core
-    + '\nexport {lnTrefferRegion, lnMcWertung, lnBildWertung, lnRegionRect, lnTippNorm, lnTippWertung};'));
-  // Rechtecke: x/y = linke obere Ecke, w/h = Anteil der jeweiligen Achse
-  const regionen = [{ label: 'A', x: 0.2, y: 0.2, w: 0.2, h: 0.2 }, { label: 'B', x: 0.6, y: 0.6, w: 0.2, h: 0.2 }];
-  ok('lnTrefferRegion: Treffer in A', mod.lnTrefferRegion(0.25, 0.25, regionen)?.label === 'A');
-  ok('lnTrefferRegion: Kante zaehlt noch', mod.lnTrefferRegion(0.4, 0.4, regionen)?.label === 'A');
-  ok('lnTrefferRegion: daneben -> null', mod.lnTrefferRegion(0.5, 0.05, regionen) === null);
-  ok('lnTrefferRegion: knapp ausserhalb -> null', mod.lnTrefferRegion(0.41, 0.25, regionen) === null);
-  ok('lnTrefferRegion: kleineres Rechteck gewinnt bei Ueberlappung',
-    mod.lnTrefferRegion(0.3, 0.3, [{ label: 'gross', x: 0, y: 0, w: 1, h: 1 }, { label: 'klein', x: .25, y: .25, w: .1, h: .1 }])?.label === 'klein');
-  ok('lnRegionRect: altes Kreis-Format wird zum Quadrat (x/y war der Mittelpunkt)', (() => {
-    const q = mod.lnRegionRect({ label: 'A', x: 0.5, y: 0.5, r: 0.1 });
-    return q.x === 0.4 && q.y === 0.4 && Math.abs(q.w - 0.2) < 1e-9 && Math.abs(q.h - 0.2) < 1e-9;
-  })());
-  ok('lnTrefferRegion trifft auch alte Kreis-Regionen',
-    mod.lnTrefferRegion(0.52, 0.52, [{ label: 'A', x: .5, y: .5, r: .1 }])?.label === 'A');
-  ok('lnRegionRect: unbrauchbare Region -> null', mod.lnRegionRect({ label: 'A', x: 0.5 }) === null);
-  ok('lnMcWertung: exakte Menge richtig', mod.lnMcWertung([0, 2], [2, 0]) === true);
-  ok('lnMcWertung: fehlende Auswahl falsch', mod.lnMcWertung([0], [0, 2]) === false);
-  ok('lnMcWertung: zu viel ausgewaehlt falsch', mod.lnMcWertung([0, 1, 2], [0, 2]) === false);
-  ok('lnMcWertung: leere Auswahl falsch', mod.lnMcWertung([], [0]) === false);
-  const wA = mod.lnBildWertung({ A: 'A', B: 'B' }, regionen);
-  ok('lnBildWertung: alles richtig', wA.korrekt === true && wA.falsch.length === 0);
-  const wB = mod.lnBildWertung({ A: 'B', B: 'A' }, regionen);
-  ok('lnBildWertung: vertauscht -> falsch, nennt beide', wB.korrekt === false && wB.falsch.length === 2);
-  const wC = mod.lnBildWertung({ A: 'A' }, regionen);
-  ok('lnBildWertung: unvollstaendig -> falsch', wC.korrekt === false);
-  // Tipp-Modus: Gross/Kleinschreibung und Satzzeichen duerfen nicht entscheiden
-  ok('lnTippNorm ignoriert Gross/Klein + Bindestrich', mod.lnTippNorm('Knick-Armroboter') === mod.lnTippNorm('knick armroboter'));
-  ok('lnTippNorm trimmt', mod.lnTippNorm('  SCARA  ') === 'scara');
-  const t1 = mod.lnTippWertung(['A', 'B'], regionen);
-  ok('lnTippWertung: beide richtig', t1.korrekt === true && t1.falsch.length === 0);
-  const t2 = mod.lnTippWertung(['a', 'falsch'], regionen);
-  ok('lnTippWertung: Kleinschreibung zaehlt als richtig, Fehler wird benannt',
-    t2.korrekt === false && t2.falsch.length === 1 && t2.falsch[0] === 'B');
-  ok('lnTippWertung: leeres Feld ist falsch', mod.lnTippWertung(['A', ''], regionen).korrekt === false);
-  ok('lnTippWertung: fehlende Eingaben komplett falsch', mod.lnTippWertung([], regionen).falsch.length === 2);
+console.log('\n── E. Paritaet UI (lernen-kern.js) ──');
+// Die Logik lebt seit R26b in public/lernen-kern.js – EINE Quelle fuer Desktop und Handy.
+// Der Test importiert die Datei unveraendert als Modul und haengt nur die Exporte an.
+const kern = readFileSync(new URL('../public/lernen-kern.js', import.meta.url), 'utf8');
+const mod = await import('data:text/javascript,' + encodeURIComponent(kern
+  + '\nexport {lnTrefferRegion, lnMcWertung, lnBildWertung, lnRegionRect, lnTippNorm, lnTippWertung};'));
+// Beide Oberflaechen muessen den Kern wirklich laden – sonst driftet die Wertung auseinander.
+for (const [datei, name] of [['../public/index.html', 'index.html'], ['../public/lernen.html', 'lernen.html']]) {
+  const seite = readFileSync(new URL(datei, import.meta.url), 'utf8');
+  ok(name + ' laedt lernen-kern.js', seite.includes('src="/lernen-kern.js"'));
+  ok(name + ' definiert die Wertung nicht selbst', !seite.includes('function lnRegionRect'));
 }
+// Rechtecke: x/y = linke obere Ecke, w/h = Anteil der jeweiligen Achse
+const regionen = [{ label: 'A', x: 0.2, y: 0.2, w: 0.2, h: 0.2 }, { label: 'B', x: 0.6, y: 0.6, w: 0.2, h: 0.2 }];
+ok('lnTrefferRegion: Treffer in A', mod.lnTrefferRegion(0.25, 0.25, regionen)?.label === 'A');
+ok('lnTrefferRegion: Kante zaehlt noch', mod.lnTrefferRegion(0.4, 0.4, regionen)?.label === 'A');
+ok('lnTrefferRegion: daneben -> null', mod.lnTrefferRegion(0.5, 0.05, regionen) === null);
+ok('lnTrefferRegion: knapp ausserhalb -> null', mod.lnTrefferRegion(0.41, 0.25, regionen) === null);
+ok('lnTrefferRegion: kleineres Rechteck gewinnt bei Ueberlappung',
+  mod.lnTrefferRegion(0.3, 0.3, [{ label: 'gross', x: 0, y: 0, w: 1, h: 1 }, { label: 'klein', x: .25, y: .25, w: .1, h: .1 }])?.label === 'klein');
+ok('lnRegionRect: altes Kreis-Format wird zum Quadrat (x/y war der Mittelpunkt)', (() => {
+  const q = mod.lnRegionRect({ label: 'A', x: 0.5, y: 0.5, r: 0.1 });
+  return q.x === 0.4 && q.y === 0.4 && Math.abs(q.w - 0.2) < 1e-9 && Math.abs(q.h - 0.2) < 1e-9;
+})());
+ok('lnTrefferRegion trifft auch alte Kreis-Regionen',
+  mod.lnTrefferRegion(0.52, 0.52, [{ label: 'A', x: .5, y: .5, r: .1 }])?.label === 'A');
+ok('lnRegionRect: unbrauchbare Region -> null', mod.lnRegionRect({ label: 'A', x: 0.5 }) === null);
+ok('lnMcWertung: exakte Menge richtig', mod.lnMcWertung([0, 2], [2, 0]) === true);
+ok('lnMcWertung: fehlende Auswahl falsch', mod.lnMcWertung([0], [0, 2]) === false);
+ok('lnMcWertung: zu viel ausgewaehlt falsch', mod.lnMcWertung([0, 1, 2], [0, 2]) === false);
+ok('lnMcWertung: leere Auswahl falsch', mod.lnMcWertung([], [0]) === false);
+const wA = mod.lnBildWertung({ A: 'A', B: 'B' }, regionen);
+ok('lnBildWertung: alles richtig', wA.korrekt === true && wA.falsch.length === 0);
+const wB = mod.lnBildWertung({ A: 'B', B: 'A' }, regionen);
+ok('lnBildWertung: vertauscht -> falsch, nennt beide', wB.korrekt === false && wB.falsch.length === 2);
+const wC = mod.lnBildWertung({ A: 'A' }, regionen);
+ok('lnBildWertung: unvollstaendig -> falsch', wC.korrekt === false);
+// Tipp-Modus: Gross/Kleinschreibung und Satzzeichen duerfen nicht entscheiden
+ok('lnTippNorm ignoriert Gross/Klein + Bindestrich', mod.lnTippNorm('Knick-Armroboter') === mod.lnTippNorm('knick armroboter'));
+ok('lnTippNorm trimmt', mod.lnTippNorm('  SCARA  ') === 'scara');
+const t1 = mod.lnTippWertung(['A', 'B'], regionen);
+ok('lnTippWertung: beide richtig', t1.korrekt === true && t1.falsch.length === 0);
+const t2 = mod.lnTippWertung(['a', 'falsch'], regionen);
+ok('lnTippWertung: Kleinschreibung zaehlt als richtig, Fehler wird benannt',
+  t2.korrekt === false && t2.falsch.length === 1 && t2.falsch[0] === 'B');
+ok('lnTippWertung: leeres Feld ist falsch', mod.lnTippWertung(['A', ''], regionen).korrekt === false);
+ok('lnTippWertung: fehlende Eingaben komplett falsch', mod.lnTippWertung([], regionen).falsch.length === 2);
 
 console.log(`\n${pass} bestanden, ${fail} fehlgeschlagen`);
 process.exit(fail ? 1 : 0);
