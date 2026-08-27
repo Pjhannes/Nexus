@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#161514">
+<title>Nexus &ndash; Lernen</title>
+<!-- Mobile Lernoberflaeche (R26b). Bewusst eine EIGENE Seite statt eines Umbaus von
+     index.html: die Desktop-App ist eine 500-KB-Datei mit fester Drei-Spalten-Shell,
+     die auf einem Handy nie gut wird. Hier zaehlt nur das Abfragen.
+     Gemeinsam mit dem Desktop ist (a) die Auswertungs-Logik in /lernen-kern.js und
+     (b) das komplette Backend – es werden exakt dieselben /api/lernen/*-Routen und
+     dieselben Farb-Tokens benutzt, damit Optik und Rechnung identisch bleiben.
+     Nicht enthalten (bleibt Desktop): Karten-Editor, Faecher-Verwaltung, Anki-Export. -->
+<script src="/lernen-kern.js"></script>
+<style>
+/* ── Farbtokens: woertlich aus index.html, damit die Optik 1:1 stimmt ──────────
+   Standard ist das dunkle Studio-Theme "Dunkler", umschaltbar auf "Creme (hell)". */
+:root{
+  --bg:#161514;--panel:#211f1e;--panel2:#282624;--border:#312f2d;
+  --text:#e6e4e1;--dim:#948f87;--accent:#e8a94a;
+  --app-bg:#161514;--app-font:Inter,"Segoe UI",system-ui,sans-serif;
+  --accent-14:color-mix(in srgb,var(--accent) 16%,transparent);
+  --accent-20:color-mix(in srgb,var(--accent) 21%,transparent);
+  --lern-ok:#4caf82;--lern-bad:#e2726e;--lern-warn:#e0b070;--lern-neu:#7ec8e3;
+}
+/* Creme: das einzige helle Theme der App. Die Signalfarben lagen hier bei 1.7-2.8
+   Kontrast und waren unlesbar – deshalb eigene, dunklere Werte (wie am Desktop). */
+:root[data-studio="cream"]{
+  --bg:#e6dccb;--panel:#faf6ee;--panel2:#f0e8d8;--border:#d6cbb5;
+  --text:#3c352a;--dim:#8a7f6c;--accent:#c8893a;--app-bg:#e6dccb;
+  --lern-ok:#176b47;--lern-bad:#9d2f2b;--lern-warn:#7a4f0c;--lern-neu:#175a77;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--app-bg);color:var(--text);font-family:var(--app-font);
+  font-size:16px;line-height:1.5;-webkit-text-size-adjust:100%;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+button,input,textarea{font-family:inherit}
+/* Zeigergeraete-Feinheiten nur dort, wo es sie gibt: auf dem Touchscreen bliebe ein
+   :hover sonst nach dem Tippen "kleben". */
+@media (hover:hover){
+  .ln-btn:hover:not(:disabled){border-color:var(--accent)}
+  .lnp-opt:hover:not(:disabled){border-color:var(--accent)}
+  .lnp-lbl:hover:not(:disabled){border-color:var(--accent)}
+  .rund:hover{border-color:var(--accent);color:var(--text)}
+}
+/* Tastatur-Hinweise (J/N, Zahlentasten, Enter) sind auf dem Handy sinnlos. */
+@media (pointer:coarse){ .lnp-key,.lnp-hint{display:none!important} }
+
+/* ── Geruest ─────────────────────────────────────────────────────────────────*/
+.huelle{max-width:640px;margin:0 auto;padding:14px 14px calc(28px + env(safe-area-inset-bottom))}
+.view{display:none}
+.view.an{display:block}
+.kopf{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.kopf h1{font-size:21px;margin:0;flex:1;min-width:0}
+.kopf h1 small{font-size:12px;color:var(--dim);font-weight:400;display:block;margin-top:2px}
+.rund{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;
+  background:var(--panel2);border:1px solid var(--border);color:var(--dim);border-radius:12px;
+  font-size:18px;cursor:pointer;flex:0 0 auto;transition:.15s}
+.ln-sec{font-size:11.5px;text-transform:uppercase;letter-spacing:.9px;color:var(--dim);margin:24px 0 9px}
+.ln-hinweis{font-size:13.5px;color:var(--dim);line-height:1.65;border:1px dashed var(--border);border-radius:12px;padding:15px 16px}
+.ln-badge{font-size:11.5px;padding:3px 9px;border-radius:99px;border:1px solid var(--border);color:var(--dim);white-space:nowrap}
+.ln-badge.faellig{border-color:var(--accent);color:var(--accent)}
+.ln-badge.neu{border-color:var(--lern-neu);color:var(--lern-neu)}
+.ln-badge.warn{border-color:var(--lern-warn);color:var(--lern-warn)}
+.ln-badge.ok{border-color:var(--lern-ok);color:var(--lern-ok)}
+.ln-zeile{display:flex;gap:6px;flex-wrap:wrap}
+/* Knoepfe: am Handy ist 48px die Untergrenze, damit man sie sicher trifft. */
+.ln-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:11px;
+  padding:13px 16px;font-size:15px;cursor:pointer;transition:.15s;min-height:48px}
+.ln-btn:disabled{opacity:.4;cursor:default}
+.ln-btn.primary{background:var(--accent-14);border-color:var(--accent);font-weight:600}
+.ln-btn.breit{display:block;width:100%;text-align:center}
+.ln-btn.klein{padding:9px 13px;font-size:13.5px;min-height:44px}
+.ln-ok{--ln-c:var(--lern-ok)}
+.ln-bad{--ln-c:var(--lern-bad)}
+
+/* ── Dashboard ───────────────────────────────────────────────────────────────*/
+.ln-heute{padding:18px;border:1px solid var(--border);border-radius:15px;background:var(--panel2);margin-bottom:14px}
+.ln-heute .ln-zahl{font-size:44px;font-weight:700;line-height:1;color:var(--accent)}
+.ln-heute .ln-zahl.leer{color:var(--dim)}
+.ln-heute .ln-sub{font-size:13px;color:var(--dim);margin-top:5px}
+.tasten{display:flex;flex-direction:column;gap:9px}
+.ln-kachel{border:1px solid var(--border);border-radius:14px;padding:15px 16px;background:var(--panel);
+  border-top:3px solid var(--ln-c,var(--accent));margin-bottom:10px}
+.ln-kachel h3{margin:0 0 3px;font-size:16px}
+.ln-kachel .ln-pruef{font-size:12.5px;color:var(--dim);margin-bottom:10px}
+.ln-kachel .ln-pruef b{color:var(--text)}
+.ln-bar{height:7px;border-radius:99px;background:var(--border);overflow:hidden;margin:10px 0 7px}
+.ln-bar i{display:block;height:100%;background:var(--ln-c,var(--accent))}
+.ln-kachel .ln-akt{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
+.ln-kachel .ln-akt .ln-btn{flex:1 1 auto}
+.ln-row{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--border);
+  border-radius:12px;background:var(--panel);margin-bottom:8px;min-height:56px;cursor:pointer}
+.ln-row .ln-titel{font-size:14.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ln-row .ln-pfad{font-size:11.5px;color:var(--dim);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ln-row .ln-mini{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+/* Stufen + Kalender: am Handy untereinander statt nebeneinander. */
+.ln-status{display:flex;flex-direction:column;gap:11px;margin:4px 0 16px}
+.lns-box{border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:13px 14px}
+.lns-titel{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--dim);margin-bottom:2px}
+.lns-sub{font-size:12px;color:var(--dim);margin-bottom:10px;line-height:1.45}
+.lns-stufe{display:flex;align-items:center;gap:9px;margin-bottom:6px;font-size:13px}
+.lns-stufe .lns-name{width:128px;flex:0 0 auto;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lns-stufe .lns-bar{flex:1 1 30px;min-width:22px;height:8px;border-radius:99px;background:var(--border);overflow:hidden}
+.lns-stufe .lns-bar i{display:block;height:100%;border-radius:99px;background:var(--accent)}
+.lns-stufe .lns-zahl{width:32px;text-align:right;flex:0 0 auto;font-weight:600}
+.lns-kal{display:flex;gap:6px}
+.lns-tag{flex:1;text-align:center;border:1px solid var(--border);border-radius:10px;padding:8px 2px;background:var(--panel2)}
+.lns-tag.heute{border-color:var(--accent)}
+.lns-tag .lns-wt{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px}
+.lns-tag .lns-n{font-size:20px;font-weight:700;line-height:1.25}
+.lns-tag .lns-n.leer{color:var(--dim);font-weight:400}
+.lns-tag .lns-dat{font-size:10px;color:var(--dim)}
+.ln-veraltet{border:1px solid var(--lern-warn);border-radius:12px;
+  background:color-mix(in srgb,var(--lern-warn) 12%,transparent);padding:12px 14px;margin-bottom:14px;font-size:13.5px;line-height:1.6}
+.ln-veraltet b{color:var(--lern-warn)}
+
+/* ── Sitzungswahl (am Desktop ein Modal, hier eine eigene Ansicht) ───────────*/
+.lnw-optionen{display:flex;flex-direction:column;gap:13px;padding:14px;border:1px solid var(--border);
+  border-radius:12px;background:var(--panel2);margin-bottom:16px}
+.lnw-zeile{display:flex;flex-direction:column;gap:7px}
+.lnw-lab{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--dim)}
+.lnw-hint{font-size:12.5px;color:var(--dim);line-height:1.5}
+.lnw-hint b{color:var(--text)}
+.lnw-seg{display:flex;border:1px solid var(--border);border-radius:11px;overflow:hidden}
+.lnw-seg button{flex:1;background:var(--panel);border:none;border-right:1px solid var(--border);
+  color:var(--dim);font-size:14px;padding:13px 8px;cursor:pointer;transition:.14s;min-height:48px}
+.lnw-seg button:last-child{border-right:none}
+.lnw-seg button.aktiv{background:var(--accent-14);color:var(--text);font-weight:600}
+.lnw-chips{display:flex;gap:7px;flex-wrap:wrap}
+.lnw-chip{flex:1 1 60px;background:var(--panel);border:1px solid var(--border);color:var(--dim);
+  border-radius:99px;font-size:14px;padding:12px 10px;cursor:pointer;transition:.14s;min-height:46px}
+.lnw-chip.aktiv{background:var(--accent-14);border-color:var(--accent);color:var(--text);font-weight:600}
+.lnw-titel{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);margin:0 0 8px}
+.lnt-liste{display:flex;flex-direction:column;gap:7px;margin:4px 0 10px}
+.lnt-gruppe{border:1px solid var(--border);border-radius:11px;background:var(--panel2);overflow:hidden}
+.lnt-zeile{display:flex;align-items:center;gap:10px;padding:12px 12px;cursor:pointer;min-height:52px}
+.lnt-zeile .lnt-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14.5px}
+.lnt-themen{padding:0 8px 8px}
+.lnt-thema{display:flex;align-items:center;gap:10px;padding:10px 10px 10px 30px;border-radius:9px;cursor:pointer;font-size:13.5px;min-height:46px}
+.lnt-thema .lnt-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lnt-thema.ohne .lnt-name{color:var(--dim);font-style:italic}
+.lnt-pfeil{width:30px;height:30px;flex:0 0 auto;border:none;background:none;color:var(--dim);
+  cursor:pointer;font-size:12px;line-height:1;padding:0;transition:transform .15s}
+.lnt-pfeil.auf{transform:rotate(90deg)}
+.lnt-pfeil:disabled{opacity:0;cursor:default}
+input[type=checkbox]{width:22px;height:22px;flex:0 0 auto;margin:0;accent-color:var(--accent)}
+/* Fussleiste klebt unten: der Losgehen-Knopf ist beim langen Themenbaum sonst weg. */
+.lnw-fuss{position:sticky;bottom:0;background:var(--app-bg);border-top:1px solid var(--border);
+  padding:11px 0 calc(11px + env(safe-area-inset-bottom));margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.lnw-fuss .lnw-zahl{font-size:12.5px;color:var(--dim);text-align:center}
+
+/* ── Statistik ──────────────────────────────────────────────────────────────*/
+.ln-stat{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:9px;margin-bottom:16px}
+.ln-statbox{border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:var(--panel)}
+.ln-statbox .lsv{font-size:24px;font-weight:700;line-height:1.15}
+.ln-statbox .lsl{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.7px;margin-top:3px}
+.ln-mix{display:flex;height:11px;border-radius:99px;overflow:hidden;background:var(--border);margin:10px 0 8px}
+.ln-mix i{display:block;height:100%}
+.ln-legende{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--dim)}
+.ln-legende span::before{content:"";display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;background:var(--lg,var(--accent))}
+.ln-verlauf{display:flex;align-items:flex-end;gap:2px;height:96px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--panel)}
+.ln-verlauf i{flex:1;min-width:2px;background:var(--accent);border-radius:2px 2px 0 0;display:block}
+.ln-verlauf i.leer{background:var(--border)}
+.ln-vlabel{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-top:5px}
+.ln-filter{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px}
+.ln-filter button{background:var(--panel2);border:1px solid var(--border);color:var(--dim);
+  border-radius:99px;padding:10px 14px;font-size:13.5px;cursor:pointer;min-height:44px}
+.ln-filter button.aktiv{background:var(--accent-14);border-color:var(--accent);color:var(--text);font-weight:600}
+
+/* ── Sitzung (Player) – Struktur wie am Desktop, Masse fuer den Daumen ───────*/
+.lern-ovl{position:fixed;inset:0;z-index:180;background:var(--bg);display:none;flex-direction:column}
+.lern-ovl.show{display:flex}
+.lnp-top{display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;
+  border-bottom:1px solid var(--border);flex-shrink:0}
+.lnp-top .lnp-fort{flex:1;display:flex;gap:2px;align-items:stretch;height:9px}
+.lnp-top .lnp-fort i{flex:1;min-width:2px;border-radius:2px;background:var(--border);transition:background .2s}
+.lnp-top .lnp-fort i.ok{background:var(--lern-ok)}
+.lnp-top .lnp-fort i.bad{background:var(--lern-bad)}
+.lnp-top .lnp-fort i.jetzt{background:var(--accent)}
+.lnp-zahl{font-size:12px;color:var(--dim);white-space:nowrap}
+.lnp-x{background:none;border:none;color:var(--dim);font-size:24px;cursor:pointer;padding:0 6px;line-height:1;min-width:44px;min-height:44px}
+.lnp-uebung{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--lern-neu);
+  border:1px solid var(--lern-neu);border-radius:99px;padding:2px 8px;white-space:nowrap}
+.lnp-body{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:20px 14px calc(34px + env(safe-area-inset-bottom))}
+.lnp-karte{width:100%;max-width:640px;margin:0 auto}
+.lnp-herkunft{font-size:12px;color:var(--dim);margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.lnp-frage{font-size:20px;line-height:1.45;font-weight:600;margin-bottom:20px}
+.lnp-opts{display:flex;flex-direction:column;gap:10px}
+.lnp-opt{text-align:left;width:100%;padding:16px 16px;border:1px solid var(--border);border-radius:12px;
+  background:var(--panel);color:var(--text);font-size:16px;line-height:1.4;cursor:pointer;transition:.14s;
+  display:flex;align-items:center;gap:11px;min-height:56px}
+.lnp-opt .lnp-key{font-size:11px;color:var(--dim);border:1px solid var(--border);border-radius:5px;padding:1px 6px;flex-shrink:0}
+.lnp-opt.gewaehlt{border-color:var(--accent);background:var(--accent-14)}
+.lnp-opt.richtig{border-color:var(--lern-ok);background:color-mix(in srgb,var(--lern-ok) 16%,transparent)}
+.lnp-opt.falsch{border-color:var(--lern-bad);background:color-mix(in srgb,var(--lern-bad) 14%,transparent)}
+.lnp-opt:disabled{cursor:default}
+/* 16px Schriftgroesse in Feldern: alles darunter loest auf iOS einen Auto-Zoom aus. */
+.lnp-ta{width:100%;min-height:130px;padding:14px;border:1px solid var(--border);border-radius:12px;
+  background:var(--panel);color:var(--text);font-size:16px;line-height:1.6;outline:none;resize:vertical}
+.lnp-ta:focus{border-color:var(--accent)}
+.lnp-loesung{margin-top:16px;padding:15px;border:1px solid var(--border);border-left:3px solid var(--accent);
+  border-radius:11px;background:var(--panel2);font-size:15px;line-height:1.65;white-space:pre-wrap}
+.lnp-loesung .lnp-lab{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);display:block;margin-bottom:6px}
+.lnp-fb{margin-top:18px;padding:15px;border-radius:12px;font-size:15px;line-height:1.6;
+  border:1px solid var(--ln-c);background:color-mix(in srgb,var(--ln-c) 12%,transparent)}
+.lnp-fb .lnp-fb-t{font-weight:700;color:var(--ln-c);margin-bottom:5px}
+.lnp-quelle{font-size:12.5px;color:var(--dim);margin-top:8px;font-style:italic}
+/* Primaeraktion klebt unten – am Handy kommt man sonst nicht ohne Scrollen hin. */
+.lnp-unten{position:sticky;bottom:0;display:flex;gap:9px;flex-wrap:wrap;margin-top:20px;
+  padding:11px 0 calc(4px + env(safe-area-inset-bottom));background:var(--bg)}
+.lnp-unten .ln-btn{flex:1 1 auto}
+.lnp-hint{font-size:11.5px;color:var(--dim);width:100%}
+/* Bild-Karten: Marker liegen prozentual ueber dem Bild – dadurch stimmt die Lage
+   in jeder Anzeigegroesse, auch wenn wir das Bild fuer den Daumen aufziehen. */
+.lnp-bildbox{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:4px}
+.lnp-bildwrap{position:relative;display:inline-block;line-height:0;max-width:100%}
+.lnp-bildwrap img{max-width:100%;height:auto;border-radius:10px;border:1px solid var(--border);display:block}
+.lnp-bildbox.gross .lnp-bildwrap{max-width:none}
+.lnp-bildbox.gross .lnp-bildwrap img{max-width:none;width:180vw}
+.lnp-mark{position:absolute;border:2px solid var(--accent);background:var(--accent-20);border-radius:6px;
+  display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text);
+  cursor:pointer;line-height:1.2;box-shadow:0 0 0 1px rgba(0,0,0,.35);overflow:hidden;text-align:center;padding:1px}
+.lnp-mark.aktiv{border-color:#fff;box-shadow:0 0 0 3px var(--accent-20)}
+.lnp-mark.belegt{background:color-mix(in srgb,var(--accent) 45%,transparent)}
+.lnp-mark.richtig{border-color:var(--lern-ok);background:color-mix(in srgb,var(--lern-ok) 45%,transparent)}
+.lnp-mark.falsch{border-color:var(--lern-bad);background:color-mix(in srgb,var(--lern-bad) 45%,transparent)}
+/* Abdecken: das Rechteck ist deckend, solange die Karte laeuft – so bleibt eine
+   beschriftete Folie als Abfrage brauchbar. Nach dem Pruefen wird es durchsichtig. */
+.lnp-bildwrap.abdeckend .lnp-mark{background:var(--bg)}
+.lnp-bildwrap.abdeckend .lnp-mark.belegt{background:var(--bg)}
+.lnp-bildwrap.abdeckend .lnp-mark.auf{background:transparent}
+.lnp-mark .lnp-mtext{font-size:12px;font-weight:600;word-break:break-word}
+.lnp-zoom{margin:8px 0 4px}
+.lnp-tipp{display:flex;flex-direction:column;gap:9px;margin-top:14px}
+.lnp-tippzeile{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.lnp-tippnr{width:30px;height:30px;flex:0 0 auto;border:1px solid var(--border);border-radius:8px;
+  display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--dim)}
+.lnp-tippzeile input{flex:1;min-width:0;padding:13px 13px;border:1px solid var(--border);border-radius:10px;
+  background:var(--panel);color:var(--text);font-size:16px;outline:none;min-height:48px}
+.lnp-tippzeile input:focus{border-color:var(--accent)}
+.lnp-tippzeile.ok input{border-color:var(--lern-ok)}
+.lnp-tippzeile.bad input{border-color:var(--lern-bad)}
+.lnp-tipploesung{font-size:13px;color:var(--lern-ok)}
+.lnp-labels{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.lnp-lbl{padding:13px 15px;border:1px solid var(--border);border-radius:11px;background:var(--panel);
+  color:var(--text);font-size:15px;cursor:pointer;transition:.14s;min-height:48px}
+.lnp-lbl.zugeordnet{opacity:.45}
+.lnp-lbl:disabled{cursor:default}
+.lnp-ende{text-align:center;padding:30px 0}
+.lnp-ende .lnp-gross{font-size:52px;margin-bottom:10px}
+.lnp-ende h2{font-size:22px;margin:0 0 8px}
+.lnp-ende p{color:var(--dim);font-size:14.5px;line-height:1.7;margin:0 0 22px}
+.lnp-ende .ln-btn{width:100%;margin-bottom:9px}
+
+/* ── Toast ──────────────────────────────────────────────────────────────────*/
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom));
+  background:var(--panel2);border:1px solid var(--border);color:var(--text);padding:12px 18px;
+  border-radius:12px;font-size:14px;max-width:90vw;text-align:center;opacity:0;pointer-events:none;
+  transition:.2s;z-index:400;box-shadow:0 8px 30px rgba(0,0,0,.45)}
+#toast.show{opacity:1}
+#toast.err{border-color:var(--lern-bad);color:var(--lern-bad)}
+#toast.ok{border-color:var(--lern-ok)}
+#laden{padding:40px 14px;text-align:center;color:var(--dim);font-size:14px}
+</style>
+</head>
+<body>
+
+<div class="huelle">
+  <div id="laden">Lernstand wird geladen&hellip;</div>
+
+  <!-- 1. Uebersicht -->
+  <section class="view" id="view-dash"></section>
+
+  <!-- 2. Sitzungswahl (Modus / Umfang / Kartenzahl / Themen) -->
+  <section class="view" id="view-wahl"></section>
+
+  <!-- 3. Statistik -->
+  <section class="view" id="view-stat"></section>
+</div>
+
+<!-- 4. Sitzung: eigenes Vollbild-Overlay, exakt wie am Desktop -->
+<div class="lern-ovl" id="lern-overlay"></div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// Nexus – Lernen am Handy (R26b)
+//
+// Gerechnet wird ausschliesslich serverseitig (src/lernen.js): Faelligkeit,
+// Intervalle, Pruefungs-Kappung, Stufen. Diese Seite zeigt an und meldet Antworten –
+// genau wie die Desktop-Oberflaeche, damit es nur EINE Wahrheit gibt.
+//
+// Der Lernstand wandert ueber den Vault: jede Antwort ist eine Zeile in
+// _System/Lernen/log/<JJJJ-MM>.jsonl (append-only), Syncthing bringt die Dateien
+// zwischen Handy-Server, PC und Laptop zusammen. Deshalb reicht es hier, stur die
+// vorhandenen /api/lernen/*-Routen zu benutzen – der Abgleich passiert unter uns.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── Werkzeug (woertlich aus index.html) ──────────────────────────────────────
+async function api(url,opts){const r=await fetch(url,opts);return r.json();}
+function escHtml(s){return (s??'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function aq(s){return (s??'').toString().replace(/"/g,'&quot;');}
+let toastTimer=null;
+function toast(msg,type=''){
+  const el=document.getElementById('toast');if(!el)return;
+  el.textContent=msg;el.className='show'+(type?' '+type:'');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),3200);
+}
+let activeVault='';
+function fileUrl(path){return '/api/file?vault='+encodeURIComponent(activeVault)+'&path='+encodeURIComponent(path);}
+function lnPost(url,body){
+  return api(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+}
+function lnMische(arr){
+  const a=[...arr];
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
+  return a;
+}
+function lnNotizName(p){return (p||'').split('/').pop().replace(/\.md$/i,'');}
+function el(id){return document.getElementById(id);}
+
+// ── Ansichten ────────────────────────────────────────────────────────────────
+// Vier Zustaende, immer genau einer sichtbar. Der Player liegt daneben als Overlay,
+// damit er die ganze Flaeche bekommt (und die Ansicht darunter erhalten bleibt).
+let _ansicht='dash';
+function zeige(name){
+  _ansicht=name;
+  el('laden').style.display='none';
+  ['dash','wahl','stat'].forEach(v=>{
+    const s=el('view-'+v);if(s)s.classList.toggle('an',v===name);
+  });
+  window.scrollTo(0,0);
+}
+
+// ── Zustand ──────────────────────────────────────────────────────────────────
+const _ln={aktiv:false,queue:[],idx:0,session:'',richtig:0,falsch:0,requeued:null,
+           phase:'frage',gewaehlt:[],zuordnung:{},markAktiv:null,start:0,
+           ergebnisse:[],letzte:null};
+let _lnDash=null;          // zuletzt geladene Uebersicht
+const LN_WOCHENTAG=['So','Mo','Di','Mi','Do','Fr','Sa'];
+const LN_LEITER_FALLBACK=[1,3,5,7];
+const LN_MAX_REQUEUE=3;    // so oft darf eine Karte in derselben Abfrage nachruecken
+
+// ── Uebersicht laden ─────────────────────────────────────────────────────────
+async function lnLadeDashboard(){
+  let d;
+  try{d=await api('/api/lernen/uebersicht?vault='+encodeURIComponent(activeVault));}
+  catch(e){el('laden').textContent='Keine Verbindung zum Nexus-Dienst: '+e.message;el('laden').style.display='';return;}
+  if(!d||d.error){el('laden').textContent='Fehler: '+((d&&d.error)||'unbekannt');el('laden').style.display='';return;}
+  _lnDash=d;
+  lnRenderDashboard(d);
+  zeige('dash');
+}
+
+// Laeuft der Node-Dienst noch mit aelterem Stand? Dann fehlen Felder, die es erst
+// seit dem Stufen-Umbau gibt – ohne Hinweis sieht das einfach nur kaputt aus.
+function lnDienstVeraltet(d){return !d||!Array.isArray(d.stufenTage)||!Array.isArray(d.kalender);}
+function lnStufenNamen(tage){
+  const t=(Array.isArray(tage)&&tage.length)?tage:LN_LEITER_FALLBACK;
+  return ['neu / zur&uuml;ckgefallen']
+    .concat(t.map((n,i)=>'Stufe '+(i+1)+' &middot; '+n+(n===1?' Tag':' Tage')))
+    .concat(['gelernt']);
+}
+function lnZahlenBadges(t,mitGesamt){
+  return (mitGesamt?'<span class="ln-badge">'+(t.karten||0)+' Karten</span>':'')
+    +(t.faellig?'<span class="ln-badge faellig">'+t.faellig+' f&auml;llig</span>':'')
+    +(t.neu?'<span class="ln-badge neu">'+t.neu+' neu</span>':'')
+    +(t.gelernt?'<span class="ln-badge ok">'+t.gelernt+' gelernt</span>':'')
+    +(mitGesamt?'':'<span class="ln-badge">'+(t.karten||0)+'</span>');
+}
+function lnStatusHtml(d){
+  const stufen=(d.gesamt&&d.gesamt.stufen)||[];
+  const namen=lnStufenNamen(d.stufenTage);
+  const max=Math.max(1,...stufen);
+  let h='';
+  if(lnDienstVeraltet(d)){
+    h+='<div class="ln-veraltet"><b>&#9888; Der Nexus-Dienst l&auml;uft mit einem &auml;lteren Stand.</b><br>'
+      +'Stufen-Anzeige und Kalender bleiben deshalb leer und &bdquo;&Uuml;ben&ldquo; findet keine Karten. '
+      +'Auf dem Server hilft ein Neustart des Nexus-Dienstes.</div>';
+  }
+  h+='<div class="ln-status">';
+  h+='<div class="lns-box"><div class="lns-titel">Wo stehen die Karten?</div>'
+    +'<div class="lns-sub">Jede richtige Antwort <b>auf Anhieb</b> schiebt eine Karte eine Stufe weiter. '
+    +'Ein Fehler wirft sie zur&uuml;ck auf Stufe 1.</div>';
+  namen.forEach((n,i)=>{
+    const v=stufen[i]||0;
+    h+='<div class="lns-stufe"><span class="lns-name">'+n+'</span>'
+      +'<span class="lns-bar"><i style="width:'+Math.round((v/max)*100)+'%'+(i===namen.length-1?';background:var(--lern-ok)':'')+'"></i></span>'
+      +'<span class="lns-zahl">'+v+'</span></div>';
+  });
+  h+='</div>';
+  h+='<div class="lns-box"><div class="lns-titel">N&auml;chste Tage</div>'
+    +'<div class="lns-sub">Wie viele Karten an dem Tag anstehen. Heute z&auml;hlt auch mit, was liegen geblieben ist.</div>'
+    +'<div class="lns-kal">';
+  if(!(d.kalender||[]).length)h+='<div class="ln-hinweis" style="flex:1">Keine Vorschau verf&uuml;gbar.</div>';
+  for(const t of (d.kalender||[])){
+    const n=t.faellig+t.neu+t.ueberfaellig;
+    const dt=new Date(t.tag+'T12:00:00');
+    const heute=t.tag===d.heute;
+    h+='<div class="lns-tag'+(heute?' heute':'')+'">'
+      +'<div class="lns-wt">'+(heute?'heute':LN_WOCHENTAG[dt.getDay()])+'</div>'
+      +'<div class="lns-n'+(n?'':' leer')+'">'+n+'</div>'
+      +'<div class="lns-dat">'+dt.getDate()+'.'+(dt.getMonth()+1)+'.</div></div>';
+  }
+  h+='</div></div></div>';
+  return h;
+}
+
+function lnRenderDashboard(d){
+  const area=el('view-dash');if(!area)return;
+  const offen=d.gesamt.faellig+d.gesamt.neu;
+  let h='<div class="kopf"><h1>&#127891; Lernen<small>'+escHtml(activeVault)+'</small></h1>'
+    +'<button class="rund" data-ln="thema" title="Hell/Dunkel">&#9728;</button>'
+    +'<button class="rund" data-ln="neu" title="Neu laden">&#8635;</button></div>';
+
+  if(!d.gesamt.karten){
+    h+='<div class="ln-hinweis"><b>Noch keine Karteikarten im Vault.</b><br><br>'
+      +'Karten entstehen am Rechner &uuml;ber Claude &ndash; hier am Handy wird nur abgefragt.</div>';
+    area.innerHTML=h;lnWireDash(area);return;
+  }
+
+  h+='<div class="ln-heute"><div class="ln-zahl'+(offen?'':' leer')+'">'+offen+'</div>'
+    +'<div class="ln-sub">'+(offen?('offen &middot; '+d.gesamt.faellig+' f&auml;llig, '+d.gesamt.neu+' noch nie gefragt')
+                                  :'heute nichts mehr offen &#127881;')+'</div>'
+    +'<div class="ln-zeile" style="margin-top:11px">'
+      +'<span class="ln-badge">'+d.gesamt.karten+' Karten</span>'
+      +(d.gesamt.quote!==null?'<span class="ln-badge">'+d.gesamt.quote+'% richtig</span>':'')
+    +'</div></div>';
+
+  h+='<div class="tasten">'
+    +'<button class="ln-btn primary breit" data-ln="lernen-wahl">&#127891; Lernen &hellip;</button>'
+    +'<button class="ln-btn breit" data-ln="alles"'+(offen?'':' disabled')+'>Tagespensum sofort starten</button>'
+    +'<button class="ln-btn breit" data-ln="ueben-alles">&#128260; &Uuml;ben &hellip;</button></div>';
+
+  h+=lnStatusHtml(d);
+
+  h+='<div class="ln-sec">F&auml;cher</div>';
+  for(const f of (d.faecher||[])){
+    const farbe=f.farbe||'var(--accent)';
+    const anteil=f.karten?Math.round((f.fertig/f.karten)*100):0;
+    const off=f.faellig+f.neu;
+    const fid=f.id===null?'__ohne__':f.id;
+    h+='<div class="ln-kachel" style="--ln-c:'+aq(escHtml(farbe))+'">'
+      +'<h3>'+escHtml(f.name)+'</h3>'
+      +'<div class="ln-pruef">'+(f.pruefung
+          ?('Pr&uuml;fung <b>'+escHtml(f.pruefung)+'</b> &middot; '+(f.resttage>0?('noch <b>'+f.resttage+'</b> Tage'):(f.resttage===0?'<b>heute</b>':'vorbei')))
+          :'kein Pr&uuml;fungstermin')+'</div>'
+      +'<div class="ln-bar"><i style="width:'+anteil+'%"></i></div>'
+      +'<div style="font-size:12px;color:var(--dim)">'+f.fertig+' von '+f.karten+' Karten gelernt'
+      +(f.proTagNoetig!==null&&f.proTagNoetig!==undefined
+        ?(' &middot; '+(f.aufKurs?'auf Kurs':'<b style="color:var(--lern-warn)">R&uuml;ckstand</b>')+', '+f.proTagNoetig+'/Tag n&ouml;tig'):'')+'</div>'
+      +'<div class="ln-zeile" style="margin-top:9px">'
+        +(f.faellig?'<span class="ln-badge faellig">'+f.faellig+' f&auml;llig</span>':'')
+        +(f.neu?'<span class="ln-badge neu">'+f.neu+' neu</span>':'')
+        +(off?'':'<span class="ln-badge">nichts offen</span>')
+      +'</div>'
+      +'<div class="ln-akt">'
+        +'<button class="ln-btn klein" data-ln="fach-wahl" data-fach="'+aq(escHtml(fid))+'">Lernen &hellip;</button>'
+        +'<button class="ln-btn klein" data-ln="ueben-fach" data-fach="'+aq(escHtml(fid))+'">&#128260; &Uuml;ben</button>'
+        +'<button class="ln-btn klein" data-ln="statistik" data-fach="'+aq(escHtml(fid))+'">&#128202;</button>'
+      +'</div></div>';
+  }
+
+  const faellige=d.faellige||[];
+  h+='<div class="ln-sec">Heute f&auml;llige Lernsets</div>';
+  if(!faellige.length){
+    h+='<div class="ln-hinweis">Alles erledigt. Die n&auml;chsten Wiederholungen stehen automatisch an, sobald sie f&auml;llig sind.</div>';
+  }else{
+    for(const n of faellige){
+      h+='<div class="ln-row" data-ln="notiz-wahl" data-notiz="'+aq(escHtml(n.notiz))+'">'
+        +'<div style="flex:1;min-width:0">'
+        +'<div class="ln-titel">'+escHtml(n.titel||lnNotizName(n.notiz))+'</div>'
+        +'<div class="ln-pfad">'+escHtml(n.notiz)+'</div>'
+        +'<div class="ln-mini">'
+          +(n.fachName?'<span class="ln-badge">'+escHtml(n.fachName)+'</span>':'')
+          +(n.faellig?'<span class="ln-badge faellig">'+n.faellig+' f&auml;llig</span>':'')
+          +(n.neu?'<span class="ln-badge neu">'+n.neu+' neu</span>':'')
+          +(Array.isArray(n.themen)&&n.themen.length>1?'<span class="ln-badge">'+n.themen.length+' Themen</span>':'')
+        +'</div></div>'
+        +'<span style="color:var(--dim);font-size:20px">&#9654;</span></div>';
+    }
+  }
+
+  h+='<div class="ln-sec">Mehr</div>'
+    +'<button class="ln-btn breit" data-ln="statistik">&#128202; Statistik &amp; Verlauf</button>'
+    +'<div class="ln-hinweis" style="margin-top:14px">Karten erstellen, Bild-Regionen setzen und F&auml;cher '
+    +'verwalten geht bewusst nur am Rechner &ndash; hier am Handy wird gelernt.</div>';
+
+  area.innerHTML=h;
+  lnWireDash(area);
+}
+
+function lnWireDash(area){
+  area.querySelectorAll('[data-ln]').forEach(node=>{
+    node.addEventListener('click',ev=>{
+      const a=node.dataset.ln;
+      ev.stopPropagation();
+      if(a==='thema')themaUmschalten();
+      else if(a==='neu')lnLadeDashboard();
+      else if(a==='lernen-wahl')lnSitzungWahl({});
+      else if(a==='ueben-alles')lnSitzungWahl({uebung:true});
+      else if(a==='alles')lnStart({});
+      else if(a==='fach-wahl')lnSitzungWahl({fach:node.dataset.fach});
+      else if(a==='ueben-fach')lnSitzungWahl({fach:node.dataset.fach,uebung:true});
+      else if(a==='notiz-wahl')lnSitzungWahl({notiz:node.dataset.notiz});
+      else if(a==='statistik')lnZeigeStatistik(node.dataset.fach);
+    });
+  });
+}
+
+// ── Sitzungswahl ─────────────────────────────────────────────────────────────
+// Drei Entscheidungen an einem Ort: Modus (Lernen zaehlt / Ueben zaehlt nicht),
+// Umfang (nur Faelliges oder alles Offene ohne Tagesdeckel) und die Kartenzahl.
+// Darunter der Auswahlbaum Lernset -> Thema. Intern ist alles ein Themen-
+// Schluessel "<Notiz>::<Thema>", damit der Server nur einen Filter braucht.
+function lnSitzungWahl(opt){
+  opt=opt||{};
+  const alle=(_lnDash&&_lnDash.notizen)||[];
+  const roh=opt.notiz
+    ? alle.filter(n=>n.notiz===opt.notiz)
+    : (('fach' in opt)
+        ? alle.filter(n=>String(n.fach===null?'__ohne__':n.fach)===String(opt.fach))
+        : alle);
+  if(!roh.length){toast('Hier gibt es keine Karteikarten');return;}
+  const st={modus:opt.uebung?'ueben':'lernen',umfang:'faellig',menge:0};
+  const liste=roh.map(n=>({
+    notiz:n.notiz,
+    name:n.titel||lnNotizName(n.notiz),
+    karten:n.karten,
+    themen:(Array.isArray(n.themen)&&n.themen.length)?n.themen
+      :[{thema:'',karten:n.karten,spielbar:n.karten-(n.bildOffen||0),
+         faellig:n.faellig||0,neu:n.neu||0,gelernt:n.fertig||0}],
+  }));
+  const schluessel=(notiz,thema)=>notiz+'::'+(thema||'');
+  const gewaehlt=new Set();
+  liste.forEach(n=>n.themen.forEach(t=>gewaehlt.add(schluessel(n.notiz,t.thema))));
+  const gegliedert=liste.some(n=>n.themen.length>1||n.themen[0].thema);
+  const offen=new Set(liste.length===1?[liste[0].notiz]:[]);
+  // Ein Lernset ohne Gliederung: es gibt nichts zu waehlen – direkt loslegen.
+  if(liste.length===1&&!gegliedert){lnStart({...opt,notiz:liste[0].notiz,alleNeuen:true});return;}
+
+  const zaehleGewaehlt=(n)=>n.themen.filter(t=>gewaehlt.has(schluessel(n.notiz,t.thema))).length;
+  const dran=(t)=>st.modus==='ueben'?(t.spielbar!==undefined?t.spielbar:t.karten)
+    :(st.umfang==='alles'?((t.faellig||0)+(t.neu||0)):(t.faellig||0));
+  const summe=(feld)=>liste.reduce((s,n)=>s+n.themen.reduce((k,t)=>
+    k+(gewaehlt.has(schluessel(n.notiz,t.thema))?(feld?(t[feld]||0):dran(t)):0),0),0);
+
+  const kopfHtml=()=>'<div class="lnw-optionen">'
+    +'<div class="lnw-zeile"><span class="lnw-lab">Modus</span><div class="lnw-seg">'
+      +'<button data-lt="modus" data-v="lernen"'+(st.modus==='lernen'?' class="aktiv"':'')+'>&#127891; Lernen</button>'
+      +'<button data-lt="modus" data-v="ueben"'+(st.modus==='ueben'?' class="aktiv"':'')+'>&#128260; &Uuml;ben</button>'
+      +'</div><span class="lnw-hint">'+(st.modus==='lernen'
+        ?'Antworten z&auml;hlen: richtig auf Anhieb schiebt eine Karte eine Stufe weiter.'
+        :'Es wird <b>nichts</b> gespeichert &ndash; der Wiederholungsplan bleibt, wie er ist.')+'</span></div>'
+    +(st.modus==='lernen'
+      ?'<div class="lnw-zeile"><span class="lnw-lab">Umfang</span><div class="lnw-seg">'
+        +'<button data-lt="umfang" data-v="faellig"'+(st.umfang==='faellig'?' class="aktiv"':'')+'>Nur F&auml;lliges</button>'
+        +'<button data-lt="umfang" data-v="alles"'+(st.umfang==='alles'?' class="aktiv"':'')+'>Alles Offene</button>'
+        +'</div><span class="lnw-hint">'+(st.umfang==='faellig'
+          ?'Nur die Karten, deren Wiederholung heute ansteht.'
+          :'Dazu <b>alle</b> noch nie gefragten Karten der Auswahl &ndash; ohne Tagesdeckel.')+'</span></div>'
+      :'')
+    +'<div class="lnw-zeile"><span class="lnw-lab">Kartenzahl</span><div class="lnw-chips">'
+      +[0,20,40,60].map(v=>'<button class="lnw-chip'+(st.menge===v?' aktiv':'')+'" data-lt="menge" data-v="'+v+'">'
+        +(v?v:'alle')+'</button>').join('')
+      +'</div><span class="lnw-hint">H&ouml;chstzahl f&uuml;r diese Sitzung.</span></div>'
+    +'</div>';
+
+  const zeilenHtml=()=>liste.map((n,i)=>{
+    const hatThemen=n.themen.length>1||!!n.themen[0].thema;
+    const an=zaehleGewaehlt(n);
+    let h='<div class="lnt-gruppe">'
+      +'<div class="lnt-zeile" data-lt="notizzeile" data-i="'+i+'">'
+      +'<button class="lnt-pfeil'+(offen.has(n.notiz)?' auf':'')+'" data-lt="auf" data-i="'+i+'"'
+        +(hatThemen?'':' disabled')+'>&#9654;</button>'
+      +'<input type="checkbox" data-lt="anNotiz" data-i="'+i+'"'+(an?' checked':'')+'>'
+      +'<span class="lnt-name">'+escHtml(n.name)+'</span>'
+      +(hatThemen?'<span class="ln-badge">'+an+'/'+n.themen.length+'</span>':'')
+      +'<span class="ln-badge">'+n.themen.reduce((s,t)=>s+(t.faellig||0),0)+'&nbsp;f</span>'
+      +'</div>';
+    if(hatThemen&&offen.has(n.notiz)){
+      h+='<div class="lnt-themen">'+n.themen.map((t,j)=>
+        '<div class="lnt-thema'+(t.thema?'':' ohne')+'" data-lt="themazeile" data-i="'+i+'" data-j="'+j+'">'
+        +'<input type="checkbox" data-lt="anThema" data-i="'+i+'" data-j="'+j+'"'
+          +(gewaehlt.has(schluessel(n.notiz,t.thema))?' checked':'')+'>'
+        +'<span class="lnt-name">'+escHtml(t.thema||'ohne Thema')+'</span>'
+        +lnZahlenBadges(t)+'</div>').join('')+'</div>';
+    }
+    return h+'</div>';
+  }).join('');
+
+  const area=el('view-wahl');
+  area.innerHTML='<div class="kopf">'
+      +'<button class="rund" data-lt="abbruch">&larr;</button>'
+      +'<h1>Lernsitzung'+(opt.notiz?'<small>'+escHtml(lnNotizName(opt.notiz))+'</small>':'')+'</h1></div>'
+    +'<div id="lnt-kopf">'+kopfHtml()+'</div>'
+    +'<div class="lnw-titel">Auswahl</div>'
+    +'<div class="ln-zeile" style="margin-bottom:9px">'
+      +'<button class="ln-btn klein" data-lt="alle">Alle</button>'
+      +'<button class="ln-btn klein" data-lt="keine">Keine</button>'
+      +(gegliedert?'<button class="ln-btn klein" data-lt="aufzu">Auf-/zuklappen</button>':'')+'</div>'
+    +(gegliedert?'':'<div class="lnw-hint" style="margin-bottom:9px">Diese Karten tragen noch keine Themen.</div>')
+    +'<div class="lnt-liste" id="lnt-liste">'+zeilenHtml()+'</div>'
+    +'<div class="lnw-fuss"><span class="lnw-zahl" id="lnt-zahl"></span>'
+      +'<button class="ln-btn primary breit" data-lt="los" id="lnt-los">Losgehen</button></div>';
+
+  const zahl=()=>{
+    const z=el('lnt-zahl'),btn=el('lnt-los');
+    if(!z)return;
+    const sets=liste.filter(n=>zaehleGewaehlt(n)>0).length;
+    const n=summe(null);
+    const deckel=(st.menge&&n>st.menge)?(' &rarr; '+st.menge+' in dieser Sitzung'):'';
+    z.innerHTML=n+' Karte'+(n===1?'':'n')+' aus '+sets+' von '+liste.length+' Lernset'+(liste.length===1?'':'s')
+      +(st.modus==='lernen'?(' &middot; '+summe('faellig')+' f&auml;llig, '+summe('neu')+' neu'):'')+deckel;
+    if(btn)btn.disabled=!n;
+  };
+  // Nur den neu gezeichneten Teil verdrahten – sonst saeumeln sich auf "Losgehen"
+  // mit jeder Aenderung weitere Klick-Handler an und die Sitzung startete mehrfach.
+  const neu=()=>{
+    const k=el('lnt-kopf');if(k)k.innerHTML=kopfHtml();
+    const l=el('lnt-liste');if(l)l.innerHTML=zeilenHtml();
+    wire(k);wire(l);zahl();
+  };
+  const wire=(root)=>{
+    (root||area).querySelectorAll('[data-lt]').forEach(node=>{
+      const a=node.dataset.lt,i=+node.dataset.i,j=+node.dataset.j;
+      if(a==='auf')node.addEventListener('click',ev=>{
+        ev.stopPropagation();
+        const n=liste[i];
+        if(offen.has(n.notiz))offen.delete(n.notiz);else offen.add(n.notiz);
+        neu();
+      });
+      else if(a==='anNotiz')node.addEventListener('change',ev=>{
+        ev.stopPropagation();
+        const n=liste[i];
+        n.themen.forEach(t=>{
+          if(node.checked)gewaehlt.add(schluessel(n.notiz,t.thema));
+          else gewaehlt.delete(schluessel(n.notiz,t.thema));
+        });
+        neu();
+      });
+      else if(a==='anThema')node.addEventListener('change',ev=>{
+        ev.stopPropagation();
+        const n=liste[i],t=n.themen[j];
+        if(node.checked)gewaehlt.add(schluessel(n.notiz,t.thema));
+        else gewaehlt.delete(schluessel(n.notiz,t.thema));
+        neu();
+      });
+      // Klick auf die ganze Zeile schaltet die Checkbox – groessere Trefferflaeche.
+      else if(a==='notizzeile')node.addEventListener('click',ev=>{
+        if(ev.target.closest('input,button'))return;
+        const cb=node.querySelector('input[data-lt="anNotiz"]');
+        if(cb){cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));}
+      });
+      else if(a==='themazeile')node.addEventListener('click',ev=>{
+        if(ev.target.closest('input'))return;
+        const cb=node.querySelector('input[data-lt="anThema"]');
+        if(cb){cb.checked=!cb.checked;cb.dispatchEvent(new Event('change'));}
+      });
+      else if(a==='alle')node.addEventListener('click',()=>{
+        liste.forEach(n=>n.themen.forEach(t=>gewaehlt.add(schluessel(n.notiz,t.thema))));neu();
+      });
+      else if(a==='keine')node.addEventListener('click',()=>{gewaehlt.clear();neu();});
+      else if(a==='aufzu')node.addEventListener('click',()=>{
+        if(offen.size)offen.clear();else liste.forEach(n=>offen.add(n.notiz));
+        neu();
+      });
+      else if(a==='modus')node.addEventListener('click',()=>{st.modus=node.dataset.v;neu();});
+      else if(a==='umfang')node.addEventListener('click',()=>{st.umfang=node.dataset.v;neu();});
+      else if(a==='menge')node.addEventListener('click',()=>{st.menge=+node.dataset.v||0;neu();});
+      else if(a==='abbruch')node.addEventListener('click',()=>zeige('dash'));
+      else if(a==='los')node.addEventListener('click',()=>{
+        if(!gewaehlt.size){toast('Bitte mindestens ein Thema w&auml;hlen');return;}
+        lnStart({...opt,uebung:st.modus==='ueben',themen:[...gewaehlt],
+                 alleNeuen:st.umfang==='alles',limit:st.menge});
+      });
+    });
+  };
+  wire();zahl();
+  zeige('wahl');
+}
+
+// ── Sitzung ──────────────────────────────────────────────────────────────────
+async function lnStart(filter){
+  const uebung=!!filter.uebung;
+  const menge=Number.isFinite(filter.limit)&&filter.limit>0?filter.limit:0;
+  const p=new URLSearchParams({vault:activeVault,limit:String(menge)});
+  if(filter.notiz)p.set('note',filter.notiz);
+  if(Array.isArray(filter.notizen)&&filter.notizen.length)p.set('notes',filter.notizen.join('\n'));
+  if(Array.isArray(filter.themen)&&filter.themen.length)p.set('themen',filter.themen.join('\n'));
+  if(filter.fach)p.set('fach',filter.fach);
+  if(uebung)p.set('uebung','1');
+  // Bewusste Auswahl schlaegt das Tagesbudget "neue Karten pro Tag".
+  if(filter.alleNeuen)p.set('ohneTageslimit','1');
+  let q;
+  try{q=await api('/api/lernen/session?'+p.toString());}catch(e){toast('Sitzung nicht ladbar: '+e.message,'err');return;}
+  if(!q||q.error){toast('Fehler: '+((q&&q.error)||'unbekannt'),'err');return;}
+  if(uebung&&q.uebung!==true){
+    toast('Der Nexus-Dienst kennt den &Uuml;bungsmodus noch nicht','err');return;
+  }
+  if(!q.karten.length){
+    toast(q.uebersprungenBild
+      ?((uebung?'Keine Karten zum &Uuml;ben – ':'Nichts f&auml;llig – ')+q.uebersprungenBild+' Bild-Karte(n) warten noch auf Regionen')
+      :(uebung?'Hier gibt es keine Karten zum &Uuml;ben':'Hier ist heute nichts f&auml;llig – gut gemacht!'),'ok');
+    return;
+  }
+  _ln.aktiv=true;_ln.queue=q.karten.slice();_ln.idx=0;_ln.richtig=0;_ln.falsch=0;
+  _ln.requeued=new Map();_ln.session='s-'+Date.now();_ln.filter=filter;_ln.uebung=uebung;
+  _ln.ergebnisse=[];_ln.letzte=null;
+  el('lern-overlay').classList.add('show');
+  document.body.style.overflow='hidden';
+  lnRenderKarte();
+}
+function lnStop(){
+  if(!_ln.aktiv)return;
+  _ln.aktiv=false;
+  const ov=el('lern-overlay');
+  if(ov){ov.classList.remove('show');ov.innerHTML='';}
+  document.body.style.overflow='';
+  lnLadeDashboard();
+}
+// Ein Segment je Karte: gruen = richtig, rot = falsch, Akzent = die aktuelle Karte.
+function lnSegmente(){
+  return _ln.queue.map((_,i)=>{
+    const e=_ln.ergebnisse[i];
+    const cls=e===true?'ok':e===false?'bad':(i===_ln.idx?'jetzt':'');
+    return '<i'+(cls?' class="'+cls+'"':'')+'></i>';
+  }).join('');
+}
+function lnKopf(){
+  const gesamt=_ln.queue.length,pos=Math.min(_ln.idx+1,gesamt);
+  return '<div class="lnp-top">'
+    +'<span class="lnp-zahl lnp-pos">'+pos+'/'+gesamt+'</span>'
+    +'<div class="lnp-fort">'+lnSegmente()+'</div>'
+    +'<span class="lnp-zahl lnp-bilanz">&#10003; '+_ln.richtig+' &middot; &#10007; '+_ln.falsch+'</span>'
+    +(_ln.uebung?'<span class="lnp-uebung">&#128260;</span>':'')
+    +'<button class="lnp-x" data-lnp="stop">&#10005;</button></div>';
+}
+// Kopfleiste ohne Neuaufbau aktualisieren – ein kompletter Re-Render wuerde die
+// Karten-Knoepfe doppelt verdrahten.
+function lnTopAktualisieren(){
+  const ov=el('lern-overlay');if(!ov)return;
+  const fort=ov.querySelector('.lnp-fort');if(fort)fort.innerHTML=lnSegmente();
+  const pos=ov.querySelector('.lnp-pos');
+  if(pos)pos.textContent=Math.min(_ln.idx+1,_ln.queue.length)+'/'+_ln.queue.length;
+  const bil=ov.querySelector('.lnp-bilanz');
+  if(bil)bil.innerHTML='&#10003; '+_ln.richtig+' &middot; &#10007; '+_ln.falsch;
+}
+function lnRenderKarte(){
+  const ov=el('lern-overlay');if(!ov)return;
+  if(_ln.idx>=_ln.queue.length){lnRenderEnde();return;}
+  const e=_ln.queue[_ln.idx],k=e.karte;
+  _ln.phase='frage';_ln.gewaehlt=[];_ln.zuordnung={};_ln.markAktiv=null;_ln.start=Date.now();
+  let b='<div class="lnp-body"><div class="lnp-karte">';
+  b+='<div class="lnp-herkunft">&#128196; '+escHtml(e.titel||lnNotizName(e.notiz))
+    +(e.neu?' <span class="ln-badge neu">neu</span>':'')+'</div>';
+  b+='<div class="lnp-frage">'+escHtml(k.frage)+'</div>';
+
+  if(k.typ==='janein'){
+    b+='<div class="lnp-opts">'
+      +'<button class="lnp-opt" data-lnp="ja"><span class="lnp-key">J</span>Stimmt</button>'
+      +'<button class="lnp-opt" data-lnp="nein"><span class="lnp-key">N</span>Stimmt nicht</button></div>';
+  }else if(k.typ==='mc'){
+    const mehr=(k.korrekt||[]).length>1;
+    _ln.mcReihe=lnMische(k.optionen.map((_,i)=>i));
+    b+='<div class="lnp-opts">';
+    _ln.mcReihe.forEach((orig,pos)=>{
+      b+='<button class="lnp-opt" data-lnp="opt" data-i="'+orig+'"><span class="lnp-key">'+(pos+1)+'</span>'+escHtml(k.optionen[orig])+'</button>';
+    });
+    b+='</div>';
+    if(mehr)b+='<div class="lnp-unten"><button class="ln-btn primary" data-lnp="mcpruef">Pr&uuml;fen</button>'
+      +'<span class="lnp-hint">Mehrfachauswahl</span></div>';
+  }else if(k.typ==='freitext'){
+    b+='<textarea class="lnp-ta" id="lnp-ta" placeholder="Antwort in eigenen Worten&hellip;" enterkeyhint="done"></textarea>'
+      +'<div class="lnp-unten"><button class="ln-btn primary" data-lnp="zeigen">L&ouml;sung zeigen</button></div>';
+  }else if(k.typ==='bild'){
+    // EIN Klick-Handler auf dem Wrapper: die Trefferpruefung macht lnTrefferRegion aus
+    // lernen-kern.js mit exakt derselben Formel wie am Desktop – der ganze Kasten zaehlt.
+    // Auf dem Touchscreen liefert ein Tap ein normales click-Ereignis, die Rechnung ueber
+    // getBoundingClientRect bleibt also auch bei Zoom und Seiten-Scroll korrekt.
+    const tippen=(k.modus==='tippen');
+    b+='<div class="lnp-bildbox" id="lnp-bildbox"><div class="lnp-bildwrap'+(k.abdecken!==false?' abdeckend':'')+'" id="lnp-bild"'
+      +(tippen?'':' data-lnp="bildklick"')+'><img src="'+aq(fileUrl(k.bild))+'" alt="">';
+    (k.regionen||[]).forEach((r,i)=>{
+      const q=lnRegionRect(r);if(!q)return;
+      b+='<div class="lnp-mark" data-i="'+i+'" style="left:'+(q.x*100)+'%;top:'+(q.y*100)+'%;width:'+(q.w*100)+'%;height:'+(q.h*100)+'%">'+(i+1)+'</div>';
+    });
+    b+='</div></div>';
+    // Kleine Felder sind am Handy sonst kaum zu treffen: das Bild laesst sich
+    // vergroessern und der Kasten seitlich scrollen. Prozent-Marker skalieren mit.
+    b+='<div class="lnp-zoom"><button class="ln-btn klein" data-lnp="zoom">&#128269; Bild gr&ouml;&szlig;er</button></div>';
+    if(tippen){
+      b+='<div class="lnp-tipp" id="lnp-tipp">'
+        +(k.regionen||[]).map((r,i)=>'<div class="lnp-tippzeile" data-i="'+i+'"><span class="lnp-tippnr">'+(i+1)+'</span>'
+          +'<input type="text" data-lnp="tipp" data-i="'+i+'" placeholder="Feld '+(i+1)+'&hellip;" autocomplete="off" '
+          +'autocapitalize="off" spellcheck="false" enterkeyhint="'+(i===(k.regionen||[]).length-1?'done':'next')+'"></div>').join('')
+        +'</div>'
+        +'<div class="lnp-unten"><button class="ln-btn primary" data-lnp="bildpruef">Pr&uuml;fen</button></div>';
+    }else{
+      b+='<div class="lnp-labels" id="lnp-labels"></div>'
+        +'<div class="lnp-unten"><button class="ln-btn primary" data-lnp="bildpruef">Pr&uuml;fen</button>'
+        +'<span class="lnp-hint">Feld antippen, dann den passenden Begriff w&auml;hlen</span></div>';
+    }
+  }
+  b+='</div></div>';
+  ov.innerHTML=lnKopf()+b;
+  if(k.typ==='bild'&&k.modus!=='tippen'){_ln.labelReihe=lnMische(k.labels||[]);lnRenderBildLabels();}
+  lnWirePlayer();
+  const ta=el('lnp-ta');if(ta)ta.focus();
+}
+function lnRenderBildLabels(){
+  const box=el('lnp-labels');if(!box)return;
+  const belegt=new Set(Object.values(_ln.zuordnung));
+  box.innerHTML=(_ln.labelReihe||[]).map(l=>
+    '<button class="lnp-lbl'+(belegt.has(l)?' zugeordnet':'')+'" data-lnp="lbl" data-l="'+aq(escHtml(l))+'"'
+    +(_ln.phase!=='frage'?' disabled':'')+'>'+escHtml(l)+'</button>').join('');
+  box.querySelectorAll('[data-lnp]').forEach(node=>node.addEventListener('click',()=>lnLabelKlick(node.dataset.l)));
+  // Marker beschriften: welcher Begriff haengt gerade an welchem Feld?
+  const k=_ln.queue[_ln.idx].karte;
+  document.querySelectorAll('#lnp-bild .lnp-mark').forEach((m,i)=>{
+    const r=(k.regionen||[])[i];if(!r)return;
+    const zu=_ln.zuordnung[r.label];
+    m.classList.toggle('belegt',!!zu);
+    m.classList.toggle('aktiv',_ln.markAktiv===i);
+    m.innerHTML=zu?('<span class="lnp-mtext">'+escHtml(zu)+'</span>'):String(i+1);
+  });
+}
+function lnLabelKlick(label){
+  if(_ln.phase!=='frage')return;
+  const k=_ln.queue[_ln.idx].karte,regionen=k.regionen||[];
+  let ziel=_ln.markAktiv;
+  if(ziel===null||ziel===undefined){
+    ziel=regionen.findIndex(r=>!_ln.zuordnung[r.label]);
+    if(ziel<0){toast('Alle Felder sind belegt – Feld antippen, um es neu zu setzen');return;}
+  }
+  const r=regionen[ziel];if(!r)return;
+  // Ein Begriff darf nur an einem Feld haengen.
+  for(const key of Object.keys(_ln.zuordnung))if(_ln.zuordnung[key]===label)delete _ln.zuordnung[key];
+  _ln.zuordnung[r.label]=label;
+  _ln.markAktiv=null;
+  lnRenderBildLabels();
+}
+function lnWirePlayer(){
+  const ov=el('lern-overlay');if(!ov)return;
+  ov.querySelectorAll('[data-lnp]').forEach(node=>{
+    const a=node.dataset.lnp;
+    if(a==='lbl')return;   // eigene Verdrahtung in lnRenderBildLabels
+    if(a==='tipp'){
+      // Enter/Weiter der Bildschirmtastatur springt ins naechste Feld bzw. prueft.
+      node.addEventListener('keydown',ev=>{
+        if(ev.key!=='Enter')return;
+        ev.preventDefault();
+        const felder=[...document.querySelectorAll('#lnp-tipp input')];
+        const naechstes=felder[felder.indexOf(node)+1];
+        if(naechstes&&!naechstes.value.trim())naechstes.focus();else lnBildPruefen();
+      });
+      node.addEventListener('focus',()=>{
+        try{node.scrollIntoView({block:'center',behavior:'smooth'});}catch{}
+      });
+      return;
+    }
+    node.addEventListener('click',()=>{
+      if(a==='stop')lnStop();
+      else if(a==='ja')lnJaNein(true);
+      else if(a==='nein')lnJaNein(false);
+      else if(a==='opt')lnOptKlick(+node.dataset.i,node);
+      else if(a==='mcpruef')lnMcPruefen();
+      else if(a==='zeigen')lnLoesungZeigen();
+      else if(a==='selbst')lnAntwort(node.dataset.k==='1');
+      else if(a==='weiter')lnWeiter();
+      else if(a==='bildpruef')lnBildPruefen();
+      else if(a==='korrigieren')lnKorrigieren();
+      else if(a==='weiterlernen')lnStart(_ln.filter||{});
+      else if(a==='zoom')lnZoom(node);
+    });
+    if(a==='bildklick')node.addEventListener('click',ev=>lnBildKlick(ev));
+  });
+}
+function lnZoom(btn){
+  const box=el('lnp-bildbox');if(!box)return;
+  const gross=box.classList.toggle('gross');
+  btn.innerHTML=gross?'&#128269; Bild kleiner':'&#128269; Bild gr&ouml;&szlig;er';
+}
+function lnBildKlick(ev){
+  if(_ln.phase!=='frage')return;
+  const k=_ln.queue[_ln.idx].karte;
+  const box=ev.currentTarget.getBoundingClientRect();
+  if(!box.width||!box.height)return;
+  const x=(ev.clientX-box.left)/box.width, y=(ev.clientY-box.top)/box.height;
+  const treffer=lnTrefferRegion(x,y,k.regionen||[]);
+  if(!treffer)return;
+  const i=(k.regionen||[]).indexOf(treffer);
+  _ln.markAktiv=(_ln.markAktiv===i)?null:i;
+  lnRenderBildLabels();
+}
+function lnJaNein(wahl){
+  if(_ln.phase!=='frage')return;
+  const k=_ln.queue[_ln.idx].karte;
+  lnAntwort(wahl===(k.antwort===true),{gewaehlt:wahl});
+}
+function lnOptKlick(i,node){
+  if(_ln.phase!=='frage')return;
+  const k=_ln.queue[_ln.idx].karte;
+  if((k.korrekt||[]).length>1){
+    const at=_ln.gewaehlt.indexOf(i);
+    if(at>=0)_ln.gewaehlt.splice(at,1);else _ln.gewaehlt.push(i);
+    node.classList.toggle('gewaehlt',_ln.gewaehlt.includes(i));
+  }else{
+    _ln.gewaehlt=[i];
+    lnMcPruefen();
+  }
+}
+function lnMcPruefen(){
+  if(_ln.phase!=='frage')return;
+  const k=_ln.queue[_ln.idx].karte;
+  if(!_ln.gewaehlt.length){toast('Bitte mindestens eine Option w&auml;hlen');return;}
+  const korrekt=lnMcWertung(_ln.gewaehlt,k.korrekt);
+  document.querySelectorAll('#lern-overlay .lnp-opt[data-lnp="opt"]').forEach(node=>{
+    const i=+node.dataset.i;
+    node.classList.remove('gewaehlt');
+    if((k.korrekt||[]).includes(i))node.classList.add('richtig');
+    else if(_ln.gewaehlt.includes(i))node.classList.add('falsch');
+  });
+  lnAntwort(korrekt,{gewaehlt:_ln.gewaehlt.slice()});
+}
+function lnLoesungZeigen(){
+  if(_ln.phase!=='frage')return;
+  _ln.phase='selbst';
+  const k=_ln.queue[_ln.idx].karte;
+  const ta=el('lnp-ta');
+  if(ta)ta.disabled=true;
+  const karte=document.querySelector('#lern-overlay .lnp-karte');if(!karte)return;
+  const alt=karte.querySelector('.lnp-unten');if(alt)alt.remove();
+  const div=document.createElement('div');
+  div.innerHTML='<div class="lnp-loesung"><span class="lnp-lab">Musterl&ouml;sung</span>'+escHtml(k.antwort||'')+'</div>'
+    +'<div class="lnp-unten"><button class="ln-btn primary" data-lnp="selbst" data-k="1">&#10003; Wusste ich</button>'
+    +'<button class="ln-btn" data-lnp="selbst" data-k="0">&#10007; Wusste ich nicht</button></div>';
+  karte.appendChild(div);
+  lnWirePlayer();
+}
+function lnBildPruefen(){
+  if(_ln.phase!=='frage')return;
+  const k=_ln.queue[_ln.idx].karte;
+  const regionen=k.regionen||[];
+  let w,detail;
+  if(k.modus==='tippen'){
+    const eingaben=regionen.map((_,i)=>{
+      const node=document.querySelector('#lnp-tipp input[data-i="'+i+'"]');
+      return node?node.value:'';
+    });
+    if(eingaben.every(s=>!String(s).trim())){toast('Noch nichts eingetragen');return;}
+    w=lnTippWertung(eingaben,regionen);
+    detail={eingaben,falsch:w.falsch};
+    regionen.forEach((r,i)=>{
+      const zeile=document.querySelector('#lnp-tipp .lnp-tippzeile[data-i="'+i+'"]');if(!zeile)return;
+      const richtig=lnTippNorm(eingaben[i])===lnTippNorm(r.label);
+      zeile.classList.add(richtig?'ok':'bad');
+      const inp=zeile.querySelector('input');if(inp)inp.disabled=true;
+      if(!richtig){
+        const s=document.createElement('span');
+        s.className='lnp-tipploesung';s.textContent=r.label;
+        zeile.appendChild(s);
+      }
+    });
+  }else{
+    if(Object.keys(_ln.zuordnung).length<regionen.length){toast('Noch nicht alle Felder zugeordnet');return;}
+    w=lnBildWertung(_ln.zuordnung,regionen);
+    detail={falsch:w.falsch};
+  }
+  // Abdeckung aufziehen: jetzt darf man sehen, was auf der Folie steht.
+  document.querySelectorAll('#lnp-bild .lnp-mark').forEach((m,i)=>{
+    const r=regionen[i];if(!r)return;
+    m.classList.remove('belegt','aktiv');
+    const richtig=k.modus==='tippen'
+      ? !w.falsch.includes(r.label)
+      : _ln.zuordnung[r.label]===r.label;
+    m.classList.add(richtig?'richtig':'falsch','auf');
+    m.innerHTML=String(i+1);
+  });
+  lnAntwort(w.korrekt,detail);
+}
+async function lnAntwort(korrekt,detail){
+  if(_ln.phase==='fertig')return;
+  _ln.phase='fertig';
+  const e=_ln.queue[_ln.idx],k=e.karte;
+  if(korrekt)_ln.richtig++;else _ln.falsch++;
+  _ln.ergebnisse[_ln.idx]=korrekt;
+  lnTopAktualisieren();
+  let r=null;
+  if(!_ln.uebung){
+    try{
+      r=await lnPost('/api/lernen/antwort',{vault:activeVault,notiz:e.notiz,kartenId:k.id,korrekt,
+        dauerMs:Date.now()-_ln.start,session:_ln.session,detail});
+    }catch(err){r={error:err.message};}
+    // Ohne Netz bleibt die Antwort ungespeichert – die Sitzung laeuft weiter, aber
+    // diese Karte kommt wieder. Ein Nachreichen gibt es bewusst nicht.
+    if(r&&r.error)toast('Antwort nicht gespeichert: '+r.error,'err');
+  }
+  const karte=document.querySelector('#lern-overlay .lnp-karte');
+  if(karte){
+    const alt=karte.querySelector('.lnp-unten');if(alt)alt.remove();
+    document.querySelectorAll('#lern-overlay .lnp-opt,#lern-overlay .lnp-lbl').forEach(node=>node.disabled=true);
+    const ta=el('lnp-ta');if(ta)ta.disabled=true;
+    const naechste=r&&r.zustand&&r.zustand.due;
+    const stufe=r&&r.zustand?r.zustand.stufe:null;
+    const stufenTage=(_lnDash&&_lnDash.stufenTage)||LN_LEITER_FALLBACK;
+    const fb=document.createElement('div');
+    fb.className='lnp-fb '+(korrekt?'ln-ok':'ln-bad');
+    fb.innerHTML='<div class="lnp-fb-t">'+(korrekt?'&#10003; Richtig':'&#10007; Falsch')+'</div>'
+      +((k.typ==='janein'&&!korrekt)?('Richtig w&auml;re: <b>'+(k.antwort?'Stimmt':'Stimmt nicht')+'</b>'):'')
+      +(k.erklaerung?('<div style="margin-top:6px">'+escHtml(k.erklaerung)+'</div>'):'')
+      +(k.quelle?('<div class="lnp-quelle">&bdquo;'+escHtml(k.quelle)+'&ldquo;</div>'):'')
+      +(_ln.uebung
+          ?'<div class="lnp-quelle">&#128260; &Uuml;bung &ndash; am Wiederholungsplan &auml;ndert sich nichts.</div>'
+          :((naechste?('<div class="lnp-quelle">N&auml;chste Wiederholung: '+escHtml(naechste)
+              +(stufe?(' &middot; Stufe '+stufe+' von '+stufenTage.length):'')+'</div>'):'')
+            +((!korrekt)?'<div class="lnp-quelle">Kommt am Ende dieser Abfrage nochmal.</div>'
+              :(stufe&&stufe>stufenTage.length?'<div class="lnp-quelle">Durch &ndash; diese Karte wird nicht mehr eingeplant.</div>':''))));
+    karte.appendChild(fb);
+    _ln.letzte=(!_ln.uebung&&r&&r.t)?{t:r.t,kartenId:k.id,korrekt}:null;
+    const unten=document.createElement('div');
+    unten.className='lnp-unten';
+    unten.innerHTML='<button class="ln-btn primary" data-lnp="weiter">Weiter</button>'
+      +(_ln.letzte?'<button class="ln-btn" data-lnp="korrigieren">'
+        +(korrekt?'&#10007; Doch nicht':'&#10003; Doch gewusst')+'</button>':'');
+    karte.appendChild(unten);
+    lnWirePlayer();
+    try{unten.scrollIntoView({block:'nearest',behavior:'smooth'});}catch{}
+  }
+  // Falsch beantwortet -> ans ENDE der Abfrage, bis sie einmal sitzt.
+  if(!korrekt){
+    const bisher=_ln.requeued.get(k.id)||0;
+    if(bisher<LN_MAX_REQUEUE){_ln.requeued.set(k.id,bisher+1);_ln.queue.push(e);}
+    else toast('Diese Karte kommt jetzt nicht mehr – sie steht morgen wieder an','ok');
+  }
+}
+// Verklickt? Die Antwort wird nicht geloescht (der Log ist append-only), sondern
+// storniert und in der Gegenrichtung neu gebucht – Zaehler und Balken ziehen mit.
+async function lnKorrigieren(){
+  const l=_ln.letzte;if(!l)return;
+  _ln.letzte=null;
+  const neu=!l.korrekt;
+  let r;
+  try{
+    r=await lnPost('/api/lernen/undo',{vault:activeVault,kartenId:l.kartenId,t:l.t});
+    if(r&&!r.error){
+      const e=_ln.queue[_ln.idx];
+      r=await lnPost('/api/lernen/antwort',{vault:activeVault,notiz:e&&e.notiz,kartenId:l.kartenId,
+        korrekt:neu,session:_ln.session,detail:{korrigiert:true}});
+    }
+  }catch(err){r={error:err.message};}
+  if(!r||r.error){toast('Korrektur fehlgeschlagen: '+((r&&r.error)||''),'err');return;}
+  if(l.korrekt){_ln.richtig--;_ln.falsch++;}else{_ln.falsch--;_ln.richtig++;}
+  _ln.ergebnisse[_ln.idx]=neu;
+  _ln.letzte={t:r.t,kartenId:l.kartenId,korrekt:neu};
+  lnTopAktualisieren();
+  const fb=document.querySelector('#lern-overlay .lnp-fb');
+  if(fb){
+    fb.className='lnp-fb '+(neu?'ln-ok':'ln-bad');
+    const t=fb.querySelector('.lnp-fb-t');
+    if(t)t.innerHTML=(neu?'&#10003; Richtig':'&#10007; Falsch')+' <span style="font-weight:400;font-size:12px">(korrigiert)</span>';
+  }
+  const btn=document.querySelector('#lern-overlay [data-lnp="korrigieren"]');
+  if(btn)btn.innerHTML=neu?'&#10007; Doch nicht':'&#10003; Doch gewusst';
+  toast('Antwort korrigiert','ok');
+}
+function lnWeiter(){
+  _ln.idx++;
+  if(_ln.idx>=_ln.queue.length)lnEnde();else lnRenderKarte();
+}
+// Nach dem letzten Kartendurchlauf beim Server nachfragen, was jetzt noch offen ist –
+// mit DEMSELBEN Ausschnitt wie die gelaufene Sitzung, sonst meldet die Restanzeige
+// Karten, die gar nicht drankommen sollten.
+async function lnEnde(){
+  let rest=0;
+  if(_ln.uebung){_ln.rest=0;lnRenderEnde();return;}
+  try{
+    const pr=new URLSearchParams({vault:activeVault,limit:'1'});
+    const f=_ln.filter||{};
+    if(f.notiz)pr.set('note',f.notiz);
+    if(f.fach)pr.set('fach',f.fach);
+    if(Array.isArray(f.notizen)&&f.notizen.length)pr.set('notes',f.notizen.join('\n'));
+    if(Array.isArray(f.themen)&&f.themen.length)pr.set('themen',f.themen.join('\n'));
+    if(f.alleNeuen)pr.set('ohneTageslimit','1');
+    const q=await api('/api/lernen/session?'+pr.toString());
+    rest=(q&&typeof q.gesamt==='number')?q.gesamt:0;
+  }catch(e){rest=0;}
+  _ln.rest=rest;
+  lnRenderEnde();
+}
+function lnRenderEnde(){
+  const ov=el('lern-overlay');if(!ov)return;
+  const ges=_ln.richtig+_ln.falsch;
+  const quote=ges?Math.round((_ln.richtig/ges)*100):0;
+  ov.innerHTML=lnKopf()+'<div class="lnp-body"><div class="lnp-karte lnp-ende">'
+    +'<div class="lnp-gross">'+(quote>=80?'&#127881;':(quote>=50?'&#128077;':'&#128170;'))+'</div>'
+    +'<h2>Sitzung beendet</h2>'
+    +'<p>'+ges+' Antworten &middot; '+_ln.richtig+' richtig &middot; '+_ln.falsch+' falsch &middot; <b>'+quote+'%</b><br>'
+    +(_ln.uebung
+       ?'&#128260; Das war eine &Uuml;bung &ndash; am Wiederholungsplan hat sich nichts ge&auml;ndert.'
+       :(_ln.rest>0
+         ?('Es sind noch <b>'+_ln.rest+'</b> Karten f&auml;llig.')
+         :'Die n&auml;chsten Wiederholungen sind eingeplant.'))+'</p>'
+    +(_ln.rest>0?'<button class="ln-btn primary" data-lnp="weiterlernen">Weiterlernen</button>':'')
+    +'<button class="ln-btn'+(_ln.rest>0?'':' primary')+'" data-lnp="stop">Zur&uuml;ck zur &Uuml;bersicht</button></div></div>';
+  lnWirePlayer();
+}
+
+// ── Statistik ────────────────────────────────────────────────────────────────
+async function lnZeigeStatistik(fach){
+  let d;
+  const p=new URLSearchParams({vault:activeVault,tage:'30'});
+  if(fach)p.set('fach',fach);
+  try{d=await api('/api/lernen/statistik?'+p.toString());}
+  catch(e){toast('Statistik nicht ladbar: '+e.message,'err');return;}
+  if(!d||d.error){toast('Fehler: '+((d&&d.error)||'unbekannt'),'err');return;}
+  const area=el('view-stat');
+  const v=d.verteilung,g=d.gesamt;
+  const faecher=(_lnDash&&_lnDash.faecher)||[];
+  const max=Math.max(1,...d.verlauf.map(x=>x.gesamt));
+  let h='<div class="kopf"><button class="rund" data-ls="zurueck">&larr;</button><h1>&#128202; Statistik</h1></div>';
+  h+='<div class="ln-filter"><button class="'+(fach?'':'aktiv')+'" data-ls="fach">Alle</button>';
+  for(const f of faecher){
+    const id=f.id===null?'__ohne__':f.id;
+    h+='<button class="'+(String(fach)===String(id)?'aktiv':'')+'" data-ls="fach" data-fach="'+aq(escHtml(id))+'">'+escHtml(f.name)+'</button>';
+  }
+  h+='</div>';
+  h+='<div class="ln-stat">'
+    +'<div class="ln-statbox"><div class="lsv">'+d.karten+'</div><div class="lsl">Karten</div></div>'
+    +'<div class="ln-statbox"><div class="lsv">'+g.antworten+'</div><div class="lsl">Antworten</div></div>'
+    +'<div class="ln-statbox"><div class="lsv">'+(g.quote===null?'&ndash;':g.quote+'%')+'</div><div class="lsl">richtig</div></div>'
+    +'<div class="ln-statbox"><div class="lsv">'+g.serie+'</div><div class="lsl">Tage am St&uuml;ck</div></div>'
+    +'<div class="ln-statbox"><div class="lsv">'+g.schnitt+'</div><div class="lsl">&Oslash; pro Lerntag</div></div>'
+    +'<div class="ln-statbox"><div class="lsv" style="font-size:15px;padding-top:6px">'+(g.letzteAntwort?escHtml(g.letzteAntwort):'&ndash;')+'</div><div class="lsl">zuletzt</div></div>'
+    +'</div>';
+  const summe=Math.max(1,v.neu+v.amLernen+v.sitzt);
+  h+='<div class="ln-sec">Wie gut sitzt der Stoff?</div>'
+    +'<div class="ln-mix">'
+      +'<i style="width:'+((v.sitzt/summe)*100)+'%;background:var(--lern-ok)"></i>'
+      +'<i style="width:'+((v.amLernen/summe)*100)+'%;background:var(--accent)"></i>'
+      +'<i style="width:'+((v.neu/summe)*100)+'%;background:var(--lern-neu)"></i>'
+    +'</div>'
+    +'<div class="ln-legende">'
+      +'<span style="--lg:var(--lern-ok)">'+v.sitzt+' gelernt</span>'
+      +'<span style="--lg:var(--accent)">'+v.amLernen+' am Lernen</span>'
+      +'<span style="--lg:var(--lern-neu)">'+v.neu+' noch nie gefragt</span>'
+    +'</div>';
+  if(Array.isArray(d.stufen)){
+    const namen=lnStufenNamen(d.stufenTage);
+    const maxS=Math.max(1,...d.stufen);
+    h+='<div class="ln-sec">Verteilung auf der Wiederholungsleiter</div><div class="lns-box">';
+    namen.forEach((n,i)=>{
+      const val=d.stufen[i]||0;
+      h+='<div class="lns-stufe"><span class="lns-name">'+n+'</span>'
+        +'<span class="lns-bar"><i style="width:'+Math.round((val/maxS)*100)+'%'+(i===namen.length-1?';background:var(--lern-ok)':'')+'"></i></span>'
+        +'<span class="lns-zahl">'+val+'</span></div>';
+    });
+    h+='</div>';
+  }
+  h+='<div class="ln-sec">Antworten pro Tag (letzte '+d.tage+' Tage)</div><div class="ln-verlauf">';
+  for(const t of d.verlauf){
+    const hh=t.gesamt?Math.max(6,Math.round((t.gesamt/max)*100)):3;
+    h+='<i class="'+(t.gesamt?'':'leer')+'" style="height:'+hh+'%"></i>';
+  }
+  h+='</div><div class="ln-vlabel"><span>'+escHtml(d.verlauf[0]?d.verlauf[0].tag:'')+'</span><span>heute</span></div>';
+  h+='<div class="ln-sec">Diese Karten machen Probleme</div>';
+  if(!d.problemKarten.length){
+    h+='<div class="ln-hinweis">Noch keine Karte war falsch.</div>';
+  }else{
+    for(const k of d.problemKarten){
+      h+='<div class="ln-row" style="cursor:default"><div style="flex:1;min-width:0">'
+        +'<div class="ln-titel" style="white-space:normal">'+escHtml(k.frage)+'</div>'
+        +'<div class="ln-pfad">'+escHtml(k.notiz)+'</div>'
+        +'<div class="ln-mini"><span class="ln-badge warn">'+k.lapses+'&times; falsch</span>'
+        +(k.quote!==null?'<span class="ln-badge">'+k.quote+'%</span>':'')+'</div></div></div>';
+    }
+  }
+  area.innerHTML=h;
+  area.querySelectorAll('[data-ls]').forEach(node=>node.addEventListener('click',()=>{
+    const a=node.dataset.ls;
+    if(a==='zurueck')zeige('dash');
+    else if(a==='fach')lnZeigeStatistik(node.dataset.fach);
+  }));
+  zeige('stat');
+}
+
+// ── Hell/Dunkel ──────────────────────────────────────────────────────────────
+function themaSetzen(hell){
+  document.documentElement.setAttribute('data-studio',hell?'cream':'dark');
+  const m=document.querySelector('meta[name="theme-color"]');
+  if(m)m.setAttribute('content',hell?'#e6dccb':'#161514');
+  try{localStorage.setItem('nexus.mobil.thema',hell?'hell':'dunkel');}catch{}
+}
+function themaUmschalten(){
+  themaSetzen(document.documentElement.getAttribute('data-studio')!=='cream');
+}
+
+// ── Tastatur (nur am Rechner-Browser sinnvoll, stoert am Handy nicht) ────────
+document.addEventListener('keydown',e=>{
+  if(!_ln.aktiv)return;
+  const t=e.target&&e.target.tagName;
+  if(t==='TEXTAREA'||t==='INPUT')return;
+  const k=_ln.queue[_ln.idx]&&_ln.queue[_ln.idx].karte;
+  if(e.key==='Escape'){e.preventDefault();lnStop();return;}
+  if(_ln.phase==='fertig'){
+    if(e.key==='Enter'||e.key===' '){e.preventDefault();lnWeiter();}
+    return;
+  }
+  if(_ln.phase==='selbst'){
+    if(e.key==='1'||e.key==='Enter'){e.preventDefault();lnAntwort(true);}
+    else if(e.key==='2'){e.preventDefault();lnAntwort(false);}
+    return;
+  }
+  if(!k)return;
+  if(k.typ==='janein'){
+    if(e.key==='j'||e.key==='J'||e.key==='1'){e.preventDefault();lnJaNein(true);}
+    else if(e.key==='n'||e.key==='N'||e.key==='2'){e.preventDefault();lnJaNein(false);}
+  }else if(k.typ==='mc'){
+    if(/^[1-9]$/.test(e.key)){
+      const pos=+e.key-1;
+      const i=_ln.mcReihe?_ln.mcReihe[pos]:pos;   // Tastenzahl = Anzeigeposition
+      if(i===undefined)return;
+      const node=document.querySelector('#lern-overlay .lnp-opt[data-i="'+i+'"]');
+      if(node){e.preventDefault();lnOptKlick(i,node);}
+    }else if(e.key==='Enter'&&(k.korrekt||[]).length>1){e.preventDefault();lnMcPruefen();}
+  }else if(k.typ==='bild'){
+    if(e.key==='Enter'){e.preventDefault();lnBildPruefen();}
+  }
+});
+
+// ── Aktualitaet ueber Geraetegrenzen ─────────────────────────────────────────
+// Der Server meldet per SSE, sobald sich Karten oder Antwort-Log aendern – auch
+// dann, wenn die Aenderung von Syncthing kam (die Signatur haengt an mtime/Groesse).
+// Auf dem Handy ist das aber nur die Kuer: Browser kappen SSE im Hintergrund.
+// Der verlaessliche Weg ist visibilitychange – zurueck in der App, frisch geladen.
+let _es=null,_lnLiveTimer=null;
+function sseStart(){
+  if(_es||typeof EventSource==='undefined')return;
+  try{
+    _es=new EventSource('/api/events');
+    _es.onmessage=(ev)=>{
+      let m;try{m=JSON.parse(ev.data);}catch{return;}
+      if(m&&m.type==='lernen-changed'&&m.vault===activeVault&&!_ln.aktiv&&_ansicht==='dash'){
+        clearTimeout(_lnLiveTimer);
+        _lnLiveTimer=setTimeout(()=>{lnLadeDashboard().catch(()=>{});},300);
+      }
+    };
+  }catch{/* ohne SSE bleibt visibilitychange – reicht voellig */}
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible')return;
+  // Verbindung nach dem Hintergrund wieder aufbauen (2 = CLOSED).
+  if(_es&&_es.readyState===2){try{_es.close();}catch{} _es=null;sseStart();}
+  if(!_es)sseStart();
+  if(!_ln.aktiv&&_ansicht==='dash')lnLadeDashboard().catch(()=>{});
+});
+
+// ── Start ────────────────────────────────────────────────────────────────────
+(async function(){
+  try{
+    const gespeichert=localStorage.getItem('nexus.mobil.thema');
+    if(gespeichert)themaSetzen(gespeichert==='hell');
+    else themaSetzen(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches);
+  }catch{themaSetzen(false);}
+  // /api/vaults liefert ein Array [{name, active}] – der aktive ist der markierte,
+  // sonst der erste. Alle Lern-Routen nehmen den Namen dann als ?vault= entgegen.
+  try{
+    const v=await api('/api/vaults');
+    const liste=Array.isArray(v)?v:[];
+    activeVault=(liste.find(x=>x&&x.active)||liste[0]||{}).name||'';
+    if(!activeVault){el('laden').textContent='Kein Vault eingerichtet.';return;}
+  }catch(e){
+    el('laden').textContent='Kein Kontakt zum Nexus-Dienst: '+e.message;return;
+  }
+  await lnLadeDashboard();
+  sseStart();
+})();
+</script>
+</body>
+</html>
