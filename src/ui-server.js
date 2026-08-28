@@ -418,7 +418,10 @@ app.get('/api/lernen/session', (req, res) => {
     const uebung = req.query.uebung === '1' || req.query.uebung === 'true';
     // ohneTageslimit=1: das Tagesbudget "neue Karten pro Tag" ignorieren (bewusste Themenwahl)
     const ohneTageslimit = req.query.ohneTageslimit === '1' || req.query.ohneTageslimit === 'true';
-    const q = sessionQueue({ sidecars, zustaende, faecher, heute, standard, filter, limit, uebung, ohneTageslimit });
+    // nurFaellig=1: Umfang "Nur Faelliges" – neue Karten bleiben draussen, sonst weicht
+    // die Sitzung von der Zahl ab, die der Auswahl-Dialog vorher angezeigt hat.
+    const nurFaellig = req.query.nurFaellig === '1' || req.query.nurFaellig === 'true';
+    const q = sessionQueue({ sidecars, zustaende, faecher, heute, standard, filter, limit, uebung, ohneTageslimit, nurFaellig });
     // Der Client braucht den Fach-Kontext nicht – nur Karte, Herkunft und Zustand.
     res.json({
       ...q,

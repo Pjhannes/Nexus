@@ -164,6 +164,12 @@ try {
   ok('Falschantwort macht sofort wieder faellig', a2.json.zustand?.due === heute && a2.json.zustand?.lapses === 1, JSON.stringify(a2.json.zustand));
   const s3 = await get(`/api/lernen/session?vault=${V}`);
   ok('… und die Karte steht wieder in der Queue', s3.karten.some(k => k.karte.id === kId));
+  // Umfang "Nur Faelliges" im Dialog: die Sitzung darf nur die faellige Karte bringen,
+  // nicht zusaetzlich die noch nie gefragte (sonst stimmt die angezeigte Zahl nicht).
+  const sNur = await get(`/api/lernen/session?vault=${V}&nurFaellig=1&limit=0`);
+  ok('nurFaellig=1 liefert nur die faellige Karte', sNur.karten.length === 1 &&
+    sNur.karten[0].karte.id === kId && sNur.neu === 0 && sNur.gesamt === 1,
+    JSON.stringify({ ids: sNur.karten.map(k => k.karte.id), neu: sNur.neu, g: sNur.gesamt }));
   ok('Validierung: fehlende kartenId -> 400', (await post('/api/lernen/antwort', { vault: V, korrekt: true })).status === 400);
   ok('Validierung: korrekt kein Boolean -> 400', (await post('/api/lernen/antwort', { vault: V, kartenId: kId, korrekt: 'ja' })).status === 400);
 

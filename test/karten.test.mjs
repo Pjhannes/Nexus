@@ -389,6 +389,13 @@ const qOhneLimit = sessionQueue({ sidecars: vieleNeu, zustaende: new Map(), faec
 ok('limit 0 heisst: keine Obergrenze', qOhneLimit.karten.length === 10, String(qOhneLimit.karten.length));
 ok('limit 0 gilt auch im Uebungsmodus',
   sessionQueue({ sidecars: vieleNeu, zustaende: new Map(), faecher, heute: H, uebung: true, limit: 0 }).karten.length === 10);
+// Umfang "Nur Faelliges": genau das, was der Auswahl-Dialog vorher als Zahl anzeigt –
+// die neuen Karten duerfen NICHT stillschweigend dazukommen.
+const qNur = sessionQueue({ sidecars, zustaende, faecher, heute: H, nurFaellig: true, limit: 0 });
+ok('nurFaellig laesst neue Karten draussen', qNur.karten.length === 1 && qNur.neu === 0 &&
+  qNur.faellig === 1 && qNur.karten[0].karte.id === 'k1', JSON.stringify(qNur.karten.map(e => e.karte.id)));
+ok('nurFaellig auf lauter neuen Karten ergibt eine leere Sitzung',
+  sessionQueue({ sidecars: vieleNeu, zustaende: new Map(), faecher, heute: H, nurFaellig: true, limit: 0 }).karten.length === 0);
 
 console.log('\n── D2b. Uebungsmodus + Themenbloecke + Kalender ──');
 const uebQ = sessionQueue({ sidecars, zustaende, faecher, heute: H, uebung: true, limit: 60 });

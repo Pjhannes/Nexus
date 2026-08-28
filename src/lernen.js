@@ -950,6 +950,10 @@ export function themenJeNotiz(sidecar, { zustaende = null, heute = null } = {}) 
  * weil es hier ums Wiederholen geht, nicht ums Nachholen. Der Aufrufer schreibt in
  * diesem Modus keine Antworten weg, der Lernstand bleibt also unberuehrt.
  *
+ * `nurFaellig: true` (Umfang "Nur Faelliges"): neue, noch nie gefragte Karten bleiben
+ * komplett draussen – es kommt genau das dran, was der Wiederholungsplan fuer heute
+ * vorsieht. Ohne das Flag gilt weiter "Faelliges + neue Karten im Tagesbudget".
+ *
  * `ohneTageslimit: true`: das Tagesbudget `neueProTag` wird ignoriert. Gedacht fuer den
  * Fall "heute ist genau DIESE Vorlesung dran" – wer ein Thema bewusst auswaehlt, will
  * es ganz lernen und nicht nach 20 Karten ausgebremst werden. Der Wiederholungsplan
@@ -957,7 +961,7 @@ export function themenJeNotiz(sidecar, { zustaende = null, heute = null } = {}) 
  *
  * `limit <= 0`: keine Obergrenze (der Aufrufer deckelt selbst, siehe ui-server).
  */
-export function sessionQueue({ sidecars = [], zustaende = new Map(), faecher = [], heute, standard = LERN_STANDARD, filter = {}, limit = 60, uebung = false, ohneTageslimit = false }) {
+export function sessionQueue({ sidecars = [], zustaende = new Map(), faecher = [], heute, standard = LERN_STANDARD, filter = {}, limit = 60, uebung = false, ohneTageslimit = false, nurFaellig = false }) {
   const faellig = [], neu = [], alle = [];
   let uebersprungenBild = 0;
   const neuHeute = new Map(); // fachId -> Anzahl heute bereits neu eingefuehrter Karten
@@ -986,7 +990,7 @@ export function sessionQueue({ sidecars = [], zustaende = new Map(), faecher = [
       const eintrag = { karte: k, notiz: sc.notiz, titel: sc.titel || null, fach: fachId, zustand: z, ctx };
       if (uebung) { alle.push(eintrag); continue; }
       if (istFertig(z)) continue;                    // durch: nicht mehr einplanen
-      if (!z || !z.due) neu.push(eintrag);
+      if (!z || !z.due) { if (!nurFaellig) neu.push(eintrag); }
       else if (z.due <= heute) faellig.push(eintrag);
     }
   }
@@ -1022,6 +1026,7 @@ export function sessionQueue({ sidecars = [], zustaende = new Map(), faecher = [
   const queue = limit > 0 ? zusammen.slice(0, limit) : zusammen;
   return {
     heute,
+    nurFaellig,
     karten: queue,
     gesamt: faellig.length + neuGefiltert.length,
     faellig: faellig.length,
