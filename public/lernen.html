@@ -1035,7 +1035,26 @@ async function lnAntwort(korrekt,detail){
         +(korrekt?'&#10007; Doch nicht':'&#10003; Doch gewusst')+'</button>':'');
     karte.appendChild(unten);
     lnWirePlayer();
-    try{unten.scrollIntoView({block:'nearest',behavior:'smooth'});}catch{}
+    // Nach dem Aufdecken die Lösung + Feedback freigeben: den Body fluessig ganz nach
+    // unten scrollen. Die sticky Button-Leiste (.lnp-unten) klebt sonst am Viewport-Boden
+    // UEBER der Feedback-Box (.lnp-fb) – erst am absoluten Ende rutscht sie an ihre
+    // natuerliche Position darunter, dann ist alles sichtbar. block:'nearest' half nicht
+    // (sticky ist ohnehin immer im Viewport).
+    // Bewusst setTimeout statt requestAnimationFrame: rAF feuert in einem nicht rendernden
+    // Tab gar nicht, dann bliebe die Rueckmeldung unsichtbar. Das Lesen von scrollHeight
+    // erzwingt ohnehin ein Layout, der Zeitpunkt ist also genauso gut.
+    try{
+      const koerper=document.querySelector('#lern-overlay .lnp-body');
+      if(koerper)setTimeout(()=>{
+        const ziel=koerper.scrollHeight-koerper.clientHeight;
+        koerper.scrollTo({top:koerper.scrollHeight,behavior:'smooth'});
+        // Sicherheitsnetz: 'smooth' wird nicht ueberall animiert (reduzierte Bewegung,
+        // Hintergrund-Tab, aeltere Engines) und bleibt dort wirkungslos - dann hart setzen,
+        // damit die Rueckmeldung IMMER sichtbar wird. Ist die Animation schon durch, ist
+        // die Bedingung falsch und es ruckelt nichts.
+        setTimeout(()=>{if(koerper.scrollTop<ziel-4)koerper.scrollTop=koerper.scrollHeight;},700);
+      },0);
+    }catch{}
   }
   // Falsch beantwortet -> ans ENDE der Abfrage, bis sie einmal sitzt.
   if(!korrekt){
