@@ -6178,7 +6178,8 @@ function lnSitzungWahl(opt){
         if(!gewaehlt.size){toast('Bitte mindestens ein Thema wählen');return;}
         lnModalClose();
         lnStart({...opt,uebung:st.modus==='ueben',themen:[...gewaehlt],
-                 alleNeuen:st.umfang==='alles',limit:st.menge});
+                 alleNeuen:st.umfang==='alles',nurFaellig:st.modus==='lernen'&&st.umfang==='faellig',
+                 limit:st.menge});
       });
     });
   };
@@ -6311,6 +6312,9 @@ async function lnStart(filter){
   if(uebung)p.set('uebung','1');
   // Bewusste Auswahl schlaegt das Tagesbudget "neue Karten pro Tag".
   if(filter.alleNeuen)p.set('ohneTageslimit','1');
+  // Umfang "Nur Faelliges": neue Karten bleiben draussen – sonst kaemen zur Handvoll
+  // faelliger Karten noch alle neuen im Tagesbudget dazu (Zahl im Dialog stimmte nicht).
+  if(filter.nurFaellig)p.set('nurFaellig','1');
   let q;
   try{q=await api('/api/lernen/session?'+p.toString());}catch(e){toast('Sitzung nicht ladbar: '+e.message,'err');return;}
   if(!q||q.error){toast('Fehler: '+(q&&q.error||'unbekannt'),'err');return;}
@@ -6700,6 +6704,7 @@ async function lnEnde(){
     if(Array.isArray(f.notizen)&&f.notizen.length)pr.set('notes',f.notizen.join('\n'));
     if(Array.isArray(f.themen)&&f.themen.length)pr.set('themen',f.themen.join('\n'));
     if(f.alleNeuen)pr.set('ohneTageslimit','1');
+    if(f.nurFaellig)pr.set('nurFaellig','1');
     const q=await api('/api/lernen/session?'+pr.toString());
     rest=(q&&typeof q.gesamt==='number')?q.gesamt:0;
   }catch(e){rest=0;}
