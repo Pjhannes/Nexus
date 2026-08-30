@@ -986,6 +986,12 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
 .lnp-fb{margin-top:20px;padding:14px 17px;border-radius:11px;font-size:14px;line-height:1.6;border:1px solid var(--ln-c);background:color-mix(in srgb,var(--ln-c) 12%,transparent)}
 .lnp-fb .lnp-fb-t{font-weight:700;color:var(--ln-c);margin-bottom:5px}
 .lnp-quelle{font-size:12px;color:var(--dim);margin-top:9px;font-style:italic}
+.lnp-kbild{line-height:0;cursor:zoom-in}
+.lnp-kbild img{max-width:100%;max-height:46vh;width:auto;height:auto;border-radius:10px;border:1px solid var(--border);background:#fff;display:block}
+.lnp-kbild.gross{cursor:zoom-out}
+.lnp-kbild.gross img{max-height:none}
+.lnp-fbild{margin:0 0 22px}          /* Bild zur Frage */
+.lnp-lbild{margin-top:12px}          /* Bild zur Loesung */
 .lnp-unten{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:24px}
 .lnp-hint{font-size:11.5px;color:var(--dim);margin-left:auto}
 /* Bild-Karten: Marker liegen prozentual ueber dem Bild, damit jede Anzeigegroesse passt */
@@ -6381,6 +6387,7 @@ function lnRenderKarte(){
   b+='<div class="lnp-herkunft">&#128196; '+escHtml(e.titel||lnNotizName(e.notiz))
     +(e.neu?' <span class="ln-badge neu">neu</span>':'')+'</div>';
   b+='<div class="lnp-frage">'+escHtml(k.frage)+'</div>';
+  b+=lnFragebildHtml(k);
 
   if(k.typ==='janein'){
     b+='<div class="lnp-opts">'
@@ -6467,8 +6474,19 @@ function lnLabelKlick(label){
   _ln.markAktiv=null;
   lnRenderBildLabels();
 }
+// Zusatzbilder der Karte. Klick schaltet zwischen eingepasst und voller Groesse um
+// (Skriptseiten sind hoch und waeren sonst winzig).
+function lnKartenbildHtml(pfad,klasse){
+  if(!pfad)return '';
+  return '<div class="lnp-kbild '+klasse+'" title="Klick = gr&ouml;&szlig;er"><img src="'+aq(fileUrl(pfad))+'" alt=""></div>';
+}
+// Bild zur FRAGE (ohne Loesung) bzw. zur LOESUNG (nach dem Antworten, Skriptseite erlaubt).
+function lnFragebildHtml(k){return lnKartenbildHtml(k&&k.fragebild,'lnp-fbild');}
+function lnLoesungsbildHtml(k){return lnKartenbildHtml(k&&k.loesungsbild,'lnp-lbild');}
 function lnWirePlayer(){
   const ov=document.getElementById('lern-overlay');if(!ov)return;
+  // onclick statt addEventListener: lnWirePlayer laeuft mehrfach, ein Toggle darf nicht doppeln.
+  ov.querySelectorAll('.lnp-kbild').forEach(el=>{el.onclick=()=>el.classList.toggle('gross');});
   ov.querySelectorAll('[data-lnp]').forEach(el=>{
     const a=el.dataset.lnp;
     if(a==='lbl')return;   // eigene Verdrahtung in lnRenderBildLabels
@@ -6552,6 +6570,7 @@ function lnLoesungZeigen(){
   const alt=karte.querySelector('.lnp-unten');if(alt)alt.remove();
   const div=document.createElement('div');
   div.innerHTML='<div class="lnp-loesung"><span class="lnp-lab">Musterl&ouml;sung</span>'+escHtml(k.antwort||'')+'</div>'
+    +lnLoesungsbildHtml(k)
     +'<div class="lnp-unten"><button class="ln-btn primary" data-lnp="selbst" data-k="1">&#10003; Wusste ich</button>'
     +'<button class="ln-btn" data-lnp="selbst" data-k="0">&#10007; Wusste ich nicht</button>'
     +'<span class="lnp-hint">Taste 1 = wusste ich &middot; 2 = wusste ich nicht</span></div>';
@@ -6629,6 +6648,7 @@ async function lnAntwort(korrekt,detail){
     fb.innerHTML='<div class="lnp-fb-t">'+(korrekt?'&#10003; Richtig':'&#10007; Falsch')+'</div>'
       +((k.typ==='janein'&&!korrekt)?('Richtig w&auml;re: <b>'+(k.antwort?'Stimmt':'Stimmt nicht')+'</b>'):'')
       +(k.erklaerung?('<div style="margin-top:6px">'+escHtml(k.erklaerung)+'</div>'):'')
+      +(k.typ==='freitext'?'':lnLoesungsbildHtml(k))
       +(k.quelle?('<div class="lnp-quelle">&bdquo;'+escHtml(k.quelle)+'&ldquo;</div>'):'')
       +(_ln.uebung
           ?'<div class="lnp-quelle">&#128260; &Uuml;bung &ndash; am Wiederholungsplan &auml;ndert sich nichts.</div>'
@@ -6963,6 +6983,8 @@ function lnRenderEditor(){
     body+=keFeld(i,'thema','Thema / Kapitel (optional – gliedert die Auswahl im Lernmodus)',c.thema);
     body+=keFeld(i,'quelle','Quelle – w&ouml;rtliches Zitat aus der Notiz'+(c.typ==='bild'?' (optional)':''),c.quelle);
     body+=keFeld(i,'erklaerung','Erkl&auml;rung (optional)',c.erklaerung);
+    body+=keFeld(i,'fragebild','Fragebild (optional) &ndash; Vault-Pfad, steht bei der Frage (darf die L&ouml;sung nicht zeigen)',c.fragebild);
+    body+=keFeld(i,'loesungsbild','L&ouml;sungsbild (optional) &ndash; Vault-Pfad, wird erst nach dem Antworten gezeigt',c.loesungsbild);
     body+='</div>';
   });
 
@@ -7113,6 +7135,8 @@ async function keSpeichern(){
     if(c.thema&&c.thema.trim())o.thema=c.thema.trim();
     if(c.quelle&&c.quelle.trim())o.quelle=c.quelle.trim();
     if(c.erklaerung&&c.erklaerung.trim())o.erklaerung=c.erklaerung.trim();
+    if(c.fragebild&&c.fragebild.trim())o.fragebild=c.fragebild.trim();
+    if(c.loesungsbild&&c.loesungsbild.trim())o.loesungsbild=c.loesungsbild.trim();
     return o;
   });
   let r;

@@ -148,6 +148,26 @@ export function validateKarten(karten, noteContent, opts = {}) {
       }
     }
 
+    // Zwei optionale Zusatzbilder fuer ALLE Kartentypen:
+    //   fragebild    - steht bei der FRAGE (die Abbildung, ohne die man nicht antworten kann).
+    //                  Darf die Loesung nicht zeigen - das laesst sich nicht pruefen, nur sagen.
+    //   loesungsbild - erscheint NACH dem Antworten unter der Loesung. Hier ist die ganze
+    //                  Skriptseite samt Dozententext ausdruecklich erwuenscht.
+    // Bei typ "bild" bleibt "bild" die abgefragte Grafik; diese beiden kommen zusaetzlich.
+    for (const feld of ['fragebild', 'loesungsbild']) {
+      const wert = k[feld];
+      if (wert === undefined || wert === null || wert === '') continue;
+      if (!istText(wert)) { errors.push(`${nr}: "${feld}" muss ein Vault-Pfad sein`); return; }
+      if (!BILD_EXT.test(wert)) {
+        errors.push(`${nr}: "${feld}" ist keine Bilddatei: "${wert}" (png/jpg/jpeg/webp/gif/svg/bmp/avif)`);
+        return;
+      }
+      if (!bildExists(wert)) {
+        errors.push(`${nr}: ${feld} nicht im Vault gefunden: "${wert}" - Pfad relativ zur Vault-Wurzel angeben`);
+        return;
+      }
+    }
+
     // Grounding: "quelle" ist ein WOERTLICHES Zitat aus der Notiz, das die Antwort
     // belegt – dieselbe Containment-Pruefung wie beim Vortrags-Anker. Pflicht ausser
     // bei Bild-Karten (dort steht die Antwort im Bild, nicht im Text).
@@ -343,6 +363,8 @@ function saubereKarte(k) {
   if (istText(k.thema))      out.thema = k.thema.trim();
   if (istText(k.quelle))     out.quelle = k.quelle.trim();
   if (istText(k.erklaerung)) out.erklaerung = k.erklaerung.trim();
+  if (istText(k.fragebild))    out.fragebild    = k.fragebild.trim().replace(/\\/g, '/');
+  if (istText(k.loesungsbild)) out.loesungsbild = k.loesungsbild.trim().replace(/\\/g, '/');
   return out;
 }
 

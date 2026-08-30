@@ -193,6 +193,8 @@ server.tool(
       quelle: z.string().optional()
              .describe('WOERTLICHES Zitat aus der Notiz, das die Antwort belegt – Pflicht ausser bei typ "bild", wird serverseitig gegen die Notiz geprueft'),
       erklaerung: z.string().optional().describe('Kurze Erklaerung, wird nach dem Antworten angezeigt'),
+      fragebild: z.string().optional().describe('Optionaler Vault-Pfad einer Grafik, die ZUR FRAGE gezeigt wird - fuer Fragen, die ohne die Abbildung nicht beantwortbar sind ("Ordnen Sie den drei dargestellten ... zu"). Muss existieren und darf die Loesung NICHT zeigen; ist die Loesung aufgedruckt, gehoert die Karte zu typ "bild" (Regionen decken sie ab) oder das Bild nach "loesungsbild"'),
+      loesungsbild: z.string().optional().describe('Optionaler Vault-Pfad einer Grafik (z.B. Folienausschnitt), die NACH dem Antworten unter der Loesung gezeigt wird - fuer alle Kartentypen. Muss existieren. Da sie erst nach der Antwort erscheint, darf sie ruhig die ganze Skriptseite samt Dozententext zeigen'),
       bild:   z.string().optional().describe('bild: Vault-Pfad der Grafik (muss existieren)'),
       labels: z.array(z.string()).optional().describe('bild: 2-12 zuzuordnende Begriffe'),
       modus:  z.enum(['zuordnen', 'tippen']).optional()

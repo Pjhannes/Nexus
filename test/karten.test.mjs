@@ -564,5 +564,39 @@ ok('lnTippWertung: Kleinschreibung zaehlt als richtig, Fehler wird benannt',
 ok('lnTippWertung: leeres Feld ist falsch', mod.lnTippWertung(['A', ''], regionen).korrekt === false);
 ok('lnTippWertung: fehlende Eingaben komplett falsch', mod.lnTippWertung([], regionen).falsch.length === 2);
 
+console.log('\n── A9. loesungsbild (Folienausschnitt nach dem Antworten) ──');
+const FB = 'Uni/Dateien/carnot-pv.png';
+ok('fragebild an freitext gueltig', V([{ ...kFt, fragebild: FB }]).length === 0, V([{ ...kFt, fragebild: FB }]).join(';'));
+ok('fragebild + loesungsbild zusammen gueltig', V([{ ...kMc, fragebild: FB, loesungsbild: FB }]).length === 0);
+ok('fragebild an bild-Karte gueltig', V([{ ...kBi, fragebild: FB }]).length === 0);
+ok('fragebild mit falscher Endung -> Fehler',
+  V([{ ...kFt, fragebild: 'Uni/Dateien/folie.pdf' }])[0].includes('keine Bilddatei'));
+ok('fragebild nicht im Vault -> Fehler',
+  V([{ ...kFt, fragebild: 'Uni/Dateien/gibtsnicht.png' }])[0].includes('nicht im Vault gefunden'));
+const fb1 = mergeKartenIds([{ ...kFt, fragebild: 'Uni\\Dateien\\carnot-pv.png' }], []).karten[0];
+ok('fragebild ueberlebt saubereKarte und wird auf / normalisiert', fb1.fragebild === FB, JSON.stringify(fb1));
+const fbAlt = mergeKartenIds([kFt], []).karten[0];
+const fbNeu = mergeKartenIds([{ ...kFt, fragebild: FB, loesungsbild: FB }], [fbAlt]);
+ok('beide Bilder nachtragen behaelt die Karten-ID',
+  fbNeu.karten[0].id === fbAlt.id && fbNeu.uebernommen === 1 &&
+  fbNeu.karten[0].fragebild === FB && fbNeu.karten[0].loesungsbild === FB, JSON.stringify(fbNeu.karten[0]));
+
+const LB = 'Uni/Dateien/carnot-pv.png';
+ok('loesungsbild an freitext gueltig', V([{ ...kFt, loesungsbild: LB }]).length === 0, V([{ ...kFt, loesungsbild: LB }]).join(';'));
+ok('loesungsbild an janein gueltig', V([{ ...kJa, loesungsbild: LB }]).length === 0);
+ok('loesungsbild an mc gueltig', V([{ ...kMc, loesungsbild: LB }]).length === 0);
+ok('loesungsbild an bild-Karte gueltig (zweites Bild)', V([{ ...kBi, loesungsbild: LB }]).length === 0);
+ok('loesungsbild weglassen bleibt gueltig', V([kFt]).length === 0);
+ok('loesungsbild mit falscher Endung -> Fehler',
+  V([{ ...kFt, loesungsbild: 'Uni/Dateien/folie.pdf' }])[0].includes('keine Bilddatei'));
+ok('loesungsbild nicht im Vault -> Fehler',
+  V([{ ...kFt, loesungsbild: 'Uni/Dateien/gibtsnicht.png' }])[0].includes('nicht im Vault gefunden'));
+const lb1 = mergeKartenIds([{ ...kFt, loesungsbild: 'Uni\\Dateien\\carnot-pv.png' }], []).karten[0];
+ok('loesungsbild ueberlebt saubereKarte und wird auf / normalisiert', lb1.loesungsbild === LB, JSON.stringify(lb1));
+const lbAlt = mergeKartenIds([kFt], []).karten[0];
+const lbNeu = mergeKartenIds([{ ...kFt, loesungsbild: LB }], [lbAlt]);
+ok('Bild nachtragen behaelt die Karten-ID (Lernstand bleibt)',
+  lbNeu.karten[0].id === lbAlt.id && lbNeu.uebernommen === 1, JSON.stringify(lbNeu));
+
 console.log(`\n${pass} bestanden, ${fail} fehlgeschlagen`);
 process.exit(fail ? 1 : 0);
