@@ -55,9 +55,41 @@ Beides ist direkt aus Nexus heraus eingerichtet – ohne CMD, ohne Dateien von H
 2. **Session-Key für das Usage-Widget** – Schritt-für-Schritt, wie man den
    `sessionKey` aus claude.ai (F12 → Application → Cookies → `https://claude.ai` →
    `sessionKey`) kopiert und unten rechts ins Verbrauchs-Widget einträgt. Org-ID per
-   ⟳-Button automatisch. Der Key bleibt lokal (Browser-`localStorage`).
+   ⟳-Button automatisch. Der Key bleibt lokal – seit R27a verwahrt ihn der Nexus-Server
+   in `%APPDATA%\Nexus\.nexus\claude-auth.json` (nur Besitzer lesbar), das Widget zeigt
+   nur noch „konfiguriert ja/nein“.
 
 Dieselbe Anleitung erscheint auf Wunsch automatisch am Ende des Einrichtungs-Assistenten.
+
+**Entwickler-Hinweis (`nexus-dev`):** Wer aus dem Repo (`Nexus-Dev.bat`) heraus verbindet,
+bekommt in Claude Desktop einen zweiten Server `nexus-dev` (zeigt auf `D:\Nexus\src`).
+Beide gleichzeitig aktiv = doppelte Tool-Liste in jedem Chat-Kontext. Empfehlung: `nexus-dev`
+nur während des Entwickelns eingeschaltet lassen (Claude Desktop → Einstellungen → Entwickler
+→ Server deaktivieren) und sonst nur `nexus` (prod). `list_vaults` nennt im Feld `server`
+Version, Commit und Datenordner – so ist immer klar, welcher Server geantwortet hat.
+
+---
+
+## Papierkorb & Syncthing
+
+Seit R27b löscht Nexus nichts endgültig: „Löschen“ in der App und das MCP-Tool `delete`
+verschieben Notizen/Ordner nach `<Vault>/.trash/<Datum_Uhrzeit>/<alter Pfad>` (Sidecars wie
+`.karten.json` ziehen mit). Zurück geht es über Rechtsklick → **Papierkorb…** (Wiederherstellen /
+Endgültig löschen) oder das MCP-Tool `restore`; `list_trash` zeigt den Inhalt. Einträge älter
+als 30 Tage werden beim Start entfernt (`nexus.config.json` → `"trash": { "retentionDays": 30 }`,
+`0` = nie). `_System`, die Vault-Wurzel und `.trash` selbst lassen sich nicht löschen.
+
+Wer den Vault per **Syncthing** spiegelt, sollte den Papierkorb (und die Index-/Temp-Ordner)
+vom Sync ausnehmen – `.stignore` im Vault:
+
+```
+.trash
+.nexus
+.obsidian/workspace*.json
+```
+
+Sonst wandern gelöschte Dateien als Kopie auf jedes Gerät und werden dort erst nach der
+Aufbewahrungsfrist geräumt.
 
 ---
 

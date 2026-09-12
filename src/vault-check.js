@@ -22,33 +22,37 @@ const lc      = (s) => String(s).toLowerCase();
 const baseOf  = (p) => p.split('/').pop();
 const stripMd = (s) => s.replace(/\.md$/i, '');
 
-// "Inaktive" Bereiche: kein lebender Wissensbereich -> aus ALLEN Checks raus.
-// (gebuendelte Beispiel-Vaults + Nexus-Dev-Meta + eingefrorenes Controlling-Archiv;
-//  bei Bedarf hier erweitern/kuerzen.)
-const INACTIVE_AREAS = [
-  'Nexus Anwendung/',
-  'Projekt Vault-App/',
-  'Arbeit/Controlling Liste/Archiv bis 2025/',
-];
-const inInactiveArea = (p) => INACTIVE_AREAS.some(a => p.startsWith(a));
-
-const isActive = (p) =>
-  !inInactiveArea(p) &&
-  !p.includes('/Dateien/') &&
-  !p.startsWith('_Konversationen/') &&
-  !p.startsWith('_System/Archiv/') &&
-  !p.startsWith('_System/Templates/');
-
-const isBackupPath = (p) =>
-  inInactiveArea(p) ||
-  p.includes('/Dateien/') ||
-  p.includes('/_old/') ||
-  /\/dienstPC_/.test(p) ||
-  /\/CatGirl\//.test(p) ||
-  /\/_Prüfung\//.test(p) ||
-  /\/Joachim\//.test(p) ||
-  /\/LKM_\d/.test(p) ||
-  /\/julie\//.test(p);
+// R27b: Persoenliche Pfade stehen NICHT mehr im generischen Code, sondern in
+// nexus.config.json unter "vaultCheck" (Default: alles leer):
+//   inactiveAreas: ["Projekt Vault-App/", ...]  – Pfad-Praefixe, die aus ALLEN Checks
+//                                                 rausfallen (Beispiel-Vaults, Archive)
+//   ignoreNames:   ["CatGirl", "LKM_*", ...]     – Ordner-/Dateinamen (Segment; "*" am
+//                                                 Ende = Praefix), die als Backup/Kopie
+//                                                 gelten -> keine Duplikat-Treffer
+//   deadPrefixes:  ["raw-sources/"]              – Link-Ziele, die als tot gelten
+//   deadNames:     ["00 – Vault-Index"]          – dito, per Dateiname
+// Generisch bleiben nur Nexus-eigene Konventionen (_Konversationen, _System/Archiv,
+// _System/Templates, "/Dateien/"-Anhaenge, "/_old/").
+const GENERIC_INACTIVE = ['_Konversationen/', '_System/Archiv/', '_System/Templates/'];
+function makeRegeln(regeln = {}) {
+  const arr = (k) => (Array.isArray(regeln?.[k]) ? regeln[k].filter(s => typeof s === 'string' && s) : []);
+  const inactive = arr('inactiveAreas');
+  const ignoreNames = arr('ignoreNames');
+  const inInactiveArea = (p) => inactive.some(a => p.startsWith(a));
+  const hasIgnoredName = (p) => {
+    if (!ignoreNames.length) return false;
+    const segs = p.split('/');
+    return ignoreNames.some(n => n.endsWith('*')
+      ? segs.some(s => s.startsWith(n.slice(0, -1)))
+      : segs.includes(n));
+  };
+  return {
+    isActive: (p) => !inInactiveArea(p) && !p.includes('/Dateien/') && !GENERIC_INACTIVE.some(a => p.startsWith(a)),
+    isBackupPath: (p) => inInactiveArea(p) || p.includes('/Dateien/') || p.includes('/_old/') || hasIgnoredName(p),
+    deadPathPrefixes: arr('deadPrefixes'),
+    deadNames: arr('deadNames'),
+  };
+}
 
 // Relativer Pfad, unter dem der Bericht im Vault landet (auch fuer den Aufrufer).
 export const REPORT_REL = '_System/Vault-Check.md';
@@ -61,8 +65,6 @@ const STALE_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const toTime = (c) => (c instanceof Date ? c.getTime() : Date.parse(String(c)));
 
-const deadPathPrefixes = ['raw-sources/', '_System/Logs/'];
-const deadNames = ['00 – Vault-Index'];
 
 /**
  * @param {object}   input
@@ -71,7 +73,8 @@ const deadNames = ['00 – Vault-Index'];
  * @param {number}   input.now          – Zeitstempel in ms (Date.now()) fuer Stale-Cutoff
  * @returns {{brokenLinks:Array, orphans:string[], staleDates:Array, deadRefs:Array, duplicates:Array}}
  */
-export function runVaultCheck({ notes, allRelPaths, now }) {
+export function runVaultCheck({ notes, allRelPaths, now, regeln = {} }) {
+  const { isActive, isBackupPath, deadPathPrefixes, deadNames } = makeRegeln(regeln);
   // --- Aufloesungs-Indizes (case-insensitiv wie Windows-FS/Obsidian) -------
   const noteKeys = new Set();
   for (const n of notes) { noteKeys.add(lc(n.basename)); noteKeys.add(lc(n.title)); noteKeys.add(lc(n.pathNoExt)); }

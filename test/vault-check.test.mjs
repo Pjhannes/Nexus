@@ -79,9 +79,11 @@ const daysAgo = (n) => new Date(NOW - n * 86400000).toISOString().slice(0, 10);
     note('B.md'),
   ];
   const all = ['A.md', 'B.md', 'C.md'];
-  const r = runVaultCheck({ notes, allRelPaths: all, now: NOW });
-  ok('Karteileiche: toter Prefix raw-sources/', r.deadRefs.some(d => d.file === 'A.md'));
-  ok('Karteileiche: toter Name 00 – Vault-Index', r.deadRefs.some(d => d.file === 'C.md'));
+  // R27b: tote Praefixe/Namen kommen aus der Config (vaultCheck.deadPrefixes / deadNames).
+  const r = runVaultCheck({ notes, allRelPaths: all, now: NOW, regeln: { deadPrefixes: ['raw-sources/'], deadNames: ['00 – Vault-Index'] } });
+  ok('Karteileiche: toter Prefix raw-sources/ (aus Config)', r.deadRefs.some(d => d.file === 'A.md'));
+  ok('Karteileiche: toter Name 00 – Vault-Index (aus Config)', r.deadRefs.some(d => d.file === 'C.md'));
+  ok('ohne Config-Regel keine Karteileichen-Treffer', runVaultCheck({ notes, allRelPaths: all, now: NOW }).deadRefs.length === 0);
 }
 
 // ── 5. Doppelte Dateinamen ────────────────────────────────────────────────
@@ -101,9 +103,18 @@ const daysAgo = (n) => new Date(NOW - n * 86400000).toISOString().slice(0, 10);
 // ── Inaktive Bereiche raus aus ALLEN Checks ───────────────────────────────
 {
   const notes = [note('Projekt Vault-App/Tot.md', { links: ['Gibtsnicht'] })];
-  const r = runVaultCheck({ notes, allRelPaths: ['Projekt Vault-App/Tot.md'], now: NOW });
-  ok('Inaktiver Bereich: kein broken/orphan',
+  // R27b: inaktive Bereiche kommen aus der Config (regeln.inactiveAreas), nicht mehr aus dem Code.
+  const r = runVaultCheck({ notes, allRelPaths: ['Projekt Vault-App/Tot.md'], now: NOW, regeln: { inactiveAreas: ['Projekt Vault-App/'] } });
+  ok('Inaktiver Bereich (aus Config): kein broken/orphan',
      r.brokenLinks.length === 0 && r.orphans.length === 0);
+  const r2 = runVaultCheck({ notes, allRelPaths: ['Projekt Vault-App/Tot.md'], now: NOW });
+  ok('Ohne Config-Regel ist derselbe Bereich aktiv (broken link gemeldet)', r2.brokenLinks.length === 1);
+  // ignoreNames: Segment exakt oder Praefix mit "*" -> zaehlt als Backup-Kopie (kein Duplikat-Treffer)
+  const dup = [note('A/Skript.md'), note('Backups/LKM_2024/Skript.md'), note('CatGirl/Skript.md')];
+  const r3 = runVaultCheck({ notes: dup, allRelPaths: dup.map(n => n.path), now: NOW, regeln: { ignoreNames: ['CatGirl', 'LKM_*'] } });
+  ok('ignoreNames: Backup-Kopien erzeugen keine Duplikat-Treffer', r3.duplicates.length === 0, JSON.stringify(r3.duplicates));
+  const r4 = runVaultCheck({ notes: dup, allRelPaths: dup.map(n => n.path), now: NOW });
+  ok('ohne ignoreNames werden die Kopien als Duplikate gemeldet', r4.duplicates.length >= 1);
 }
 
 // ── renderReport: gueltige Notiz mit Frontmatter ──────────────────────────

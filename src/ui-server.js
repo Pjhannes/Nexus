@@ -10,8 +10,8 @@ import { readFileSync } from 'fs';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { buildIndexer } from './indexer.js';
-import { makeTools, SIDECAR_SUFFIXES, cleanupNexusTmp } from './tools.js';
-import { loadConfig, resolveDbPath, dataPath, CONFIG_PATH, safeFull, writeConfigAtomic } from './paths.js';
+import { makeTools, SIDECAR_SUFFIXES, cleanupNexusTmp, emptyOldTrash } from './tools.js';
+import { loadConfig, resolveDbPath, dataPath, CONFIG_PATH, safeFull, writeConfigAtomic, makeIgnore } from './paths.js';
 // R26: Lernmodus – Karteikarten-Sidecars, Review-Log und Faecher liegen im Vault,
 // die Auswertung (Faelligkeit, Pruefungs-Planung) ist pure Logik in lernen.js.
 import {
@@ -30,6 +30,11 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const cfg   = loadConfig();
 // Dev-Identitaet: von scripts/dev-tauri.mjs (tauri dev) bzw. Nexus-Dev.bat gesetzt.
 const DEV   = process.env.NEXUS_DEV === '1';
+// R27b: EINE Ignore-Regel (Defaults + cfg.ignore + Dotfiles) fuer Baum, Signatur
+// und Lern-Scanner – identisch mit Indexer/Watcher/Vault-Check (paths.makeIgnore).
+const IS_IGNORED = makeIgnore(cfg.ignore ?? []);
+// Papierkorb: Eintraege aelter als so viele Tage werden beim Start entfernt (0 = nie).
+const TRASH_RETENTION_DAYS = Number.isFinite(Number(cfg.trash?.retentionDays)) ? Number(cfg.trash.retentionDays) : 30;
 
 // App-Version aus package.json – eine Quelle der Wahrheit, passt sich bei jedem Build automatisch an
 // (gleiche Version, die tauri.conf.json referenziert). package.json liegt sowohl im Dev-Baum als auch im
@@ -49,6 +54,9 @@ for (const v of cfg.vaults) {
     // der Index laeuft – sonst stehen sie ewig als unsichtbare Leichen im Vault.
     const tmpRest = cleanupNexusTmp(v.path, cfg.ignore ?? []);
     if (tmpRest) console.log(`[Nexus] Vault "${v.name}": ${tmpRest} .nexustmp-Rest(e) entfernt`);
+    // R27b: Papierkorb-Eintraege aelter als trash.retentionDays (Standard 30) entfernen.
+    const alt = emptyOldTrash(v.path, TRASH_RETENTION_DAYS);
+    if (alt) console.log(`[Nexus] Vault "${v.name}": ${alt} Papierkorb-Eintrag/-Eintraege aelter als ${TRASH_RETENTION_DAYS} Tage entfernt`);
     const idx = buildIndexer(v.path, resolveDbPath(v), cfg.ignore ?? []);
     idx.reindex();
     indexers[v.name] = idx;
@@ -185,7 +193,7 @@ function buildTree(root, relBase, ignoreSet, depth = 0) {
 
   const result = [];
   for (const e of entries) {
-    if (ignoreSet.has(e.name) || e.name.startsWith('.')) continue;
+    if (IS_IGNORED(e.name)) continue;                                   // R27b: eine Regel fuer alle Walker
     const rel = relBase ? relBase + '/' + e.name : e.name;
     if (e.isDirectory()) {
       result.push({ name: e.name, path: rel, type: 'folder', children: buildTree(root, rel, ignoreSet, depth + 1) });
@@ -226,7 +234,7 @@ function treeSignature(root, ignoreSet, depth = 0, rel = '', state = { h: 0x811c
   try { entries = readdirSync(rel === '' ? root : join(root, rel), { withFileTypes: true }); }
   catch { return state; }
   for (const e of entries) {
-    if (ignoreSet.has(e.name) || e.name.startsWith('.')) continue;
+    if (IS_IGNORED(e.name)) continue;                                   // R27b: eine Regel fuer alle Walker
     const r = rel ? rel + '/' + e.name : e.name;
     if (!e.isDirectory() && istSidecar(e.name)) {                       // R24/R26: wie buildTree
       if (e.name.endsWith('.karten.json')) mixLern(state, root, r);
@@ -433,7 +441,7 @@ function readReviewsCached(vaultPath, name) {
 function lernKontext(vaultName) {
   const { vault, tools } = getVault(vaultName);
   const cache = (_kartenCache[vault.name] ||= new Map());
-  const sidecars = scanKartenSidecars(vault.path, cache);
+  const sidecars = scanKartenSidecars(vault.path, cache, IS_IGNORED);
   const faecher  = readFaecher(vault.path);
   // Karten-ID -> Fach-Kontext: die Pruefungs-Kappung braucht ihn schon beim Falten
   // des Logs, nicht erst beim Anzeigen.
@@ -843,9 +851,40 @@ app.post('/api/delete', (req, res) => {
     const { vault: vaultName, path: relPath } = req.body || {};
     if (typeof relPath !== 'string' || !relPath) return res.status(400).json({ error: 'path fehlt' });
     const { tools } = getVault(vaultName);
+    // R27b: verschiebt in den Papierkorb (<vault>/.trash/<stamp>/...), loescht nicht.
     const r = tools.delete({ path: relPath });
     if (r.error) return res.status(toolStatus(r.error)).json({ error: r.error });
-    res.json({ ok: true, path: relPath.replace(/\\/g, '/'), indexed: r.indexed });
+    res.json({ ok: true, path: relPath.replace(/\\/g, '/'), trashed: r.trashed, indexed: r.indexed });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── R27b: Papierkorb (Liste / Wiederherstellen / endgueltig loeschen) ─────────
+app.get('/api/trash', (req, res) => {
+  try {
+    const { tools } = getVault(req.query.vault);
+    const r = tools.listTrash({ limit: Math.min(1000, Math.max(1, Number(req.query.limit) || 200)) });
+    res.json({ ...r, retentionDays: TRASH_RETENTION_DAYS });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/trash/restore', (req, res) => {
+  try {
+    const { vault: vaultName, path: relPath } = req.body || {};
+    if (typeof relPath !== 'string' || !relPath) return res.status(400).json({ error: 'path fehlt' });
+    const { vault, tools } = getVault(vaultName);
+    const r = tools.restore({ path: relPath });
+    if (r.error) return res.status(toolStatus(r.error)).json({ error: r.error });
+    broadcastEvent({ type: 'tree-changed', vault: vault.name });
+    res.json(r);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/trash/delete', (req, res) => {
+  try {
+    const { vault: vaultName, path: relPath } = req.body || {};
+    if (typeof relPath !== 'string' || !relPath) return res.status(400).json({ error: 'path fehlt' });
+    const { tools } = getVault(vaultName);
+    const r = tools.delete({ path: relPath, permanent: true });
+    if (r.error) return res.status(toolStatus(r.error)).json({ error: r.error });
+    res.json(r);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

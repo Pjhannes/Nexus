@@ -19,7 +19,7 @@
 // gemeldete Vault-Pfad muss im Scratch liegen – schuetzt vor dem Self-Heal-
 // Fallback in paths.js, der sonst still auf %APPDATA%\Nexus zurueckfiele.
 // Lauf: node test/mcp-launch.test.mjs   (aus D:\Nexus bzw. /tmp-Kopie in der Sandbox)
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, chmodSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, chmodSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import { spawn } from 'child_process';
@@ -96,6 +96,23 @@ try {
   const regProps = kartenProps.regionen?.items?.properties ?? {};
   ok('Regionen sind Rechtecke (x/y/w/h)', ['x', 'y', 'w', 'h'].every(f => !!regProps[f]), Object.keys(regProps).join(','));
 
+  // R27b: Annotations auf JEDEM Tool, Lese-Tools readOnly, loeschende/ueberschreibende destructive;
+  // sechs Lese-Tools tragen ein outputSchema; Papierkorb-Tools sind registriert.
+  const byName = Object.fromEntries((tools.result?.tools ?? []).map(t => [t.name, t]));
+  ok('alle Tools tragen annotations', Object.values(byName).every(t => t.annotations && typeof t.annotations.readOnlyHint === 'boolean'),
+     Object.values(byName).filter(t => !t.annotations).map(t => t.name).join(','));
+  for (const t of ['search', 'outline', 'read_note', 'read_bild', 'backlinks', 'list_notes', 'query', 'dataview', 'lern_status', 'list_vaults', 'list_trash'])
+    ok(`readOnlyHint: ${t}`, byName[t]?.annotations?.readOnlyHint === true && byName[t]?.annotations?.destructiveHint === false);
+  for (const t of ['delete', 'move', 'write_note', 'patch', 'write_karten', 'write_vortrag'])
+    ok(`destructiveHint: ${t}`, byName[t]?.annotations?.destructiveHint === true);
+  ok('idempotentHint: write_note ja, patch nein', byName.write_note?.annotations?.idempotentHint === true && byName.patch?.annotations?.idempotentHint === false);
+  for (const t of ['search', 'list_notes', 'list_vaults', 'lern_status', 'vault_check', 'dataview'])
+    ok(`outputSchema: ${t}`, byName[t]?.outputSchema?.type === 'object', JSON.stringify(byName[t]?.outputSchema).slice(0, 80));
+  ok('Papierkorb-Tools restore + list_trash registriert', !!byName.restore && !!byName.list_trash);
+  ok('Zod-Bounds: search.limit max 200', byName.search?.inputSchema?.properties?.limit?.maximum === 200, JSON.stringify(byName.search?.inputSchema?.properties?.limit));
+  ok('Zod-Bounds: read_note.lines max 2000', byName.read_note?.inputSchema?.properties?.lines?.maximum === 2000);
+  ok('Beschreibungen nennen den Nutzer-Anlass (write_karten)', /Karteikarten\/Abfrage\/Lernkarten/.test(byName.write_karten?.description ?? ''));
+
   // ── read_bild: liefert das Bild WIRKLICH als Bild-Inhalt, nicht als Pfad ──
   const bildAntwort = await session.request('tools/call', {
     name: 'read_bild', arguments: { vault: 'testvault', path: 'Bilder/punkt.png' } });
@@ -117,12 +134,14 @@ try {
   ok('SVG-Masse aus der viewBox', svgInfo.breite === 1600 && svgInfo.hoehe === 900, JSON.stringify(svgInfo));
   ok('SVG-Quelltext liegt bei', svgAntwort.some(c => c.type === 'text' && c.text.includes('Portalroboter')));
 
-  const keinBild = toolJson(await session.request('tools/call', {
-    name: 'read_bild', arguments: { vault: 'testvault', path: 'Start Notiz.md' } }));
-  ok('Nicht-Bild wird abgelehnt', /unterstuetzte Bilddatei/i.test(keinBild?.error ?? ''), JSON.stringify(keinBild).slice(0, 160));
-  const raus = toolJson(await session.request('tools/call', {
-    name: 'read_bild', arguments: { vault: 'testvault', path: '../../ausserhalb.png' } }));
-  ok('Pfad ausserhalb des Vaults wird geblockt', /ausserhalb|existiert nicht/i.test(raus?.error ?? ''), JSON.stringify(raus).slice(0, 160));
+  // R27b: Fehler kommen als echter Tool-Fehler (isError: true) mit Klartext, nicht mehr als {error}-JSON.
+  const toolErr = (msg) => msg.result?.isError ? (msg.result.content ?? []).map(c => c.text).join('') : null;
+  const keinBild = await session.request('tools/call', {
+    name: 'read_bild', arguments: { vault: 'testvault', path: 'Start Notiz.md' } });
+  ok('Nicht-Bild wird abgelehnt (isError)', /unterstuetzte Bilddatei/i.test(toolErr(keinBild) ?? ''), JSON.stringify(keinBild.result).slice(0, 160));
+  const raus = await session.request('tools/call', {
+    name: 'read_bild', arguments: { vault: 'testvault', path: '../../ausserhalb.png' } });
+  ok('Pfad ausserhalb des Vaults wird geblockt (isError)', /ausserhalb|existiert nicht/i.test(toolErr(raus) ?? ''), JSON.stringify(raus.result).slice(0, 160));
 
   // lern_status auf dem Scratch-Vault: keine Karten -> leere, aber gueltige Antwort
   const ls = toolJson(await session.request('tools/call', {
@@ -130,9 +149,11 @@ try {
   ok('lern_status antwortet mit heute-Datum', /^\d{4}-\d{2}-\d{2}$/.test(ls?.heute ?? ''), JSON.stringify(ls).slice(0, 200));
   ok('lern_status liefert Faecher-Liste', Array.isArray(ls?.faecher));
   ok('lern_status ohne Karten meldet 0 faellig', ls?.heuteFaellig === 0, String(ls?.heuteFaellig));
-  const lsFehler = toolJson(await session.request('tools/call', {
-    name: 'lern_status', arguments: { vault: 'testvault', fach: 'GibtsNicht' } }));
-  ok('lern_status meldet unbekanntes Fach als Fehler', /nicht gefunden/i.test(lsFehler?.error ?? ''), JSON.stringify(lsFehler).slice(0, 160));
+  const lsFehler = await session.request('tools/call', {
+    name: 'lern_status', arguments: { vault: 'testvault', fach: 'GibtsNicht' } });
+  ok('lern_status meldet unbekanntes Fach als Fehler (isError)', /nicht gefunden/i.test(toolErr(lsFehler) ?? ''), JSON.stringify(lsFehler.result).slice(0, 160));
+  const lsRaw = await session.request('tools/call', { name: 'lern_status', arguments: { vault: 'testvault' } });
+  ok('lern_status liefert structuredContent (outputSchema)', lsRaw.result?.structuredContent?.vault === 'testvault' && Array.isArray(lsRaw.result.structuredContent.faecher), JSON.stringify(lsRaw.result?.structuredContent).slice(0, 160));
 
   const lv = toolJson(await session.request('tools/call', { name: 'list_vaults', arguments: {} }));
   const vaults = Array.isArray(lv) ? lv : (lv.vaults ?? []);
@@ -166,6 +187,51 @@ try {
   }
   ok('R20 Hot-Reload: neuer Vault ohne Neustart sichtbar', !!zweiter);
   ok('R20: neuer Vault korrekt leer (notes=0)', zweiter && Number(zweiter.notes) === 0, zweiter && `notes=${zweiter.notes}`);
+
+  // ── R27b: Server-Identitaet, structuredContent, isError, Papierkorb-Rundlauf ──
+  const lvRaw = await session.request('tools/call', { name: 'list_vaults', arguments: {} });
+  const srvInfo = lvRaw.result?.structuredContent?.server;
+  ok('list_vaults.server nennt Version + dataDir', srvInfo?.version && srvInfo.dataDir === scratch, JSON.stringify(srvInfo));
+  ok('list_vaults Text-Fallback bleibt JSON', !!toolJson(lvRaw).vaults);
+  const suchRaw = await session.request('tools/call', { name: 'search', arguments: { vault: 'testvault', q: 'Hallo' } });
+  ok('search: Text bleibt Array, structuredContent = {results,count}',
+     Array.isArray(toolJson(suchRaw)) && Array.isArray(suchRaw.result?.structuredContent?.results) && suchRaw.result.structuredContent.count === 1,
+     JSON.stringify(suchRaw.result).slice(0, 200));
+  const rdFehlt = await session.request('tools/call', { name: 'read_note', arguments: { vault: 'testvault', path: 'Gibts/Nicht.md' } });
+  ok('read_note fehlende Notiz -> isError', rdFehlt.result?.isError === true && /nicht lesbar|ausserhalb/i.test(toolErr(rdFehlt) ?? ''), JSON.stringify(rdFehlt.result).slice(0, 160));
+  const vaultFehlt = await session.request('tools/call', { name: 'outline', arguments: { vault: 'gibtsnicht', path: 'x.md' } });
+  ok('unbekannter Vault -> isError statt JSON-RPC-Fehler', vaultFehlt.result?.isError === true && /Vault nicht gefunden/.test(toolErr(vaultFehlt) ?? ''), JSON.stringify(vaultFehlt).slice(0, 160));
+  const zuGross = await session.request('tools/call', { name: 'search', arguments: { vault: 'testvault', q: 'x', limit: 999 } });
+  ok('Zod-Bound greift (limit 999)', !!zuGross.error || zuGross.result?.isError === true, JSON.stringify(zuGross).slice(0, 160));
+
+  // Papierkorb: Notiz + Karten-Sidecar loeschen -> list_trash -> restore (Sidecar folgt)
+  writeFileSync(join(vaultDir, 'Weg.md'), '# Weg\n', 'utf8');
+  writeFileSync(join(vaultDir, 'Weg.karten.json'), JSON.stringify({ version: 1, notiz: 'Weg.md', karten: [] }), 'utf8');
+  const del = toolJson(await session.request('tools/call', { name: 'delete', arguments: { vault: 'testvault', path: 'Weg.md' } }));
+  ok('delete verschiebt in .trash/<stamp>/', del.ok === true && /^\.trash\/\d{4}-\d{2}-\d{2}_\d{6}(-\d+)?\/Weg\.md$/.test(del.trashed ?? ''), JSON.stringify(del));
+  ok('Original weg, Papierkorb-Kopie da (inkl. Sidecar)', !existsSync(join(vaultDir, 'Weg.md')) && existsSync(join(vaultDir, del.trashed))
+     && existsSync(join(vaultDir, del.trashed.replace(/\.md$/, '.karten.json'))));
+  const lt = await session.request('tools/call', { name: 'list_trash', arguments: { vault: 'testvault' } });
+  const ltS = lt.result?.structuredContent;
+  ok('list_trash nennt den Eintrag (Sidecar nicht einzeln)', ltS?.gesamt === 1 && ltS.eintraege[0].path === 'Weg.md' && ltS.eintraege[0].trashPath === del.trashed, JSON.stringify(ltS).slice(0, 200));
+  const sysDel = await session.request('tools/call', { name: 'delete', arguments: { vault: 'testvault', path: '_System' } });
+  mkdirSync(join(vaultDir, '_System'), { recursive: true });
+  const sysDel2 = await session.request('tools/call', { name: 'delete', arguments: { vault: 'testvault', path: '_System' } });
+  ok('_System ist geschuetzt (isError, auch wenn vorhanden)', sysDel2.result?.isError === true && /Geschuetzt/.test(toolErr(sysDel2) ?? '') && existsSync(join(vaultDir, '_System')), JSON.stringify(sysDel2.result).slice(0, 160) + ' | ' + JSON.stringify(sysDel.result).slice(0, 80));
+  const trashDel = await session.request('tools/call', { name: 'delete', arguments: { vault: 'testvault', path: '.trash' } });
+  ok('.trash selbst ist geschuetzt', trashDel.result?.isError === true);
+  const permNo = await session.request('tools/call', { name: 'delete', arguments: { vault: 'testvault', path: 'Start Notiz.md', permanent: true } });
+  ok('permanent:true ausserhalb des Papierkorbs -> isError, Datei bleibt', permNo.result?.isError === true && existsSync(join(vaultDir, 'Start Notiz.md')));
+  const rest = toolJson(await session.request('tools/call', { name: 'restore', arguments: { vault: 'testvault', path: del.trashed } }));
+  ok('restore holt Notiz + Sidecar zurueck', rest.ok === true && existsSync(join(vaultDir, 'Weg.md')) && existsSync(join(vaultDir, 'Weg.karten.json')), JSON.stringify(rest));
+  ok('Stempel-Ordner nach restore geraeumt', !existsSync(join(vaultDir, del.trashed.split('/').slice(0, 2).join('/'))));
+  const restKonflikt = await session.request('tools/call', { name: 'restore', arguments: { vault: 'testvault', path: 'Weg.md' } });
+  ok('restore ohne Papierkorb-Eintrag -> isError', restKonflikt.result?.isError === true);
+  const del2 = toolJson(await session.request('tools/call', { name: 'delete', arguments: { vault: 'testvault', path: 'Weg.md' } }));
+  const perm = toolJson(await session.request('tools/call', { name: 'delete', arguments: { vault: 'testvault', path: del2.trashed, permanent: true } }));
+  ok('permanent:true auf trashPath loescht endgueltig', perm.ok === true && perm.permanent === true && !existsSync(join(vaultDir, del2.trashed)), JSON.stringify(perm));
+  const suchWeg = toolJson(await session.request('tools/call', { name: 'search', arguments: { vault: 'testvault', q: 'Weg' } }));
+  ok('Papierkorb bleibt unsichtbar im Index (search findet "Weg" nicht)', suchWeg.length === 0, JSON.stringify(suchWeg));
 
   exitCode = 0;
 } catch (e) {

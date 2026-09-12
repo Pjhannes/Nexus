@@ -13,10 +13,22 @@
     "port": 3000,
     "autoOpen": false
   },
+  "schemaVersion": 1,
   "ignore": [
     ".obsidian",
     ".trash",
     ".nexus",
     "node_modules"
-  ]
+  ],
+  "trash": {
+    "_comment": "R27b: delete verschiebt nach <Vault>/.trash/<Datum_Uhrzeit>/...; Eintraege aelter als retentionDays werden beim Start entfernt (0 = nie).",
+    "retentionDays": 30
+  },
+  "vaultCheck": {
+    "_comment": "R27b: persoenliche Regeln fuer vault_check. inactiveAreas = Pfad-Praefixe ohne Checks; ignoreNames = Ordner-/Dateinamen (Segment, '*' am Ende = Praefix), die als Backup-Kopie gelten; deadPrefixes/deadNames = Link-Ziele, die als Karteileichen zaehlen.",
+    "inactiveAreas": ["Projekt Vault-App/"],
+    "ignoreNames": ["_old", "Backup_*"],
+    "deadPrefixes": ["raw-sources/"],
+    "deadNames": ["00 – Vault-Index"]
+  }
 }

@@ -250,12 +250,37 @@ try {
   ok('delete Wurzel -> 400', (await post('/api/delete', { vault: V, path: '.' })).status === 400 && existsSync(vaultDir));
   ok('delete ../ -> 400', (await post('/api/delete', { vault: V, path: '../nexus.config.json' })).status === 400 && existsSync(cfgPath));
 
+  console.log('\n── 10b. Papierkorb ueber die UI-API ──');
+  writeFileSync(join(vaultDir, 'Uni', 'Weg.md'), '# Weg\n', 'utf8');
+  writeFileSync(join(vaultDir, 'Uni', 'Weg.karten.json'), JSON.stringify({ version: 1, notiz: 'Uni/Weg.md', karten: [] }), 'utf8');
+  const dw = await post('/api/delete', { vault: V, path: 'Uni/Weg.md' });
+  ok('delete -> trashed-Pfad unter .trash/<stamp>/', dw.status === 200 && /^\.trash\/[^/]+\/Uni\/Weg\.md$/.test(dw.json?.trashed ?? ''), dw.json);
+  ok('Datei + Sidecar im Papierkorb, Original weg', !existsSync(join(vaultDir, 'Uni', 'Weg.md')) && existsSync(join(vaultDir, dw.json.trashed)) && existsSync(join(vaultDir, dw.json.trashed.replace(/\.md$/, '.karten.json'))));
+  ok('.trash bleibt im Dateibaum unsichtbar', !JSON.stringify((await get(`/api/tree?vault=${V}`)).json).includes('.trash'));
+  const tl = await get(`/api/trash?vault=${V}`);
+  // (Notiz2.md aus Abschnitt 10 liegt ebenfalls im Papierkorb – deshalb per trashPath suchen, nicht [0].)
+  ok('GET /api/trash listet den Eintrag + retentionDays', tl.status === 200 && tl.json?.gesamt >= 1 && tl.json.eintraege.some(e => e.trashPath === dw.json.trashed && e.path === 'Uni/Weg.md') && tl.json.retentionDays === 30, tl.json);
+  ok('delete _System -> 400 (geschuetzt)', (mkdirSync(join(vaultDir, '_System'), { recursive: true }), (await post('/api/delete', { vault: V, path: '_System' })).status === 400) && existsSync(join(vaultDir, '_System')));
+  ok('POST /api/trash/delete ausserhalb .trash -> 400', (await post('/api/trash/delete', { vault: V, path: 'Uni/Neu.txt' })).status === 400 && existsSync(join(vaultDir, 'Uni', 'Neu.txt')));
+  const rs = await post('/api/trash/restore', { vault: V, path: dw.json.trashed });
+  ok('POST /api/trash/restore -> Notiz + Sidecar zurueck', rs.status === 200 && rs.json?.ok && existsSync(join(vaultDir, 'Uni', 'Weg.md')) && existsSync(join(vaultDir, 'Uni', 'Weg.karten.json')), rs.json);
+  ok('restore erneut -> 404 (nicht mehr im Papierkorb)', (await post('/api/trash/restore', { vault: V, path: dw.json.trashed })).status === 404);
+  const dw2 = await post('/api/delete', { vault: V, path: 'Uni/Weg.md' });
+  writeFileSync(join(vaultDir, 'Uni', 'Weg.md'), '# Neu an der Stelle\n', 'utf8');
+  ok('restore bei Konflikt -> 409, nichts ueberschrieben', (await post('/api/trash/restore', { vault: V, path: dw2.json.trashed })).status === 409 && readFileSync(join(vaultDir, 'Uni', 'Weg.md'), 'utf8').includes('Neu an der Stelle'));
+  const pd = await post('/api/trash/delete', { vault: V, path: dw2.json.trashed });
+  ok('POST /api/trash/delete (permanent) -> weg', pd.status === 200 && pd.json?.permanent === true && !existsSync(join(vaultDir, dw2.json.trashed)), pd.json);
+  // Aufraeumen beim Start: ein 40 Tage alter Stempel-Ordner muss nach einem Neustart verschwinden (Test 11 startet neu).
+  mkdirSync(join(vaultDir, '.trash', '2020-01-01_120000', 'Alt'), { recursive: true });
+  writeFileSync(join(vaultDir, '.trash', '2020-01-01_120000', 'Alt', 'uralt.md'), '# uralt\n', 'utf8');
+
   await stop(srv);
 
   console.log('\n── 11. Web-Betrieb (NEXUS_WEB=1): kein Token, gesperrte Routen ──');
   srv = startServer({ NEXUS_WEB: '1', NEXUS_UI_TOKEN: '' });
   ok('ui-server (Web) startet', await warten({}), srv.log.slice(-400));
   await new Promise(r => setTimeout(r, 200));
+  ok('Papierkorb-Eintrag aelter als 30 Tage beim Start entfernt', !existsSync(join(vaultDir, '.trash', '2020-01-01_120000')) && /Papierkorb-Eintrag/.test(srv.log), srv.log.slice(-300));
   ok('Startlog nennt 0.0.0.0 + "kein UI-Token"', /lauscht auf 0\.0\.0\.0:.*kein UI-Token/.test(srv.log), srv.log.slice(-300));
   ok('/api/vaults ohne Token -> 200 (Auth macht der Proxy)', (await raw('/api/vaults')).status === 200);
   ok('/api/lernen/uebersicht ohne Token -> 200 (lernen.html)', (await raw(`/api/lernen/uebersicht?vault=${V}`)).status === 200);

@@ -117,6 +117,19 @@ export function writeConfigAtomic(path, cfg) {
   renameSync(tmp, path);
 }
 
+// ── R27b: EINE Ignore-Regel fuer alle Vault-Walker ────────────────────────────
+// Vorher hatten Indexer, Watcher, Dateibaum, Lern-Scanner und Vault-Check je
+// eine eigene Liste (vier Stellen, drei verschiedene Mengen). Jetzt: Defaults +
+// cfg.ignore + Dotfile-Regel (alles, was mit "." beginnt – .trash, .nexus,
+// .obsidian, .stfolder, .git ...). makeIgnore(list) liefert ein Praedikat fuer
+// EINEN Namen (Datei oder Ordner), das jeder Walker auf jeden Eintrag anwendet.
+export const TRASH_DIR = '.trash';
+export const DEFAULT_IGNORE = ['.obsidian', TRASH_DIR, '.nexus', 'node_modules', '.git', '.stfolder', '.stversions'];
+export function makeIgnore(list = []) {
+  const set = new Set([...DEFAULT_IGNORE, ...(Array.isArray(list) ? list : [])]);
+  return (name) => typeof name !== 'string' || name.length === 0 || name.startsWith('.') || set.has(name);
+}
+
 // ── R27a: Pfad-Haertung – EINE safeFull fuer MCP-Tools und UI-Server ──────────
 // Liefert den absoluten Pfad von `rel` innerhalb von `root` – oder null, wenn der
 // Pfad den Vault verlassen wuerde. Bewusst strenger als ein reiner resolve()-

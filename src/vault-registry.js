@@ -127,5 +127,10 @@ export function makeVaultRegistry({
     entries.clear();
   }
 
-  return { get, list, refresh, close, size: () => entries.size };
+  // R27b: aktuelle Config (nach refresh) – server.js braucht cfg.trash / cfg.vaultCheck
+  // und alle registrierten Vault-Pfade (Papierkorb-Aufraeumen beim Start).
+  function config() { refresh(); return cfg; }
+  function entriesList() { refresh(); return [...entries.values()]; }
+
+  return { get, list, refresh, close, config, entries: entriesList, size: () => entries.size };
 }

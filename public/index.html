@@ -4509,7 +4509,7 @@ function showCtx(e,path,type,ext){
     items.push({icon:'🗑',label:'Löschen',fn:`ctxDelete('${cssAttr(path)}','folder')`});
     if(path.indexOf('/')===-1){items.push({sep:true});items.push({icon:'🎨',label:'Farbe anpassen…',fn:`ctxColor('${cssAttr(path)}');event.stopPropagation()`});items.push({icon:'🖼',label:'Icon ändern…',fn:`ctxIcon('${cssAttr(path)}');event.stopPropagation()`});}
   }
-  items.push({sep:true});items.push({icon:'🔄',label:'Index aktualisieren',fn:'reindex()'});
+  items.push({sep:true});items.push({icon:'♻️',label:'Papierkorb…',fn:'openTrashView()'});items.push({icon:'🔄',label:'Index aktualisieren',fn:'reindex()'});
   const menu=document.getElementById('ctx-menu');
   menu.innerHTML=items.map(it=>it.sep?'<div class="ctx-sep"></div>':`<div class="ctx-item" onclick="${it.fn};closeCtx()"><span>${it.icon}</span>${esc(it.label)}</div>`).join('');
   menu.style.left=Math.min(e.clientX,window.innerWidth-210)+'px';
@@ -4555,12 +4555,49 @@ async function ctxMove(path){
   toast('Verschoben');if(selectedPath===path)selectedPath=newPath;tabsRenamePath&&tabsRenamePath(path,newPath);invalidateVaultGraph();await refreshTree();
 }
 async function ctxDelete(path,type){
-  if(!(await uiConfirm((type==='folder'?'Ordner':'Datei')+' wirklich löschen?\n'+path+(type==='folder'?'\n(inklusive Inhalt)':''))))return;
+  // R27b: loeschen = in den Papierkorb (.trash) verschieben; zurueck ueber Kontextmenue "Papierkorb…".
+  if(!(await uiConfirm((type==='folder'?'Ordner':'Datei')+' in den Papierkorb verschieben?\n'+path+(type==='folder'?'\n(inklusive Inhalt)':''))))return;
   const r=await api('/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,path})});
   if(r&&r.error){toast('Fehler: '+r.error,'err');return;}
-  toast('Gelöscht');tabsClosePath&&tabsClosePath(path);
+  toast('In den Papierkorb verschoben');tabsClosePath&&tabsClosePath(path);
   if(selectedPath===path){selectedPath=null;hideEditFab();document.getElementById('note-area').innerHTML='<div class="placeholder"><span class="big">◆</span>Notiz auswählen oder <b>Ctrl K</b> drücken</div>';setCrumb(esc(activeVault));}
   invalidateVaultGraph();await refreshTree();
+}
+// ── R27b: Papierkorb-Ansicht (minimal, im Notiz-Bereich) ──
+// Liste aus GET /api/trash, je Eintrag "Wiederherstellen" (POST /api/trash/restore)
+// und "Endgültig löschen" (POST /api/trash/delete). Kein Inline-onclick: die Knöpfe
+// tragen data-Attribute, ein Handler pro Ansicht.
+async function openTrashView(){
+  _lnDashAktiv=false;hideEditFab();
+  const area=document.getElementById('note-area');area.scrollTop=0;
+  setCrumb(esc(activeVault)+' / <b>Papierkorb</b>');
+  area.innerHTML='<div class="note-content"><h1 class="note-title">♻️ Papierkorb</h1><div class="placeholder">Lade…</div></div>';
+  let d=null;
+  try{d=await api('/api/trash?vault='+encodeURIComponent(activeVault));}catch(e){d={error:e.message};}
+  if(!d||d.error){area.innerHTML='<div class="note-content"><h1 class="note-title">♻️ Papierkorb</h1><p style="color:#e07b7b">Fehler: '+esc((d&&d.error)||'unbekannt')+'</p></div>';return;}
+  const rows=(d.eintraege||[]).map(e=>
+    '<div class="bl-item" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border,#222)">'
+    +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis" title="'+esc(e.trashPath)+'">'+crumbHtml(e.path)+'</span>'
+    +'<span class="chip stat" title="Gelöscht am">'+esc(String(e.geloescht||'').replace('T',' '))+'</span>'
+    +'<button class="ft-btn" data-tr-restore="'+esc(e.trashPath)+'" title="Zurück an den Original-Ort">↩ Wiederherstellen</button>'
+    +'<button class="ft-btn" data-tr-delete="'+esc(e.trashPath)+'" title="Unwiderruflich löschen">🗑 Endgültig</button>'
+    +'</div>').join('');
+  area.innerHTML='<div class="note-content"><div class="note-meta"><span class="chip stat">'+(d.gesamt||0)+' Einträge</span>'
+    +(d.retentionDays?'<span class="chip stat" title="Ältere Einträge werden beim Start automatisch entfernt">Aufbewahrung '+esc(String(d.retentionDays))+' Tage</span>':'')+'</div>'
+    +'<h1 class="note-title">♻️ Papierkorb</h1>'
+    +(rows||'<p class="placeholder">Der Papierkorb ist leer.</p>')+'</div>';
+  area.querySelectorAll('[data-tr-restore]').forEach(b=>b.addEventListener('click',async()=>{
+    const r=await api('/api/trash/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,path:b.dataset.trRestore})});
+    if(r&&r.error){toast('Fehler: '+r.error,'err');return;}
+    toast('Wiederhergestellt: '+r.path);invalidateVaultGraph();await refreshTree();openTrashView();
+  }));
+  area.querySelectorAll('[data-tr-delete]').forEach(b=>b.addEventListener('click',async()=>{
+    if(!(await uiConfirm('Endgültig löschen?\n'+b.dataset.trDelete+'\n\nDas kann nicht rückgängig gemacht werden.')))return;
+    const r=await api('/api/trash/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,path:b.dataset.trDelete})});
+    if(r&&r.error){toast('Fehler: '+r.error,'err');return;}
+    toast('Endgültig gelöscht');openTrashView();
+  }));
+  logActivity('#7b8497','trash_view');
 }
 function colorToHex(col){if(/^#[0-9a-f]{6}$/i.test(col))return col;const d=document.createElement('div');d.style.color=col;document.body.appendChild(d);const rgb=getComputedStyle(d).color;document.body.removeChild(d);const m=rgb.match(/\d+/g);if(!m||m.length<3)return '#808080';return '#'+[m[0],m[1],m[2]].map(v=>parseInt(v).toString(16).padStart(2,'0')).join('');}
 let _cpTarget=null;

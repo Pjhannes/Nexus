@@ -5,15 +5,21 @@
 // der in der App aktive Vault); list_vaults zeigt alle. Die Registry laedt die
 // Config bei Aenderung live nach -> in der App neu angelegte Vaults sind ohne
 // Neustart von Claude Desktop erreichbar.
-import { readFileSync } from 'fs';
+//
+// R27b (Plan A1/A9/A12): registerTool statt server.tool – jedes Tool traegt
+// annotations (readOnly/destructive/idempotent), sechs Lese-Tools liefern
+// zusaetzlich outputSchema + structuredContent (Text-Fallback unveraendert), und
+// EIN zentraler Wrapper macht aus r.error bzw. einer Exception einen echten
+// Tool-Fehler ({ isError: true }) statt eines "ok"-Textes mit Fehlertext drin.
+import { readFileSync, statSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { buildIndexer, watchVault } from './indexer.js';
-import { makeTools } from './tools.js';
-import { loadConfig, resolveDbPath, CONFIG_PATH } from './paths.js';
+import { makeTools, emptyOldTrash } from './tools.js';
+import { loadConfig, resolveDbPath, CONFIG_PATH, DATA_DIR, APP_ROOT } from './paths.js';
 import { makeVaultRegistry } from './vault-registry.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -22,6 +28,29 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 let APP_VERSION = '0.0.0';
 try { APP_VERSION = JSON.parse(readFileSync(join(__dir, '..', 'package.json'), 'utf8')).version || APP_VERSION; } catch { /* ignore */ }
 
+// R27b (A12): Server-Identitaet fuer list_vaults – damit in einer Session mit
+// nexus UND nexus-dev sofort klar ist, welcher Server (Version/Commit/Datenordner)
+// geantwortet hat (Tipp 31: "thema" ging auf prod verloren, weil der Dev-Stand
+// nicht gebaut war).
+function gitCommit() {
+  try {
+    const head = readFileSync(join(APP_ROOT, '.git', 'HEAD'), 'utf8').trim();
+    const ref = head.startsWith('ref: ') ? head.slice(5) : null;
+    const sha = ref ? readFileSync(join(APP_ROOT, '.git', ref), 'utf8').trim() : head;
+    return /^[0-9a-f]{40}$/.test(sha) ? sha.slice(0, 7) : null;
+  } catch { return null; }
+}
+function buildDate() {
+  try { return statSync(join(__dir, 'server.js')).mtime.toISOString(); } catch { return null; }
+}
+const SERVER_INFO = {
+  version: APP_VERSION,
+  gitCommit: gitCommit(),
+  buildDate: buildDate(),
+  dataDir: DATA_DIR,
+  dev: process.env.NEXUS_DEV === '1' || existsSync(join(APP_ROOT, '.git')),
+};
+console.error(`[Nexus] MCP-Server v${APP_VERSION}${SERVER_INFO.gitCommit ? ' (' + SERVER_INFO.gitCommit + ')' : ''}, Daten: ${DATA_DIR}`);
 console.error('[Nexus] Lade Vaults aus ' + CONFIG_PATH);
 const registry = makeVaultRegistry({
   configPath: CONFIG_PATH,
@@ -36,25 +65,41 @@ const registry = makeVaultRegistry({
   log: (m) => console.error('[Nexus] ' + m),
 });
 
+// R27b: Papierkorb-Eintraege aelter als trash.retentionDays (Standard 30) beim Start entfernen.
+{
+  const cfg0 = registry.config();
+  const days = Number.isFinite(Number(cfg0.trash?.retentionDays)) ? Number(cfg0.trash.retentionDays) : 30;
+  for (const e of registry.entries()) {
+    const n = emptyOldTrash(e.vault.path, days);
+    if (n) console.error(`[Nexus] Vault "${e.vault.name}": ${n} Papierkorb-Eintrag/-Eintraege aelter als ${days} Tage entfernt`);
+  }
+}
+
 // Optionaler Vault-Parameter, den jedes Tool versteht.
 const vaultParam = z.string().optional()
   .describe('Vault-Name (Standard: der in der App aktive Vault; alle Namen: list_vaults)');
+// R27b: Zod-Bounds statt nackter Zahlen.
+const limitParam  = (def, max = 200) => z.number().int().min(1).max(max).optional().describe(`Max. Ergebnisse (Standard: ${def}, hoechstens ${max})`);
+const offsetParam = z.number().int().min(0).optional().describe('Ergebnisse ueberspringen (Pagination, Standard: 0)');
 
 // Wird dem Client (z.B. Claude Desktop) beim Verbinden mitgegeben. Stoesst die
 // Pflichtlektuere an, ohne dass jemand ans Lesen erinnern muss (Arbeitsweise-Regel 12).
 // Die eigentlichen Regeln leben editierbar im Vault unter _System/ – Scaffold im App-Ordner unter rules/.
 const NEXUS_INSTRUCTIONS = [
   'Du arbeitest auf persoenlichen Wissens-Vaults ueber die Nexus-Tools',
-  '(list_vaults, search, outline, read_note, read_bild, write_note, write_vortrag, write_karten, lern_status,',
-  'append_to_section, patch, backlinks, list_notes, query, dataview, reindex, create_folder, move, delete, vault_check).',
-  'Der Server bedient ALLE Vaults der Nexus-App: list_vaults zeigt sie; jedes Tool',
-  'hat einen optionalen vault-Parameter (Standard: der in der App aktive Vault).',
+  '(list_vaults, search, outline, read_note, read_bild, write_note, write_vortrag, write_karten, karten_gliedern,',
+  'lern_status, append_to_section, patch, backlinks, list_notes, query, dataview, reindex, create_folder, move,',
+  'delete, list_trash, restore, vault_check).',
+  'Der Server bedient ALLE Vaults der Nexus-App: list_vaults zeigt sie (und nennt Version/Datenordner',
+  'dieses Servers); jedes Tool hat einen optionalen vault-Parameter (Standard: der in der App aktive Vault).',
   'In der App neu angelegte Vaults sind sofort erreichbar. Prinzip: maximale',
   'Information pro Token – erst outline/search-Snippet/read_note(section), nicht',
   'blind ganze Dateien lesen; schreiben bevorzugt mit append_to_section/patch.',
   'Ordner/Notizen anlegen, verschieben, umbenennen oder loeschen IMMER ueber',
   'create_folder/move/delete – nie ueber Datei-System-/Mount-Operationen (die sind',
-  'blockiert). move und delete funktionieren auch fuer ganze Ordner.',
+  'blockiert). move und delete funktionieren auch fuer ganze Ordner. delete verschiebt in den',
+  'Papierkorb des Vaults (.trash) – list_trash zeigt ihn, restore holt Eintraege zurueck.',
+  'Fehler kommen als Tool-Fehler (isError) mit Klartext – dann Ursache lesen, nicht blind wiederholen.',
   'Bittet der Nutzer um ein Vortragsskript fuer eine Notiz (fuer den Vortrag-Button der App):',
   'Notiz lesen, dann write_vortrag mit Segmenten {sprich, anker, art} aufrufen –',
   'sprich frei und vortragend formulieren (Rueckbezuege, Uebergaenge, kein blosses Ablesen),',
@@ -63,7 +108,8 @@ const NEXUS_INSTRUCTIONS = [
   '(fuer den Lernmodus der App): Notiz lesen, dann write_karten aufrufen – Fragen pruefungsnah',
   'formulieren (Verstaendnis statt Wortlaut), quelle WOERTLICH aus der Notiz zitieren (validiert).',
   'Typen: janein | mc | freitext | bild. Karten mit "thema" gliedern (Kapitel der Notiz) – im',
-  'Lernmodus laesst sich damit gezielt ein Thema ueben. Fuer Bild-Karten ZUERST read_bild aufrufen:',
+  'Lernmodus laesst sich damit gezielt ein Thema ueben; fuer aeltere Kartensaetze ohne Themen',
+  'traegt karten_gliedern sie nach, ohne den Lernstand anzufassen. Fuer Bild-Karten ZUERST read_bild aufrufen:',
   'das zeigt die Grafik und nennt ihre Pixelmasse, daraus die Rechtecke (x/y/w/h, 0..1) selbst',
   'bestimmen und ueber die gedruckte Beschriftung legen – die App verdeckt sie beim Abfragen.',
   'Ein erneutes write_karten ueberschreibt das Kartenset, erhaelt aber IDs und damit den Lernstand.',
@@ -80,81 +126,247 @@ const server = new McpServer(
   { instructions: NEXUS_INSTRUCTIONS }
 );
 
-// Kurzform: Antwort als Text-Content
+// ── Antwort-Helfer ────────────────────────────────────────────────────────────
+// text():       reiner Text-Content (read_note-Inhalt)
+// asJson():     JSON als Text – Format wie bisher, Clients parsen es
+// structured(): JSON als Text PLUS structuredContent (fuer Tools mit outputSchema).
+//               Arrays werden dafuer in { results, count } gehuellt – der Text bleibt das Array.
+// fail():       echter Tool-Fehler (isError) – Claude sieht ihn als Fehler, nicht als Ergebnis
 const text = (s) => ({ content: [{ type: 'text', text: s }] });
 const asJson = (r) => text(JSON.stringify(r, null, 2));
+const fail = (msg) => ({ isError: true, content: [{ type: 'text', text: String(msg) }] });
+const structured = (r) => {
+  const sc = Array.isArray(r) ? { results: r, count: r.length } : r;
+  return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }], structuredContent: sc };
+};
+// Ergebnis eines tools.*-Aufrufs bewerten: { error } -> isError, sonst Erfolg.
 // Schreib-/Vault-Operationen nennen den aufgeloesten Vault im Ergebnis – so ist
 // unmissverstaendlich, WO geschrieben wurde, auch wenn kein vault-Param gesetzt war.
-const withVault = (e, r) => text(JSON.stringify({ vault: e.vault.name, ...r }));
+const withVault = (e, r) => (r && r.error) ? fail(`[${e.vault.name}] ${r.error}`) : text(JSON.stringify({ vault: e.vault.name, ...r }));
+const plain = (r, wrap = asJson) => (r && r.error) ? fail(r.error) : wrap(r);
 
-server.tool(
-  'list_vaults',
-  'Listet alle verfuegbaren Vaults (Name, Pfad, aktiv, Notiz-Anzahl). In der App neu angelegte Vaults werden live erkannt.',
-  {},
-  async () => asJson(registry.list())
-);
+// Zentraler Wrapper: Exceptions (Vault nicht gefunden, Zod-Fehler aus Tools, EPERM ...)
+// werden zu isError statt zu einem JSON-RPC-Fehler, der in Claude Desktop als
+// "Tool kaputt" statt "Aufruf falsch" erscheint.
+const run = (fn) => async (args, extra) => {
+  try { return await fn(args ?? {}, extra); }
+  catch (e) { return fail(e?.message || String(e)); }
+};
 
-server.tool(
-  'search',
-  'Volltextsuche im Vault (FTS5). Gibt Pfad + Snippet zurueck.',
-  {
-    q:      z.string().optional().describe('Suchbegriff'),
-    limit:  z.number().optional().describe('Max. Ergebnisse (Standard: 20)'),
-    offset: z.number().optional().describe('Ergebnisse ueberspringen (Pagination, Standard: 0)'),
+// Annotations (MCP 2025-03-26): readOnlyHint / destructiveHint / idempotentHint / openWorldHint.
+// Alles lokal im Vault -> openWorldHint immer false.
+const RO   = { readOnlyHint: true,  destructiveHint: false, idempotentHint: true,  openWorldHint: false };
+const ADD  = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }; // additiv, nicht wiederholbar
+const IDEM = { readOnlyHint: false, destructiveHint: false, idempotentHint: true,  openWorldHint: false }; // schreibt, aber wiederholbar
+const DEST = { readOnlyHint: false, destructiveHint: true,  idempotentHint: false, openWorldHint: false };
+const DESTI = { readOnlyHint: false, destructiveHint: true, idempotentHint: true,  openWorldHint: false }; // ueberschreibt, aber gleicher Inhalt = gleiches Ergebnis
+
+function tool(name, { description, input = {}, output, annotations, title }, fn) {
+  server.registerTool(name, {
+    title, description,
+    inputSchema: input,
+    ...(output ? { outputSchema: output } : {}),
+    annotations,
+  }, run(fn));
+}
+
+// ── Lese-Tools ────────────────────────────────────────────────────────────────
+tool('list_vaults', {
+  title: 'Vaults auflisten',
+  description: 'Welche Vaults gibt es und welcher ist aktiv? Listet alle Vaults der Nexus-App (Name, Pfad, aktiv, Notiz-Anzahl) ' +
+    'und nennt die Identitaet DIESES Servers (version, gitCommit, buildDate, dataDir) – wichtig, wenn nexus und nexus-dev gleichzeitig verbunden sind. ' +
+    'In der App neu angelegte Vaults werden live erkannt.',
+  output: {
+    activeVault: z.string().nullable(),
+    vaults: z.array(z.object({ name: z.string(), path: z.string(), active: z.boolean(), notes: z.number() })),
+    server: z.object({ version: z.string(), gitCommit: z.string().nullable(), buildDate: z.string().nullable(), dataDir: z.string(), dev: z.boolean() }),
+  },
+  annotations: RO,
+}, () => structured({ ...registry.list(), server: SERVER_INFO }));
+
+tool('search', {
+  title: 'Volltextsuche',
+  description: 'Etwas im Vault finden, ohne Dateien zu lesen: Volltextsuche (FTS5) ueber alle Notizen, liefert Pfad, Titel und Treffer-Snippet. ' +
+    'Ohne q: Notizliste (optional nach Tag gefiltert). Erster Schritt vor read_note.',
+  input: {
+    q:      z.string().optional().describe('Suchbegriff(e); FTS5-Syntax erlaubt (AND/OR/NOT, "Phrase", praefix*)'),
+    limit:  limitParam(20),
+    offset: offsetParam,
     tag:    z.string().optional().describe('Nach Tag filtern (optional)'),
     vault:  vaultParam,
   },
-  async ({ q, limit, offset, tag, vault }) => {
-    return asJson(registry.get(vault).tools.search({ q, limit, offset, tag }));
-  }
-);
-
-server.tool(
-  'outline',
-  'Gibt Ueberschriften-Struktur einer Notiz zurueck.',
-  {
-    path:  z.string().describe('Relativer Pfad zur Notiz im Vault'),
-    vault: vaultParam,
+  output: {
+    results: z.array(z.object({ path: z.string(), title: z.string().nullable().optional(), snippet: z.string().nullable().optional() })),
+    count: z.number(),
   },
-  async ({ path, vault }) => {
-    return asJson(registry.get(vault).tools.outline({ path }));
-  }
-);
+  annotations: RO,
+}, ({ q, limit, offset, tag, vault }) => plain(registry.get(vault).tools.search({ q, limit, offset, tag }), structured));
 
-server.tool(
-  'read_note',
-  'Liest eine Notiz (ganz oder abschnittsweise).',
-  {
-    path:    z.string(),
-    section: z.string().optional().describe('Abschnittstitel (optional)'),
-    lines:   z.number().optional().describe('Zeilenlimit (optional)'),
+tool('outline', {
+  title: 'Gliederung einer Notiz',
+  description: 'Struktur einer Notiz erfassen, bevor man sie liest: Ueberschriften mit Ebene und Zeile. Spart Tokens gegenueber read_note der ganzen Datei.',
+  input: { path: z.string().describe('Relativer Pfad zur Notiz im Vault'), vault: vaultParam },
+  annotations: RO,
+}, ({ path, vault }) => plain(registry.get(vault).tools.outline({ path })));
+
+tool('read_note', {
+  title: 'Notiz lesen',
+  description: 'Inhalt einer Notiz lesen – ganz, nur einen Abschnitt (section = Ueberschrift) oder die ersten N Zeilen. ' +
+    'Bevorzugt abschnittsweise (maximale Information pro Token).',
+  input: {
+    path:    z.string().describe('Relativer Pfad zur Notiz im Vault'),
+    section: z.string().optional().describe('Abschnittstitel (optional) – liefert nur diesen Abschnitt'),
+    lines:   z.number().int().min(1).max(2000).optional().describe('Zeilenlimit (optional, 1..2000)'),
     vault:   vaultParam,
   },
-  async ({ path, section, lines, vault }) => {
-    const r = registry.get(vault).tools.readNote({ path, section, lines });
-    return text(r.error ?? r.content);
-  }
-);
+  annotations: RO,
+}, ({ path, section, lines, vault }) => {
+  const r = registry.get(vault).tools.readNote({ path, section, lines });
+  return r.error ? fail(r.error) : text(r.content);
+});
 
-server.tool(
-  'write_note',
-  'Schreibt eine Notiz (Ueberschreiben oder neu anlegen).',
-  {
-    path:    z.string(),
-    content: z.string(),
+tool('read_bild', {
+  title: 'Grafik anzeigen',
+  description: 'Eine Grafik aus dem Vault ALS BILD sehen (nicht als Pfad) und ihre Pixelmasse erfahren – noetig, um Rechtecke fuer ' +
+    'Bild-Karteikarten zu bestimmen: Stelle im Bild suchen, Pixelkoordinaten ablesen, durch Breite bzw. Hoehe teilen -> x/y/w/h fuer write_karten. ' +
+    'SVG kommt als Quelltext zurueck (dort stehen die Beschriftungen mit ihren Koordinaten).',
+  input: { path: z.string().describe('Vault-Pfad der Grafik (png, jpg, webp, gif, bmp, avif, svg)'), vault: vaultParam },
+  annotations: RO,
+}, ({ path, vault }) => {
+  const e = registry.get(vault);
+  const r = e.tools.readBild({ path });
+  if (r.error) return fail(`[${e.vault.name}] ${r.error}`);
+  const { base64, svg, ...info } = r;
+  const inhalt = [];
+  // Der Bild-Block MUSS vor dem Text stehen – so sieht das Modell erst die Grafik
+  // und liest die Masse danach als Rechenhilfe.
+  if (base64) inhalt.push({ type: 'image', data: base64, mimeType: r.mime });
+  inhalt.push({ type: 'text', text: JSON.stringify({ vault: e.vault.name, ...info }, null, 2) });
+  if (svg) inhalt.push({ type: 'text', text: svg });
+  return { content: inhalt };
+});
+
+tool('backlinks', {
+  title: 'Rueckverweise',
+  description: 'Welche Notizen verlinken auf diese? Liefert alle Notizen mit einem [[Link]] auf den Pfad – fuer Kontext und Verknuepfungen.',
+  input: { path: z.string().describe('Relativer Pfad zur Notiz'), vault: vaultParam },
+  annotations: RO,
+}, ({ path, vault }) => plain(registry.get(vault).tools.backlinks({ path })));
+
+tool('list_notes', {
+  title: 'Notizen auflisten',
+  description: 'Ueberblick ueber einen Ordner oder den ganzen Vault: listet Notizen (Pfad, Titel), optional nach Pfad-Praefix gefiltert, mit Pagination.',
+  input: {
+    prefix: z.string().optional().describe('z.B. "Uni/" fuer alle Uni-Notizen'),
+    limit:  limitParam(100),
+    offset: offsetParam,
+    vault:  vaultParam,
+  },
+  output: { results: z.array(z.object({ path: z.string(), title: z.string().nullable().optional() })), count: z.number() },
+  annotations: RO,
+}, ({ prefix, limit, offset, vault }) => plain(registry.get(vault).tools.listNotes({ prefix, limit, offset }), structured));
+
+tool('query', {
+  title: 'Frontmatter-Abfrage',
+  description: 'Notizen nach Frontmatter-Feldern filtern (z.B. status = todo, tags contains uni, due < 2026-10-01) – fuer Aufgaben-, Status- und Termin-Listen.',
+  input: {
+    field: z.string().describe('Frontmatter-Schluessel, z.B. "status", "tags", "due"'),
+    op:    z.string().optional().describe('Operator: = | != | contains | exists | < | > (Standard: =)'),
+    value: z.string().optional().describe('Vergleichswert (bei exists nicht noetig)'),
+    limit: limitParam(100),
+    vault: vaultParam,
+  },
+  annotations: RO,
+}, ({ field, op, value, limit, vault }) => plain(registry.get(vault).tools.query({ field, op, value, limit })));
+
+tool('dataview', {
+  title: 'Dataview-Query',
+  description: 'Dynamische Listen/Tabellen ueber den Vault wie Obsidians Dataview: DQL-Query (LIST/TABLE [WITHOUT ID], FROM "Ordner", ' +
+    'WHERE mit AND/OR/!/contains()/Vergleichen, SORT feld ASC|DESC, LIMIT n, dateformat()). Gibt {kind, headers, rows, count} mit aufgeloesten Links zurueck.',
+  input: {
+    source: z.string().describe('Die DQL-Query, z.B.: LIST FROM "Wissen" WHERE file.name != "00 – Index" SORT file.mtime DESC LIMIT 5'),
+    vault:  vaultParam,
+  },
+  output: { kind: z.string(), headers: z.array(z.any()).optional(), rows: z.array(z.any()), count: z.number() },
+  annotations: RO,
+}, ({ source, vault }) => plain(registry.get(vault).tools.dataview({ source }), structured));
+
+tool('lern_status', {
+  title: 'Lernstand',
+  description: 'Wo steht der Nutzer im Lernmodus? Lesender Blick auf den Lernstand: faellige Karten je Fach und Notiz, Pruefungstermine, ' +
+    'Restaufwand bis zur Pruefung, Trefferquote und die Karten mit den meisten Fehlversuchen – Grundlage fuer Lernplan und gezieltes Nachfragen.',
+  input: {
+    fach:  z.string().optional().describe('Fach-Name oder -ID einschraenken (Standard: alle)'),
+    tage:  z.number().int().min(1).max(365).optional().describe('Betrachtungsfenster fuer den Verlauf in Tagen (Standard 30)'),
+    vault: vaultParam,
+  },
+  output: { vault: z.string(), heute: z.string(), heuteFaellig: z.number().optional(), faecher: z.array(z.any()) },
+  annotations: RO,
+}, ({ fach, tage, vault }) => {
+  const e = registry.get(vault);
+  const r = e.tools.lernStatus({ fach, tage });
+  return r.error ? fail(`[${e.vault.name}] ${r.error}`) : structured({ vault: e.vault.name, ...r });
+});
+
+tool('list_trash', {
+  title: 'Papierkorb anzeigen',
+  description: 'Was liegt im Papierkorb des Vaults? Listet geloeschte Notizen/Dateien (Original-Pfad, Loeschzeitpunkt, trashPath fuer restore), neueste zuerst.',
+  input: { limit: limitParam(200, 1000), vault: vaultParam },
+  output: { vault: z.string(), eintraege: z.array(z.object({ path: z.string(), trashPath: z.string(), geloescht: z.string(), bytes: z.number() })), gesamt: z.number() },
+  annotations: RO,
+}, ({ limit, vault }) => {
+  const e = registry.get(vault);
+  const r = e.tools.listTrash({ limit });
+  const cfg = registry.config();
+  return structured({ vault: e.vault.name, ...r, retentionDays: Number.isFinite(Number(cfg.trash?.retentionDays)) ? Number(cfg.trash.retentionDays) : 30 });
+});
+
+// ── Schreib-Tools ─────────────────────────────────────────────────────────────
+tool('write_note', {
+  title: 'Notiz schreiben',
+  description: 'Eine Notiz komplett schreiben – bestehende ueberschreiben oder mit create:true neu anlegen. Atomar mit Read-Back. ' +
+    'Fuer kleine Aenderungen lieber patch oder append_to_section.',
+  input: {
+    path:    z.string().describe('Relativer Pfad der .md-Notiz'),
+    content: z.string().describe('Vollstaendiger neuer Inhalt'),
     create:  z.boolean().optional().describe('true = neue Datei erlaubt'),
     vault:   vaultParam,
   },
-  async ({ path, content, create, vault }) => {
-    const e = registry.get(vault);
-    return withVault(e, e.tools.writeNote({ path, content, create }));
-  }
-);
+  annotations: DESTI,
+}, ({ path, content, create, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.writeNote({ path, content, create })); });
 
-server.tool(
-  'write_vortrag',
-  'Erstellt/aktualisiert das Vortragsskript einer Notiz (<Notiz>.vortrag.json) fuer den Vortrag-Button der App: validiert jeden anker woertlich gegen die Notiz und stempelt den Notiz-Hash.',
-  {
+tool('append_to_section', {
+  title: 'An Abschnitt anhaengen',
+  description: 'Text an das Ende eines Abschnitts (Ueberschrift) einer Notiz anhaengen – z.B. eine neue Erkenntnis, einen Log-Eintrag. Nichts wird ueberschrieben.',
+  input: {
+    path:    z.string().describe('Relativer Pfad der Notiz'),
+    section: z.string().describe('Ueberschrift des Abschnitts'),
+    text:    z.string().describe('Anzuhaengender Text'),
+    vault:   vaultParam,
+  },
+  annotations: ADD,
+}, ({ path, section, text: t, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.appendToSection({ path, section, text: t })); });
+
+tool('patch', {
+  title: 'Textstellen ersetzen',
+  description: 'Gezielt einzelne Textstellen in einer Notiz ersetzen (Batch aus old_str -> new_str), ohne die Datei neu zu schreiben – ' +
+    'fuer Korrekturen, Umformulierungen, Frontmatter-Werte. Meldet, welche old_str nicht gefunden wurden.',
+  input: {
+    path:    z.string().describe('Relativer Pfad zur Notiz im Vault'),
+    patches: z.array(z.object({
+      old_str: z.string().describe('Zu ersetzender Text (erste Fundstelle)'),
+      new_str: z.string().optional().describe('Ersatztext (leer = loeschen)'),
+    })).min(1).describe('Liste von Ersetzungen'),
+    vault:   vaultParam,
+  },
+  annotations: DEST,
+}, ({ path, patches, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.patch({ path, patches })); });
+
+tool('write_vortrag', {
+  title: 'Vortragsskript schreiben',
+  description: 'Ein Vortragsskript zu einer Notiz erzeugen (fuer den Vortrag-Button der App, <Notiz>.vortrag.json): Segmente {sprich, anker, art}, ' +
+    'jeder anker wird woertlich gegen die Notiz validiert, der Notiz-Hash gestempelt. Ersetzt ein vorhandenes Skript.',
+  input: {
     path:  z.string().describe('Pfad der .md-Notiz, zu der das Skript gehoert'),
     titel: z.string().optional().describe('Vortragstitel (optional)'),
     segmente: z.array(z.object({
@@ -162,21 +374,18 @@ server.tool(
       anker:  z.string().optional().describe('Woertlicher Textausschnitt aus der Notiz, der waehrend des Segments hervorgehoben wird'),
       art:    z.enum(['absatz', 'wort', 'tabelle', 'ueberschrift', 'keine']).optional()
                 .describe('Hervorhebungsart (Standard: absatz; keine = nur sprechen, ohne anker)'),
-    })).describe('Vortrags-Segmente in Sprechreihenfolge'),
+    })).min(1).describe('Vortrags-Segmente in Sprechreihenfolge'),
     vault: vaultParam,
   },
-  async ({ path, titel, segmente, vault }) => {
-    const e = registry.get(vault);
-    return withVault(e, e.tools.writeVortrag({ path, titel, segmente }));
-  }
-);
+  annotations: DESTI,
+}, ({ path, titel, segmente, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.writeVortrag({ path, titel, segmente })); });
 
-server.tool(
-  'write_karten',
-  'Erstellt/aktualisiert die Karteikarten einer Notiz (<Notiz>.karten.json) fuer den Lernmodus der App. ' +
-  'Validiert jede Karte gegen die Notiz (quelle woertlich), vergibt stabile IDs – der Lernstand bleibt ' +
-  'bei einer Regeneration erhalten – und stempelt den Notiz-Hash. Ersetzt das komplette Kartenset der Notiz.',
-  {
+tool('write_karten', {
+  title: 'Karteikarten schreiben',
+  description: 'Karteikarten/Abfrage/Lernkarten zu einer Notiz oder Vorlesung fuer den Lernmodus erzeugen (<Notiz>.karten.json). ' +
+    'Validiert jede Karte gegen die Notiz (quelle woertlich), vergibt stabile IDs – der Lernstand bleibt ' +
+    'bei einer Regeneration erhalten – und stempelt den Notiz-Hash. Ersetzt das komplette Kartenset der Notiz.',
+  input: {
     path:  z.string().describe('Pfad der .md-Notiz, zu der die Karten gehoeren'),
     titel: z.string().optional().describe('Titel des Kartensets (optional)'),
     karten: z.array(z.object({
@@ -209,232 +418,99 @@ server.tool(
         h: z.number().describe('Hoehe, 0..1 (Anteil der Bildhoehe)'),
       })).optional()
              .describe('bild: Rechtecke auf der Grafik. Ruf zuerst read_bild auf – damit siehst du die Grafik und bekommst ihre Pixelmasse; Pixelkoordinate durch Breite bzw. Hoehe geteilt ergibt x/y/w/h. Lege die Rechtecke ueber die Beschriftung, die dort gedruckt steht, damit sie beim Abfragen verdeckt wird. Ohne Regionen ist die Karte nicht spielbar, bis der Nutzer sie im Karten-Editor aufzieht'),
-    })).describe('Alle Karten der Notiz (ersetzt das bisherige Set)'),
+    })).min(1).describe('Alle Karten der Notiz (ersetzt das bisherige Set)'),
     vault: vaultParam,
   },
-  async ({ path, titel, karten, vault }) => {
-    const e = registry.get(vault);
-    return withVault(e, e.tools.writeKarten({ path, titel, karten }));
-  }
-);
+  annotations: DESTI,
+}, ({ path, titel, karten, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.writeKarten({ path, titel, karten })); });
 
-server.tool(
-  'karten_gliedern',
-  'Traegt Themen fuer ein BESTEHENDES Kartenset nach, ohne die Karten zu veraendern: ' +
-  'Jede Karte wird ueber ihr Belegzitat in der Notiz lokalisiert und bekommt die Ueberschrift ' +
-  'darueber als Thema. Kartentexte und IDs bleiben unangetastet – der Lernstand bleibt erhalten. ' +
-  'Gedacht fuer Kartensaetze, die vor der Themen-Gliederung entstanden sind.',
-  {
+tool('karten_gliedern', {
+  title: 'Karten nach Themen gliedern',
+  description: 'Themen fuer ein BESTEHENDES Kartenset nachtragen, ohne die Karten zu veraendern (fuer Kartensaetze, die vor der Themen-Gliederung entstanden sind): ' +
+    'Jede Karte wird ueber ihr Belegzitat in der Notiz lokalisiert und bekommt die Ueberschrift darueber als Thema. ' +
+    'Kartentexte und IDs bleiben unangetastet – der Lernstand bleibt erhalten.',
+  input: {
     path:  z.string().describe('Pfad der .md-Notiz, deren Karten gegliedert werden sollen'),
-    ebene: z.number().optional()
+    ebene: z.number().int().min(1).max(6).optional()
            .describe('Bis zu welcher Ueberschriften-Tiefe gruppiert wird (Standard 2 = "#" und "##"). Tiefere Ueberschriften zaehlen zum letzten Abschnitt dieser Tiefe'),
     ueberschreiben: z.boolean().optional()
            .describe('Standard false: bereits vergebene Themen bleiben stehen. true setzt alle neu'),
     vault: vaultParam,
   },
-  async ({ path, ebene, ueberschreiben, vault }) => {
-    const e = registry.get(vault);
-    return withVault(e, e.tools.karteGliedern({ path, ebene, ueberschreiben }));
-  }
-);
+  annotations: IDEM,
+}, ({ path, ebene, ueberschreiben, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.karteGliedern({ path, ebene, ueberschreiben })); });
 
-server.tool(
-  'read_bild',
-  'Zeigt eine Grafik aus dem Vault ALS BILD an (nicht als Pfad) und nennt ihre Pixelmasse. ' +
-  'Damit lassen sich die Rechtecke fuer Bild-Karteikarten selbst bestimmen: Stelle im Bild ' +
-  'suchen, Pixelkoordinaten ablesen, durch Breite bzw. Hoehe teilen -> x/y/w/h fuer write_karten. ' +
-  'SVG kommt als Quelltext zurueck (dort stehen die Beschriftungen mit ihren Koordinaten).',
-  {
-    path:  z.string().describe('Vault-Pfad der Grafik (png, jpg, webp, gif, bmp, avif, svg)'),
-    vault: vaultParam,
-  },
-  async ({ path, vault }) => {
-    const e = registry.get(vault);
-    const r = e.tools.readBild({ path });
-    if (r.error) return asJson({ vault: e.vault.name, ...r });
-    const { base64, svg, ...info } = r;
-    const inhalt = [];
-    // Der Bild-Block MUSS vor dem Text stehen – so sieht das Modell erst die Grafik
-    // und liest die Masse danach als Rechenhilfe.
-    if (base64) inhalt.push({ type: 'image', data: base64, mimeType: r.mime });
-    inhalt.push({ type: 'text', text: JSON.stringify({ vault: e.vault.name, ...info }, null, 2) });
-    if (svg) inhalt.push({ type: 'text', text: svg });
-    return { content: inhalt };
-  }
-);
+tool('reindex', {
+  title: 'Index neu aufbauen',
+  description: 'Den Suchindex eines Vaults neu aufbauen – nur noetig, wenn Dateien am Nexus vorbei geaendert wurden und search/outline veraltet wirken.',
+  input: { vault: vaultParam },
+  annotations: IDEM,
+}, ({ vault }) => { const e = registry.get(vault); return withVault(e, e.tools.reindex()); });
 
-server.tool(
-  'lern_status',
-  'Lesender Blick auf den Lernstand des Lernmodus: faellige Karten je Fach und Notiz, Pruefungstermine, ' +
-  'Restaufwand bis zur Pruefung, Trefferquote und die Karten mit den meisten Fehlversuchen. ' +
-  'Damit laesst sich ein Lernplan bauen oder gezielt nachfragen, wo es klemmt.',
-  {
-    fach:  z.string().optional().describe('Fach-Name oder -ID einschraenken (Standard: alle)'),
-    tage:  z.number().optional().describe('Betrachtungsfenster fuer den Verlauf in Tagen (Standard 30)'),
-    vault: vaultParam,
-  },
-  async ({ fach, tage, vault }) => {
-    const e = registry.get(vault);
-    return withVault(e, e.tools.lernStatus({ fach, tage }));
-  }
-);
+// ── Ordner-/Datei-Operationen ─────────────────────────────────────────────────
+tool('create_folder', {
+  title: 'Ordner anlegen',
+  description: 'Einen neuen Ordner im Vault anlegen (rekursiv) – statt Datei-System-/Mount-Operationen, die blockiert sind.',
+  input: { path: z.string().describe('Relativer Ordnerpfad, z.B. "Uni/6. Semester/Neuer Ordner"'), vault: vaultParam },
+  annotations: ADD,
+}, ({ path, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.createFolder({ path })); });
 
-server.tool(
-  'append_to_section',
-  'Haengt Text an einen Abschnitt an.',
-  {
-    path:    z.string(),
-    section: z.string(),
-    text:    z.string(),
-    vault:   vaultParam,
-  },
-  async ({ path, section, text: t, vault }) => {
-    const e = registry.get(vault);
-    return withVault(e, e.tools.appendToSection({ path, section, text: t }));
-  }
-);
-
-server.tool(
-  'backlinks',
-  'Gibt alle Notizen zurueck, die auf diese verlinken.',
-  {
-    path:  z.string(),
-    vault: vaultParam,
-  },
-  async ({ path, vault }) => {
-    return asJson(registry.get(vault).tools.backlinks({ path }));
-  }
-);
-
-server.tool(
-  'list_notes',
-  'Listet Notizen (optional: Pfad-Prefix-Filter).',
-  {
-    prefix: z.string().optional().describe('z.B. "Uni/" fuer alle Uni-Notizen'),
-    limit:  z.number().optional(),
-    offset: z.number().optional().describe('Ergebnisse ueberspringen (Pagination, Standard: 0)'),
-    vault:  vaultParam,
-  },
-  async ({ prefix, limit, offset, vault }) => {
-    return asJson(registry.get(vault).tools.listNotes({ prefix, limit, offset }));
-  }
-);
-
-server.tool(
-  'reindex',
-  'Scannt einen Vault neu und aktualisiert den SQLite-Index.',
-  { vault: vaultParam },
-  async ({ vault }) => {
-    const e = registry.get(vault);
-    return withVault(e, e.tools.reindex());
-  }
-);
-
-server.tool(
-  'query',
-  'Filtert Notizen nach Frontmatter-Feldern.',
-  {
-    field: z.string().describe('Frontmatter-Schluessel, z.B. "status", "tags", "due"'),
-    op:    z.string().optional().describe('Operator: = | != | contains | exists | < | > (Standard: =)'),
-    value: z.string().optional().describe('Vergleichswert (bei exists nicht noetig)'),
-    limit: z.number().optional().describe('Max. Ergebnisse (Standard: 100)'),
-    vault: vaultParam,
-  },
-  async ({ field, op, value, limit, vault }) => {
-    return asJson(registry.get(vault).tools.query({ field, op, value, limit }));
-  }
-);
-
-server.tool(
-  'dataview',
-  'Fuehrt eine Dataview-(DQL)-Query gegen den Vault aus (LIST/TABLE [WITHOUT ID], FROM "Ordner", ' +
-  'WHERE mit AND/OR/!/contains()/Vergleichen, SORT feld ASC|DESC, LIMIT n, dateformat()). ' +
-  'Loest dynamische Listen/Tabellen zur Laufzeit auf – das Nexus-Aequivalent zu Obsidians ' +
-  'eingebetteten Dataview-Bloecken. Gibt {kind, headers, rows, count} mit aufgeloesten Links zurueck.',
-  {
-    source: z.string().describe('Die DQL-Query, z.B.: LIST FROM "Wissen" WHERE file.name != "00 – Index" SORT file.mtime DESC LIMIT 5'),
-    vault:  vaultParam,
-  },
-  async ({ source, vault }) => {
-    return asJson(registry.get(vault).tools.dataview({ source }));
-  }
-);
-
-server.tool(
-  'patch',
-  'Batch-Edits: ersetzt mehrere Textstellen in einer Notiz ohne das ganze File neu zu schreiben.',
-  {
-    path:    z.string().describe('Relativer Pfad zur Notiz im Vault'),
-    patches: z.array(z.object({
-      old_str: z.string().describe('Zu ersetzender Text (erste Fundstelle)'),
-      new_str: z.string().optional().describe('Ersatztext (leer = loeschen)'),
-    })).describe('Liste von Ersetzungen'),
-    vault:   vaultParam,
-  },
-  async ({ path, patches, vault }) => {
-    const e = registry.get(vault);
-    return withVault(e, e.tools.patch({ path, patches }));
-  }
-);
-
-server.tool(
-  'create_folder',
-  'Legt einen neuen Ordner im Vault an (rekursiv). Nutze dies statt Datei-System-/Mount-Operationen.',
-  {
-    path:  z.string().describe('Relativer Ordnerpfad, z.B. "Uni/6. Semester/Neuer Ordner"'),
-    vault: vaultParam,
-  },
-  async ({ path, vault }) => {
-    const e = registry.get(vault);
-    return withVault(e, e.tools.createFolder({ path }));
-  }
-);
-
-server.tool(
-  'move',
-  'Verschiebt oder benennt eine Notiz/einen Ordner um (from -> to). Funktioniert fuer Dateien UND ' +
-  'ganze Ordner; der Index wird automatisch aktualisiert. Umbenennen = gleicher Elternordner, neuer Name. ' +
-  'Bevorzugt vor jeder Datei-System-/Mount-Operation nutzen. from und to liegen immer im selben Vault.',
-  {
+tool('move', {
+  title: 'Verschieben / Umbenennen',
+  description: 'Eine Notiz oder einen ganzen Ordner verschieben oder umbenennen (from -> to, gleicher Vault). Umbenennen = gleicher Elternordner, neuer Name. ' +
+    'Sidecars (Karten, Vortrag) ziehen mit, der Index wird aktualisiert. Bevorzugt vor jeder Datei-System-/Mount-Operation nutzen.',
+  input: {
     from:  z.string().describe('Aktueller relativer Pfad (Datei oder Ordner)'),
     to:    z.string().describe('Neuer relativer Pfad'),
     vault: vaultParam,
   },
-  async ({ from, to, vault }) => {
-    const e = registry.get(vault);
-    return withVault(e, e.tools.move({ from, to }));
-  }
-);
+  annotations: DEST,
+}, ({ from, to, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.move({ from, to })); });
 
-server.tool(
-  'delete',
-  'Loescht eine Notiz oder einen ganzen Ordner (rekursiv) im Vault. Funktioniert fuer Dateien UND ' +
-  'Ordner; der Index wird automatisch aktualisiert. Nutze dies statt blockierter Mount-/Datei-System-Loeschungen.',
-  {
-    path:  z.string().describe('Relativer Pfad zur Notiz oder zum Ordner'),
+tool('delete', {
+  title: 'In den Papierkorb',
+  description: 'Eine Notiz oder einen ganzen Ordner loeschen – verschiebt in den Papierkorb des Vaults (.trash/<Zeitstempel>/…), Sidecars ziehen mit; ' +
+    'list_trash zeigt den Inhalt, restore holt zurueck. Geschuetzt: Vault-Wurzel, _System und .trash. ' +
+    'permanent:true loescht endgueltig – NUR fuer Pfade, die bereits im Papierkorb liegen (trashPath aus list_trash).',
+  input: {
+    path:  z.string().describe('Relativer Pfad zur Notiz oder zum Ordner (bei permanent:true der trashPath aus list_trash)'),
+    permanent: z.boolean().optional().describe('true = endgueltig loeschen, nur fuer Papierkorb-Eintraege (.trash/...)'),
     vault: vaultParam,
   },
-  async ({ path, vault }) => {
-    const e = registry.get(vault);
-    return withVault(e, e.tools.delete({ path }));
-  }
-);
+  annotations: DEST,
+}, ({ path, permanent, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.delete({ path, permanent })); });
 
-server.tool(
-  'vault_check',
-  'Vault-Gesundheits-Check ueber den Live-Index (kein Voll-Reparse): kaputte Links, ' +
-  'verwaiste Notizen, veraltete Daten (>30 Tage), Karteileichen, doppelte Dateinamen. ' +
-  'Schreibt den vollen Bericht nach _System/Vault-Check.md und gibt eine kompakte ' +
-  'Zusammenfassung (Zahlen + erste Treffer je Kategorie) zurueck.',
-  {
+tool('restore', {
+  title: 'Aus dem Papierkorb zurueckholen',
+  description: 'Einen Eintrag aus dem Papierkorb an seinen Original-Ort zurueckholen (Sidecars folgen). path = trashPath aus list_trash ' +
+    'oder der Original-Pfad (dann die neueste Kopie). Existiert das Ziel bereits, ist das ein Fehler – nichts wird ueberschrieben.',
+  input: { path: z.string().describe('trashPath (".trash/<stamp>/<pfad>") oder Original-Pfad'), vault: vaultParam },
+  annotations: ADD,
+}, ({ path, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.restore({ path })); });
+
+tool('vault_check', {
+  title: 'Vault-Gesundheit pruefen',
+  description: 'Vault-Gesundheits-Check ueber den Live-Index (kein Voll-Reparse): kaputte Links, verwaiste Notizen, veraltete Daten (>30 Tage), ' +
+    'Karteileichen, doppelte Dateinamen. Schreibt den vollen Bericht nach _System/Vault-Check.md (dry_run=true: nur lesen, nichts schreiben) ' +
+    'und gibt eine kompakte Zusammenfassung zurueck. Regeln fuer persoenliche Bereiche stehen in nexus.config.json unter "vaultCheck".',
+  input: {
     dry_run: z.boolean().optional().describe('true = nur pruefen, Bericht NICHT in den Vault schreiben'),
     vault:   vaultParam,
   },
-  async ({ dry_run, vault }) => {
-    const e = registry.get(vault);
-    return text(JSON.stringify({ vault: e.vault.name, ...e.tools.vaultCheck({ dryRun: dry_run }) }, null, 2));
-  }
-);
+  output: {
+    vault: z.string(),
+    notesScanned: z.number(),
+    filesScanned: z.number(),
+    summary: z.record(z.string(), z.number()),
+    reportPath: z.string().nullable(),
+  },
+  annotations: IDEM,
+}, ({ dry_run, vault }) => {
+  const e = registry.get(vault);
+  const regeln = registry.config().vaultCheck ?? {};
+  const r = e.tools.vaultCheck({ dryRun: dry_run, regeln });
+  return r.error ? fail(`[${e.vault.name}] ${r.error}`) : structured({ vault: e.vault.name, ...r });
+});
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

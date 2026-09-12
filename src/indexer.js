@@ -3,17 +3,20 @@ import { readdirSync, statSync, readFileSync, mkdirSync } from 'fs';
 import { join, relative, extname, basename } from 'path';
 import { openDb, transaction } from './db.js';
 import { parseNote } from './parse.js';
+import { makeIgnore } from './paths.js';
 
 export function buildIndexer(vaultPath, dbPath, ignoreList = []) {
   mkdirSync(vaultPath, { recursive: true });
   const db = openDb(dbPath);
-  const ignoreSet = new Set(ignoreList);
+  // R27b: eine Ignore-Regel fuer alle Walker (Defaults + cfg.ignore + Dotfiles) –
+  // wird als indexer.isIgnored auch an tools.js (Vault-Check-Walk) weitergereicht.
+  const isIgnored = makeIgnore(ignoreList);
 
   function walk(dir, results = []) {
     let entries;
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return results; }
     for (const e of entries) {
-      if (ignoreSet.has(e.name)) continue;
+      if (isIgnored(e.name)) continue;
       const full = join(dir, e.name);
       if (e.isDirectory()) walk(full, results);
       else if (e.isFile() && extname(e.name) === '.md') results.push(full);
@@ -80,19 +83,27 @@ export function buildIndexer(vaultPath, dbPath, ignoreList = []) {
     });
   }
 
+  // Eine Notiz vollstaendig aus dem Index nehmen: notes + FTS + Ueberschriften + Links.
+  // R27b-Befund (Plan C2): removeStale loeschte nur die notes-Zeile – die FTS-Zeile
+  // blieb stehen, search fand geloeschte/verschobene Notizen als Geister.
+  function dropNote(id) {
+    stmts.ftsDel.run(id);
+    stmts.delH.run(id);
+    stmts.delL.run(id);
+    stmts.delNote.run(id);
+  }
+
   function removeStale(diskPaths) {
     const diskSet = new Set(diskPaths.map(p => toRel(p)));
-    for (const row of stmts.allPaths.all()) {
-      if (!diskSet.has(row.path)) stmts.delNote.run(row.id);
-    }
+    const stale = stmts.allPaths.all().filter(row => !diskSet.has(row.path));
+    if (stale.length) transaction(db, () => { for (const row of stale) dropNote(row.id); });
   }
 
   function deleteFile(fullPath) {
     const relPath = toRel(fullPath);
     const row = stmts.getByPath.get(relPath);
     if (!row) return;
-    stmts.ftsDel.run(row.id);
-    stmts.delByPath.run(relPath);
+    dropNote(row.id);
   }
 
   return {
@@ -105,6 +116,7 @@ export function buildIndexer(vaultPath, dbPath, ignoreList = []) {
     },
     indexFile,
     deleteFile,
+    isIgnored,
     stats() { return stmts.count.get(); },
   };
 }
@@ -119,12 +131,15 @@ export function buildIndexer(vaultPath, dbPath, ignoreList = []) {
  */
 export async function watchVault(indexer, vaultPath, ignoreList = [], onChange = null) {
   const { default: chokidar } = await import('chokidar');
-  const ignoreSet = new Set(ignoreList);
+  // R27b: dieselbe Regel wie der Indexer – aber NUR auf die Segmente unterhalb des
+  // Vaults angewandt (der Vault-Pfad selbst darf ".config"-Ordner enthalten).
+  const isIgnored = makeIgnore(ignoreList);
 
   const watcher = chokidar.watch(vaultPath, {
     ignored: (p) => {
-      const parts = p.split('/');
-      return parts.some(seg => ignoreSet.has(seg));
+      const rel = relative(vaultPath, p);
+      if (!rel || rel.startsWith('..')) return false;
+      return rel.split(/[\\/]/).some(seg => isIgnored(seg));
     },
     ignoreInitial: true,
     persistent: true,

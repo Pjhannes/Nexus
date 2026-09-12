@@ -6,7 +6,29 @@ import { transaction } from './db.js';
 import { runVaultCheck, renderReport, REPORT_REL } from './vault-check.js';
 import { evaluateDataview } from './dataview.js';
 import { vortragNorm, ohneBom, ohneFrontmatter } from './norm.js';
-import { safeFull as safeFullIn } from './paths.js';
+import { safeFull as safeFullIn, TRASH_DIR, makeIgnore } from './paths.js';
+
+// R27b: Papierkorb-Eintraege aelter als `days` Tage entfernen (Stempel-Ordner
+// <vault>/.trash/<JJJJ-MM-TT_HHMMSS>). Wird beim Start von UI-Server und MCP-Server
+// je Vault aufgerufen; days <= 0 schaltet das Aufraeumen ab. Gibt die Zahl der
+// entfernten Stempel-Ordner zurueck.
+export function emptyOldTrash(vaultPath, days = 30, now = Date.now()) {
+  if (!(days > 0)) return 0;
+  const root = join(vaultPath, TRASH_DIR);
+  let entries;
+  try { entries = readdirSync(root, { withFileTypes: true }); } catch { return 0; }
+  let n = 0;
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    const m = /^(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})(\d{2})/.exec(e.name);
+    if (!m) continue;
+    const t = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime();
+    if (now - t > days * 24 * 60 * 60 * 1000) {
+      try { rmSync(join(root, e.name), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); n++; } catch {}
+    }
+  }
+  return n;
+}
 import { bildMasse, svgMasse, mimeFuer, istVektor, BILD_ENDUNGEN } from './bildmasse.js';
 
 // Obergrenzen fuer read_bild: eine Vorlesungsfolie als PNG liegt bei 0,1-2 MB; 12 MB
@@ -618,25 +640,137 @@ export function makeTools(indexer, vaultPath) {
     return { ok: true, from, to, indexed: n };
   }
 
-  function deleteEntry({ path }) {
+  // ── R27b: Papierkorb ────────────────────────────────────────────────────────
+  // delete verschiebt nach <vault>/.trash/<JJJJ-MM-TT_HHMMSS>/<relativer Pfad> statt
+  // zu loeschen (Sidecars folgen in denselben Stempel-Ordner). Endgueltig loeschen
+  // geht nur mit permanent:true UND nur fuer Eintraege, die schon im Papierkorb
+  // liegen (Pfad beginnt mit ".trash/"). Geschuetzt: Vault-Wurzel, "_System" und
+  // ".trash" selbst. Der Papierkorb ist per Dotfile-Regel aus Index, Baum, Lern-
+  // Scanner und Vault-Check ausgeblendet (paths.makeIgnore).
+  const relOf = (full) => relative(resolve(vaultPath), full).split(sep).join('/');
+  const trashRoot = () => join(resolve(vaultPath), TRASH_DIR);
+  const inTrash = (rel) => rel === TRASH_DIR || rel.startsWith(TRASH_DIR + '/');
+  const PROTECTED = new Set(['_System', TRASH_DIR]);
+
+  function trashStamp(d = new Date()) {
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  }
+  // Alle Dateien eines Stempel-Ordners (relativ zum Stempel) – fuer list_trash.
+  function walkTrash(dir, rel, out) {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+    for (const e of entries) {
+      const r = rel ? rel + '/' + e.name : e.name;
+      if (e.isDirectory()) walkTrash(join(dir, e.name), r, out);
+      else out.push(r);
+    }
+    return out;
+  }
+
+  function deleteEntry({ path, permanent = false }) {
     if (typeof path !== 'string' || !path) return { error: 'path fehlt' };
     const full = safeFull(path);
     if (!full || full === resolve(vaultPath)) return { error: 'Ungueltiger Pfad' };
+    const rel = relOf(full);
+    if (PROTECTED.has(rel)) return { error: `Geschuetzt, kann nicht geloescht werden: ${rel}` };
     if (!existsSync(full)) return { error: 'Nicht gefunden: ' + path };
+    const sidecars = /\.md$/i.test(full)
+      ? SIDECAR_SUFFIXES.map(suf => full.replace(/\.md$/i, suf)).filter(sc => existsSync(sc))
+      : [];
     try {
-      // maxRetries/retryDelay faengt kurzzeitige Windows-Locks (EPERM/EBUSY) ab, z. B.
-      // wenn ein Datei-Watcher den Ordner gerade noch losgelassen hat (aus /api/delete uebernommen).
-      rmSync(full, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 });
-      // R24/R26: Sidecars der geloeschten Notiz mit entfernen (unsichtbare Zombies sonst).
-      if (/\.md$/i.test(full)) {
+      if (permanent) {
+        if (!inTrash(rel)) return { error: 'permanent:true nur fuer Eintraege im Papierkorb (.trash/...) – normales delete verschiebt in den Papierkorb' };
+        // maxRetries/retryDelay faengt kurzzeitige Windows-Locks (EPERM/EBUSY) ab, z. B.
+        // wenn ein Datei-Watcher den Ordner gerade noch losgelassen hat.
+        rmSync(full, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 });
+        for (const sc of sidecars) { try { rmSync(sc, { force: true, maxRetries: 5, retryDelay: 120 }); } catch {} }
+        return { ok: true, path, permanent: true, indexed: indexer.reindex() };
+      }
+      if (inTrash(rel)) return { error: 'Liegt bereits im Papierkorb – zum endgueltigen Loeschen permanent:true setzen' };
+      // Stempel-Ordner; bei zwei Loeschungen in derselben Sekunde ein Suffix.
+      let stamp = trashStamp();
+      let base = join(trashRoot(), stamp);
+      for (let i = 2; existsSync(join(base, rel)); i++) { stamp = trashStamp() + '-' + i; base = join(trashRoot(), stamp); }
+      const dest = join(base, rel);
+      mkdirSync(dirname(dest), { recursive: true });
+      renameSync(full, dest);
+      // R24/R26: Sidecars der Notiz mitnehmen (unsichtbare Zombies sonst) – restore holt sie zurueck.
+      for (const sc of sidecars) {
+        try { renameSync(sc, join(base, relOf(sc))); } catch {}
+      }
+      const n = indexer.reindex();
+      return { ok: true, path, trashed: `${TRASH_DIR}/${stamp}/${rel}`, indexed: n };
+    } catch (e) { return { error: e.message }; }
+  }
+
+  // Inhalt des Papierkorbs, neueste Loeschung zuerst. Eintrag = eine Datei mit
+  // ihrem Original-Pfad; Sidecars werden unter der Notiz mitgezaehlt, nicht einzeln.
+  function listTrash({ limit = 200 } = {}) {
+    const root = trashRoot();
+    let stamps;
+    try { stamps = readdirSync(root, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name).sort().reverse(); }
+    catch { stamps = []; }
+    const eintraege = [];
+    for (const stamp of stamps) {
+      const files = walkTrash(join(root, stamp), '', []);
+      const notizen = new Set(files.filter(f => /\.md$/i.test(f)));
+      for (const f of files) {
+        const sc = SIDECAR_SUFFIXES.find(suf => f.endsWith(suf));
+        if (sc && notizen.has(f.slice(0, -sc.length) + '.md')) continue;   // haengt an der Notiz
+        let bytes = 0;
+        try { bytes = statSync(join(root, stamp, f)).size; } catch {}
+        eintraege.push({ path: f, trashPath: `${TRASH_DIR}/${stamp}/${f}`, geloescht: stampToIso(stamp), bytes });
+      }
+    }
+    return { eintraege: eintraege.slice(0, limit), gesamt: eintraege.length, retentionDays: null };
+  }
+  function stampToIso(stamp) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})(\d{2})/.exec(stamp);
+    return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}` : stamp;
+  }
+
+  // Aus dem Papierkorb zurueck an den Original-Ort. path = trashPath aus list_trash
+  // (".trash/<stamp>/<rel>") oder der Original-Pfad (dann die neueste Kopie).
+  // Ein Konflikt (Ziel existiert) ist ein Fehler – nichts wird ueberschrieben.
+  function restore({ path }) {
+    if (typeof path !== 'string' || !path) return { error: 'path fehlt' };
+    const norm = path.replace(/\\/g, '/').replace(/^\/+/, '');
+    let stamp, rel;
+    if (inTrash(norm)) {
+      const m = /^\.trash\/([^/]+)\/(.+)$/.exec(norm);
+      if (!m) return { error: 'Ungueltiger Papierkorb-Pfad: ' + path };
+      [, stamp, rel] = m;
+    } else {
+      rel = norm;
+      const hit = listTrash({ limit: 100000 }).eintraege.find(e => e.path === rel);
+      if (!hit) return { error: 'Nicht gefunden im Papierkorb: ' + path };
+      stamp = hit.trashPath.split('/')[1];
+    }
+    const src = safeFull(`${TRASH_DIR}/${stamp}/${rel}`);
+    const dst = safeFull(rel);
+    if (!src || !dst) return { error: 'Pfad ausserhalb des Vaults' };
+    if (!existsSync(src)) return { error: 'Nicht gefunden im Papierkorb: ' + path };
+    if (existsSync(dst)) return { error: `Ziel existiert bereits: ${rel} – erst umbenennen oder loeschen` };
+    try {
+      mkdirSync(dirname(dst), { recursive: true });
+      renameSync(src, dst);
+      if (/\.md$/i.test(dst)) {
         for (const suf of SIDECAR_SUFFIXES) {
-          const sc = full.replace(/\.md$/i, suf);
-          if (existsSync(sc)) { try { rmSync(sc, { force: true, maxRetries: 5, retryDelay: 120 }); } catch {} }
+          const scSrc = src.replace(/\.md$/i, suf), scDst = dst.replace(/\.md$/i, suf);
+          if (existsSync(scSrc) && !existsSync(scDst)) { try { renameSync(scSrc, scDst); } catch {} }
         }
       }
+      // Leere Stempel-Ordner nicht stehen lassen.
+      pruneEmptyDirs(join(trashRoot(), stamp));
     } catch (e) { return { error: e.message }; }
-    const n = indexer.reindex();
-    return { ok: true, path, indexed: n };
+    return { ok: true, path: rel, from: `${TRASH_DIR}/${stamp}/${rel}`, indexed: indexer.reindex() };
+  }
+  function pruneEmptyDirs(dir) {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) if (e.isDirectory()) pruneEmptyDirs(join(dir, e.name));
+    try { if (readdirSync(dir).length === 0) rmSync(dir, { recursive: true, force: true }); } catch {}
   }
 
   // patch: Batch-Edits – mehrere String-Ersetzungen in einer Datei.
@@ -743,13 +877,14 @@ export function makeTools(indexer, vaultPath) {
   // readdir-Lauf fuer Anhang-Dateinamen (damit [[bild.png]]-Embeds nicht als
   // "broken" zaehlen). Schreibt den Bericht nach _System/Vault-Check.md und gibt
   // eine kompakte Zusammenfassung zurueck (max. Info pro Token).
-  const VC_IGNORE_DIRS = new Set(['.obsidian', '.trash', '.nexus', 'node_modules', '.git']);
+  // R27b: dieselbe Ignore-Regel wie der Indexer (Defaults + cfg.ignore + Dotfiles).
+  const vcIgnored = typeof indexer.isIgnored === 'function' ? indexer.isIgnored : makeIgnore([]);
   function walkAllFiles(dir, out = []) {
     let entries;
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
     for (const e of entries) {
       if (e.isDirectory()) {
-        if (VC_IGNORE_DIRS.has(e.name)) continue;
+        if (vcIgnored(e.name)) continue;
         walkAllFiles(join(dir, e.name), out);
       } else if (e.isFile()) {
         out.push(join(dir, e.name));
@@ -758,7 +893,9 @@ export function makeTools(indexer, vaultPath) {
     return out;
   }
 
-  function vaultCheck({ dryRun = false } = {}) {
+  // regeln: cfg.vaultCheck (inactiveAreas, ignoreNames, deadPrefixes, deadNames) –
+  // seit R27b stehen persoenliche Pfade in der Config, nicht mehr im generischen Code.
+  function vaultCheck({ dryRun = false, regeln = {} } = {}) {
     // Frischer Index – inkrementell, ueberspringt unveraenderte mtimes (quasi gratis).
     indexer.reindex();
 
@@ -789,7 +926,7 @@ export function makeTools(indexer, vaultPath) {
     const allRelPaths = walkAllFiles(vaultPath).map(f => relative(vaultPath, f).split(sep).join('/'));
 
     const now = Date.now();
-    const result = runVaultCheck({ notes, allRelPaths, now });
+    const result = runVaultCheck({ notes, allRelPaths, now, regeln });
     const report = renderReport(result, { now, notesCount: notes.length, filesCount: allRelPaths.length });
 
     let reportPath = null;
@@ -824,6 +961,6 @@ export function makeTools(indexer, vaultPath) {
     };
   }
 
-  return { search, outline, readNote, writeNote, writeVortrag, writeKarten, karteGliedern, readBild, lernStatus, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, vaultCheck };
+  return { search, outline, readNote, writeNote, writeVortrag, writeKarten, karteGliedern, readBild, lernStatus, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, listTrash, restore, vaultCheck };
 }
 // rev: graph() fuer UI-Graph (Session 13)

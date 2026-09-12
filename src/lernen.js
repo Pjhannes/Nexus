@@ -71,7 +71,10 @@ const BILD_EXT = /\.(png|jpe?g|webp|gif|svg|bmp|avif)$/i;
 // "in 200 Jahren wieder abfragen" ist ohnehin dasselbe wie "nie".
 const MAX_INTERVALL = 3650;
 
-const IGNORE_DIRS = new Set(['.obsidian', '.trash', '.nexus', 'node_modules', '.git', '.stfolder']);
+// R27b: Ignore-Regel zentral in paths.js (Defaults + cfg.ignore + Dotfiles);
+// scanKartenSidecars nimmt ein Praedikat entgegen, Standard = nur die Defaults.
+import { makeIgnore } from './paths.js';
+const IGNORE_DEFAULT = makeIgnore([]);
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Pfade
@@ -1168,7 +1171,7 @@ function schreibeAtomar(full, content) {
  * Alle *.karten.json des Vaults einlesen. cache: optionale Map(datei -> {mtime, sidecar}),
  * damit das Dashboard nicht bei jedem Poll alles neu parst.
  */
-export function scanKartenSidecars(vaultPath, cache) {
+export function scanKartenSidecars(vaultPath, cache, isIgnored = IGNORE_DEFAULT) {
   const out = [];
   const gesehen = new Set();
   const walk = (dir, rel) => {
@@ -1176,7 +1179,7 @@ export function scanKartenSidecars(vaultPath, cache) {
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
       if (e.isDirectory()) {
-        if (IGNORE_DIRS.has(e.name) || e.name.startsWith('.')) continue;
+        if (isIgnored(e.name)) continue;
         walk(join(dir, e.name), rel ? rel + '/' + e.name : e.name);
       } else if (e.isFile() && /\.karten\.json$/i.test(e.name)) {
         const relPfad = rel ? rel + '/' + e.name : e.name;

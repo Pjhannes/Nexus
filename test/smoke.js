@@ -271,6 +271,15 @@ assert('R24: move zieht Sidecar mit', existsSync(join(vault, 'Uni', 'Thermo-Umbe
 const vtDel = tools.delete({ path: 'Uni/Thermo-Umbenannt.md' });
 assert('R24: delete der Notiz ok', vtDel.ok === true, JSON.stringify(vtDel));
 assert('R24: delete entfernt Sidecar mit', !existsSync(join(vault, 'Uni', 'Thermo-Umbenannt.vortrag.json')));
+// R27b: delete = Papierkorb; Sidecar liegt daneben im Stempel-Ordner; Index kennt die Notiz nicht mehr
+assert('R27b: delete meldet trashed-Pfad', /^\.trash\/[^/]+\/Uni\/Thermo-Umbenannt\.md$/.test(vtDel.trashed ?? ''), vtDel.trashed);
+assert('R27b: Sidecar liegt im Papierkorb neben der Notiz', existsSync(join(vault, vtDel.trashed.replace(/\.md$/, '.vortrag.json'))));
+assert('R27b: search findet die geloeschte Notiz nicht mehr (kein FTS-Geist)', tools.search({ q: 'Carnot' }).length === 0, JSON.stringify(tools.search({ q: 'Carnot' })));
+assert('R27b: Papierkorb bleibt aus dem Index (reindex)', tools.reindex().ok && tools.listNotes({ prefix: '.trash' }).length === 0);
+const lt = tools.listTrash();
+assert('R27b: listTrash nennt die Notiz genau einmal (Sidecar haengt dran)', lt.eintraege.filter(e => e.path.startsWith('Uni/Thermo-Umbenannt')).length === 1, JSON.stringify(lt));
+assert('R27b: _System ist geschuetzt', /Geschuetzt/.test(tools.delete({ path: '_System' }).error ?? ''));
+assert('R27b: permanent nur im Papierkorb', /Papierkorb/.test(tools.delete({ path: 'README.md', permanent: true }).error ?? '') && existsSync(join(vault, 'README.md')));
 // Notiz fuer nachfolgende Tests wiederherstellen (Originalinhalt nach patch-Tests)
 const vtRestore = tools.writeNote({ path: 'Uni/Thermodynamik.md', content: vtNoteRaw, create: true });
 assert('R24: Notiz wiederhergestellt', vtRestore.ok === true, JSON.stringify(vtRestore).slice(0, 120));
