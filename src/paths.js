@@ -12,8 +12,8 @@
 // Statische Assets (public/, src/) werden weiterhin aus dem App-Ordner gelesen
 // (read-only ist dort ok) - dafuer ist APP_ROOT.
 
-import { readFileSync, existsSync } from 'fs';
-import { join, dirname, isAbsolute } from 'path';
+import { readFileSync, existsSync, writeFileSync, renameSync, mkdirSync, copyFileSync } from 'fs';
+import { join, dirname, isAbsolute, resolve, sep } from 'path';
 import { fileURLToPath } from 'url';
 import { homedir } from 'os';
 
@@ -68,7 +68,79 @@ export function loadConfig() {
       `Einstellungen -> System "Mit Claude Desktop verbinden" klicken.`
     );
   }
-  return JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
+  const cfg = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
+  // R27a: Schema-Version nachziehen (fehlt -> 1). Backup VOR dem ersten Schreiben,
+  // danach ist der Aufruf idempotent (kein weiterer Write).
+  const { changed } = migrateConfig(cfg);
+  if (changed) {
+    try {
+      backupConfig(CONFIG_PATH);
+      writeConfigAtomic(CONFIG_PATH, cfg);
+    } catch (e) {
+      try { process.stderr.write(`[Nexus] Config-Migration nicht geschrieben: ${e.message}\n`); } catch {}
+    }
+  }
+  return cfg;
+}
+
+// ── R27a: Config-Schema + atomares Schreiben ─────────────────────────────────
+export const CONFIG_SCHEMA_VERSION = 1;
+
+// Pure Migration: hebt eine Config auf die aktuelle Schema-Version. Gibt
+// { changed } zurueck, damit der Aufrufer nur bei echter Aenderung schreibt.
+// Kuenftige Schritte (1 -> 2 ...) kommen hier als weitere if-Bloecke dazu.
+export function migrateConfig(cfg) {
+  if (!cfg || typeof cfg !== 'object') return { changed: false };
+  let changed = false;
+  if (!Number.isInteger(cfg.schemaVersion)) { cfg.schemaVersion = CONFIG_SCHEMA_VERSION; changed = true; }
+  return { changed, version: cfg.schemaVersion };
+}
+
+// Zeitgestempelte Kopie nach <DATA_DIR>/.nexus-backups/ (gitignored). Nur eine
+// Kopie je Migration, kein Rotieren – die Datei ist klein, eine Migration selten.
+export function backupConfig(path = CONFIG_PATH) {
+  if (!existsSync(path)) return null;
+  const dir = join(dirname(path), '.nexus-backups');
+  mkdirSync(dir, { recursive: true });
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const dest = join(dir, `nexus.config.${ts}.json`);
+  copyFileSync(path, dest);
+  return dest;
+}
+
+// Atomar: tmp + rename (MoveFileEx-Semantik unter Windows). Ein Absturz mitten
+// im Schreiben laesst nie eine halbe nexus.config.json zurueck.
+export function writeConfigAtomic(path, cfg) {
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = path + '.nexustmp';
+  writeFileSync(tmp, JSON.stringify(cfg, null, 2), 'utf8');
+  renameSync(tmp, path);
+}
+
+// ── R27a: Pfad-Haertung – EINE safeFull fuer MCP-Tools und UI-Server ──────────
+// Liefert den absoluten Pfad von `rel` innerhalb von `root` – oder null, wenn der
+// Pfad den Vault verlassen wuerde. Bewusst strenger als ein reiner resolve()-
+// Vergleich, weil der Server auch unter Linux (Container, Sandbox-Tests) laeuft,
+// wo Windows-Schreibweisen wie `..\x` oder `\\?\C:\x` sonst als harmlose
+// Dateinamen INNERHALB des Vaults durchgehen wuerden:
+//   - kein String / NUL-Byte                          -> null
+//   - absolute Pfade (/x, \x, C:\x, C:x, \\server, \\?\) -> null
+//   - jedes `..`-Segment (mit / oder \ getrennt)       -> null
+//   - Ergebnis muss unter root liegen (resolve-Check)  -> sonst null
+// '' bzw. '.' liefert die Vault-Wurzel selbst (fuer Ordner-Listings).
+export function safeFull(root, rel) {
+  if (rel === undefined || rel === null) rel = '';
+  if (typeof rel !== 'string') return null;
+  if (rel.includes('\0')) return null;
+  const norm = rel.replace(/\\/g, '/');
+  if (norm.startsWith('/')) return null;                    // /abs, \abs, \\server, \\?\
+  if (/^[A-Za-z]:/.test(norm)) return null;                 // C:\x, C:x
+  if (isAbsolute(rel)) return null;                         // Plattform-Sicht obendrauf
+  for (const seg of norm.split('/')) if (seg === '..') return null;
+  const rootAbs = resolve(root);
+  const full = resolve(rootAbs, norm);
+  if (full !== rootAbs && !full.startsWith(rootAbs + sep)) return null;
+  return full;
 }
 
 // Beliebiger Pfad relativ zum schreibbaren Datenordner

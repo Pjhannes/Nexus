@@ -1383,7 +1383,15 @@ function setCustomFolderIcon(name,icon){const c=_customFolderIcons();if(icon)c[n
 function folderIcon(name){const c=_customFolderIcons();if(c[name])return c[name];if(DEFAULT_ICONS[name])return DEFAULT_ICONS[name];return '📁';}
 
 // ───────── Utilities ─────────
-async function api(url,opts){const r=await fetch(url,opts);return r.json();}
+// R27a: /api/* verlangt das UI-Token-Cookie (setzt der Server beim Laden mit ?t=…).
+// Fehlt es (Seite direkt per http://localhost:PORT geoeffnet, Sidecar neu gestartet),
+// einmal klar sagen statt still leerer Baum + kryptische Folgefehler.
+let _authWarned=false;
+async function api(url,opts){
+  const r=await fetch(url,opts);
+  if(r.status===401&&!_authWarned){_authWarned=true;try{toast('Nicht autorisiert: UI-Token fehlt. Nexus-App neu starten (Dev: die ?t=…-URL aus der Konsole öffnen).','error');}catch(e){}}
+  return r.json();
+}
 function esc(s){return (s??'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function escHtml(s){return (s??'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 // Sicherheits-Fix R25 (Stored-XSS): Renderer-Werte sind bereits durch escHtml
@@ -7299,10 +7307,31 @@ async function openHelpFromSettings(){
 
 
 // ── R9: Claude Usage Widget ──────────────────────────────────────────
-const CLAUDE_AUTH_KEY='nexus.claudeAuth';
+// R27a: Der Session-Key liegt NICHT mehr im localStorage (dort konnte jede eingebettete
+// HTML-Datei ihn lesen) und geht nie mehr als URL-Query raus. Die UI kennt nur noch
+// "konfiguriert ja/nein" + Org-ID vom Server (GET /api/claude-auth); der Key wird
+// einmal per POST /api/claude-auth hochgeladen und serverseitig verwahrt.
+const CLAUDE_AUTH_KEY='nexus.claudeAuth';   // nur noch fuer die einmalige Migration
 let _usageData=null,_usagePopoverOpen=false,_usageInterval=null;
-function getUsageAuth(){try{return JSON.parse(localStorage.getItem(CLAUDE_AUTH_KEY)||'null');}catch(e){return null;}}
-function setUsageAuth(a){localStorage.setItem(CLAUDE_AUTH_KEY,JSON.stringify(a));}
+let _usageAuth={configured:false,orgId:null};
+function getUsageAuth(){return _usageAuth;}
+async function loadUsageAuth(){
+  try{const r=await api('/api/claude-auth');if(r&&typeof r.configured==='boolean')_usageAuth={configured:r.configured,orgId:r.orgId||null};}
+  catch(e){}
+  return _usageAuth;
+}
+// Einmalige Migration: alten localStorage-Eintrag hochladen, dann loeschen.
+async function migrateUsageAuth(){
+  let alt=null;try{alt=JSON.parse(localStorage.getItem(CLAUDE_AUTH_KEY)||'null');}catch(e){alt=null;}
+  if(!alt)return;
+  if(alt.sessionKey&&alt.orgId){
+    try{
+      const r=await api('/api/claude-auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionKey:alt.sessionKey,orgId:alt.orgId})});
+      if(!(r&&r.ok))return;   // Upload fehlgeschlagen -> beim naechsten Start erneut versuchen
+    }catch(e){return;}
+  }
+  try{localStorage.removeItem(CLAUDE_AUTH_KEY);}catch(e){}
+}
 function getUsageCfg(){const d={display:'pct',warn:75,crit:90,position:'right',refreshMin:5};try{return Object.assign({},d,JSON.parse(localStorage.getItem('nexus.usageCfg')||'{}'));}catch(e){return d;}}
 function setUsageCfg(k,v){const c=getUsageCfg();c[k]=v;localStorage.setItem('nexus.usageCfg',JSON.stringify(c));}
 function usageColor(p){const c=getUsageCfg();return p>=c.crit?'#ef4444':p>=c.warn?'#f59e0b':'var(--accent)';}
@@ -7318,7 +7347,7 @@ function fmtReset(iso){
 function renderUsageWidget(){
   const el=document.getElementById('usage-widget');if(!el)return;
   const auth=getUsageAuth();
-  if(!auth){el.innerHTML='— / —';el.style.color='var(--dim)';return;}
+  if(!auth||!auth.configured){el.innerHTML='— / —';el.style.color='var(--dim)';return;}
   if(!_usageData){el.innerHTML='↺ …';el.style.color='var(--dim)';return;}
   if(_usageData._error){el.innerHTML='<span style="color:#e07b7b">⚠ Fehler</span>';return;}
   const s=Math.round((_usageData.five_hour||{}).utilization||0);
@@ -7353,27 +7382,37 @@ function renderUsagePopoverBody(){
       +(wr?'<span class="uw-reset">⟳ '+wr+'</span>':'')
       +'</div><div class="uw-bar-track"><div class="uw-bar-fill" style="width:'+w+'%;background:'+usageColor(w)+'"></div></div></div>';
     html+='<div class="uw-divider"></div>';
-  } else if(auth.sessionKey){
+  } else if(auth.configured){
     html+='<div class="uw-msg">'+(_usageData&&_usageData._error?'⚠ '+esc(_usageData._error):'⟳ Lädt…')+'</div><div class="uw-divider"></div>';
   }
   html+='<div class="uw-auth-title">Zugangsdaten</div>';
+  // R27a: Der Key wird nie zurueck in die UI geliefert – nur "konfiguriert ja/nein".
   html+='<div class="uw-auth-row"><label>Session-Key</label>'
-    +'<input id="uw-sk" class="uw-inp" type="password" placeholder="sk-ant-…" value="'+esc(auth.sessionKey||'')+'" autocomplete="off"></div>';
+    +'<input id="uw-sk" class="uw-inp" type="password" placeholder="'+(auth.configured?'✓ konfiguriert – neu eingeben zum Ersetzen':'sk-ant-…')+'" value="" autocomplete="off"></div>';
   html+='<div class="uw-auth-row"><label>Org-ID</label>'
     +'<input id="uw-org" class="uw-inp" type="text" placeholder="UUID…" value="'+esc(auth.orgId||'')+'" autocomplete="off">'
     +'<button class="uw-btn" onclick="uwAutoDetect()" title="Org-ID automatisch ermitteln">⟳</button></div>';
   html+='<div class="uw-auth-btns">'
+    +(auth.configured?'<button class="uw-btn" onclick="uwRemoveAuth()" title="Session-Key vom Rechner entfernen">Entfernen</button>':'')
     +'<button class="uw-btn" onclick="closeUsagePopover()">Schließen</button>'
     +'<button class="uw-btn primary" onclick="uwSaveAndFetch()">Speichern</button></div>';
   body.innerHTML=html;
 }
+async function uwRemoveAuth(){
+  try{await api('/api/claude-auth',{method:'DELETE'});}catch(e){}
+  await loadUsageAuth();
+  _usageData=null;if(_usageInterval){clearInterval(_usageInterval);_usageInterval=null;}
+  renderUsageWidget();renderUsagePopoverBody();
+  toast('Zugangsdaten entfernt','success');
+}
 async function uwAutoDetect(){
   const sk=(document.getElementById('uw-sk')?document.getElementById('uw-sk').value:'').trim();
-  if(!sk){toast('Session-Key eingeben','error');return;}
+  // Ohne frische Eingabe nimmt der Server den gespeicherten Key (falls konfiguriert).
+  if(!sk&&!getUsageAuth().configured){toast('Session-Key eingeben','error');return;}
   const orgInp=document.getElementById('uw-org');
   if(orgInp){orgInp.placeholder='⟳ Ermittle…';orgInp.disabled=true;}
   try{
-    const r=await fetch('/api/claude-orgs?sessionKey='+encodeURIComponent(sk));
+    const r=await fetch('/api/claude-orgs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sk?{sessionKey:sk}:{})});
     const orgs=await r.json();
     if(orgInp){orgInp.placeholder='UUID…';orgInp.disabled=false;}
     if(Array.isArray(orgs)&&orgs.length>0){
@@ -7391,9 +7430,15 @@ async function uwAutoDetect(){
 async function uwSaveAndFetch(){
   const sk=(document.getElementById('uw-sk')?document.getElementById('uw-sk').value:'').trim();
   const orgId=(document.getElementById('uw-org')?document.getElementById('uw-org').value:'').trim();
-  if(!sk){toast('Session-Key fehlt','error');return;}
+  if(!sk&&!getUsageAuth().configured){toast('Session-Key fehlt','error');return;}
   if(!orgId){toast('Org-ID fehlt – ⟳ nutzen','error');return;}
-  setUsageAuth({sessionKey:sk,orgId:orgId});
+  // Leerer Key bei konfiguriertem Zugang = nur Org-ID aendern (Server behaelt den Key).
+  const body={orgId:orgId};if(sk)body.sessionKey=sk;
+  let r=null;
+  try{r=await api('/api/claude-auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});}
+  catch(e){toast('Speichern fehlgeschlagen: '+e.message,'error');return;}
+  if(!(r&&r.ok)){toast('Speichern fehlgeschlagen: '+((r&&r.error)||'unbekannt'),'error');return;}
+  await loadUsageAuth();
   toast('Zugangsdaten gespeichert','success');
   _usageData=null;renderUsageWidget();renderUsagePopoverBody();
   await fetchUsageData();
@@ -7403,9 +7448,9 @@ async function uwSaveAndFetch(){
 }
 async function fetchUsageData(){
   const auth=getUsageAuth();
-  if(!auth||!auth.sessionKey||!auth.orgId){renderUsageWidget();return;}
+  if(!auth||!auth.configured){renderUsageWidget();return;}
   try{
-    const r=await fetch('/api/claude-usage?sessionKey='+encodeURIComponent(auth.sessionKey)+'&orgId='+encodeURIComponent(auth.orgId));
+    const r=await fetch('/api/claude-usage');   // Key + Org-ID liegen serverseitig
     const d=await r.json();
     _usageData=d.error?{_error:d.error}:d;
   }catch(e){_usageData={_error:e.message};}
@@ -7421,7 +7466,7 @@ async function uwManualRefresh(){
 function applyUsageInterval(){
   if(_usageInterval)clearInterval(_usageInterval);
   const auth=getUsageAuth();
-  if(auth&&auth.sessionKey&&auth.orgId)
+  if(auth&&auth.configured)
     _usageInterval=setInterval(fetchUsageData,getUsageCfg().refreshMin*60*1000);
 }
 function openUsagePopover(){
@@ -7453,11 +7498,16 @@ function applyUsagePosition(){
 function initUsageWidget(){
   applyUsagePosition();
   renderUsageWidget();
-  const auth=getUsageAuth();
-  if(auth&&auth.sessionKey&&auth.orgId){
-    fetchUsageData();
-    _usageInterval=setInterval(fetchUsageData,getUsageCfg().refreshMin*60*1000);
-  }
+  // R27a: erst migrieren (alter localStorage-Key -> Server), dann Status vom Server holen.
+  (async function(){
+    await migrateUsageAuth();
+    const auth=await loadUsageAuth();
+    renderUsageWidget();
+    if(auth&&auth.configured){
+      fetchUsageData();
+      _usageInterval=setInterval(fetchUsageData,getUsageCfg().refreshMin*60*1000);
+    }
+  })();
 }
 
 // ── Tauri-Shell-Adapter (Phase 2) ──

@@ -6,6 +6,7 @@ import { transaction } from './db.js';
 import { runVaultCheck, renderReport, REPORT_REL } from './vault-check.js';
 import { evaluateDataview } from './dataview.js';
 import { vortragNorm, ohneBom, ohneFrontmatter } from './norm.js';
+import { safeFull as safeFullIn } from './paths.js';
 import { bildMasse, svgMasse, mimeFuer, istVektor, BILD_ENDUNGEN } from './bildmasse.js';
 
 // Obergrenzen fuer read_bild: eine Vorlesungsfolie als PNG liegt bei 0,1-2 MB; 12 MB
@@ -26,10 +27,33 @@ const SNIPPET_LINES = 30;
 export { vortragNorm };
 
 // Sidecar-Dateien, die zu einer Notiz gehoeren, aber im Dateibaum unsichtbar sind.
-// JEDE neue Sorte muss an SECHS Stellen bekannt sein, sonst bleiben unsichtbare
-// Waisen zurueck: ui-server.js buildTree + treeSignature + /api/rename + /api/delete
-// sowie hier in move() und deleteEntry().
+// JEDE neue Sorte muss an VIER Stellen bekannt sein, sonst bleiben unsichtbare
+// Waisen zurueck: ui-server.js buildTree + treeSignature (Ausblenden) sowie hier
+// in move() und deleteEntry() (Mitnahme). Seit R27a rufen /api/rename, /api/delete
+// und /api/mkdir diese Funktionen – die Sidecar-Mitnahme lebt nur noch HIER.
 export const SIDECAR_SUFFIXES = ['.vortrag.json', '.karten.json'];
+
+// R27a: Crash-Leichen der atomaren Writes (<datei>.nexustmp) beim Start entfernen.
+// Gleiche Ignore-Regeln wie der Dateibaum (Punkt-Ordner + cfg.ignore), max. Tiefe 8.
+// Gibt die Anzahl entfernter Dateien zurueck; Fehler einzelner Dateien werden
+// verschluckt (z. B. Windows-Lock) – der naechste Start raeumt sie dann.
+export function cleanupNexusTmp(root, ignore = []) {
+  const ignoreSet = new Set(ignore);
+  let n = 0;
+  const walk = (dir, depth) => {
+    if (depth > 8) return;
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (ignoreSet.has(e.name) || e.name.startsWith('.')) continue;
+      const full = join(dir, e.name);
+      if (e.isDirectory()) { walk(full, depth + 1); continue; }
+      if (e.name.endsWith('.nexustmp')) { try { rmSync(full, { force: true }); n++; } catch {} }
+    }
+  };
+  walk(root, 0);
+  return n;
+}
 
 // ---- R24: Vortragsskript (<Notiz>.vortrag.json) – pure Helfer, ohne FS/DB testbar ----
 
@@ -179,7 +203,8 @@ export function makeTools(indexer, vaultPath) {
   }
 
   function readNote({ path, section, lines }) {
-    const fullPath = join(vaultPath, path);
+    const fullPath = safeFull(path);                        // R27a: kein ../-Ausbruch
+    if (!fullPath || typeof path !== 'string' || !path) return { error: 'Pfad ausserhalb des Vaults oder ungueltig: ' + path };
     let content;
     try { content = readFileSync(fullPath, 'utf8'); } catch {
       return { error: 'Datei nicht lesbar: ' + path };
@@ -204,7 +229,10 @@ export function makeTools(indexer, vaultPath) {
   }
 
   function writeNote({ path, content, create = false }) {
-    const fullPath = join(vaultPath, path);
+    // R27a: Pfad-Haertung auch bei create:true – vorher konnte ein neuer Pfad
+    // mit ../ ausserhalb des Vaults angelegt werden.
+    const fullPath = (typeof path === 'string' && path) ? safeFull(path) : null;
+    if (!fullPath) return { error: 'Pfad ausserhalb des Vaults oder ungueltig: ' + path };
     if (!stmts.findNote.get(path) && !create)
       return { error: 'Notiz existiert nicht (create=false): ' + path };
     if (typeof content !== 'string')
@@ -230,7 +258,9 @@ export function makeTools(indexer, vaultPath) {
         return { error: `Schreib-Integritaet verletzt: Read-Back stimmt nicht mit dem gewollten Inhalt ueberein (${actualBytes} statt ${expectedBytes} Bytes, ${path}). Moegliche Trunkierung/NUL-Padding/Mount-Korruption – Datei NICHT als ok gemeldet, bitte erneut schreiben.` };
       }
     } catch (e) { return { error: e.message }; }
-    indexer.indexFile(fullPath);
+    // Nur Markdown gehoert in Index/FTS/Graph (wie reindex und /api/save) – seit R27a
+    // laeuft auch der Editor-Save ueber diesen Pfad, der auch .txt/.json anfasst.
+    if (/\.md$/i.test(fullPath)) indexer.indexFile(fullPath);
     return { ok: true, path, bytes: expectedBytes };
   }
 
@@ -548,12 +578,8 @@ export function makeTools(indexer, vaultPath) {
   }
 
   // Pfad-Sicherheit: aufgeloester Pfad muss innerhalb des Vaults liegen (kein ../-Ausbruch).
-  function safeFull(rel) {
-    const root = resolve(vaultPath);
-    const full = resolve(vaultPath, rel || '');
-    if (full !== root && !full.startsWith(root + sep)) return null;
-    return full;
-  }
+  // R27a: EINE Implementierung fuer MCP-Tools und UI-Server – lebt in paths.js.
+  function safeFull(rel) { return safeFullIn(vaultPath, rel); }
 
   // create_folder / move / delete: Ordner- und Datei-Operationen direkt im Vault.
   // Damit braucht Claude KEINE blockierte Datei-System-/Mount-Operation mehr (kein
@@ -598,12 +624,14 @@ export function makeTools(indexer, vaultPath) {
     if (!full || full === resolve(vaultPath)) return { error: 'Ungueltiger Pfad' };
     if (!existsSync(full)) return { error: 'Nicht gefunden: ' + path };
     try {
-      rmSync(full, { recursive: true, force: true });
+      // maxRetries/retryDelay faengt kurzzeitige Windows-Locks (EPERM/EBUSY) ab, z. B.
+      // wenn ein Datei-Watcher den Ordner gerade noch losgelassen hat (aus /api/delete uebernommen).
+      rmSync(full, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 });
       // R24/R26: Sidecars der geloeschten Notiz mit entfernen (unsichtbare Zombies sonst).
       if (/\.md$/i.test(full)) {
         for (const suf of SIDECAR_SUFFIXES) {
           const sc = full.replace(/\.md$/i, suf);
-          if (existsSync(sc)) { try { rmSync(sc, { force: true }); } catch {} }
+          if (existsSync(sc)) { try { rmSync(sc, { force: true, maxRetries: 5, retryDelay: 120 }); } catch {} }
         }
       }
     } catch (e) { return { error: e.message }; }

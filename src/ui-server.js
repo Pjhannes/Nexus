@@ -1,16 +1,17 @@
 // src/ui-server.js – Express Web-UI: Dateibaum, Drag&Drop, Markitdown-Konvertierung
 import express from 'express';
 import multer from 'multer';
-import { readdirSync, statSync, mkdirSync, renameSync, existsSync, writeFileSync, rmSync, unlinkSync } from 'fs';
-import { join, extname, basename, dirname, relative, resolve, sep } from 'path';
+import { readdirSync, statSync, mkdirSync, renameSync, existsSync, writeFileSync, unlinkSync, copyFileSync, chmodSync } from 'fs';
+import { join, extname, basename, dirname, relative, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, spawnSync } from 'child_process';
 import { tmpdir } from 'os';
 import { readFileSync } from 'fs';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createServer } from 'node:http';
 import { buildIndexer } from './indexer.js';
-import { makeTools, SIDECAR_SUFFIXES } from './tools.js';
-import { loadConfig, resolveDbPath, dataPath, CONFIG_PATH } from './paths.js';
+import { makeTools, SIDECAR_SUFFIXES, cleanupNexusTmp } from './tools.js';
+import { loadConfig, resolveDbPath, dataPath, CONFIG_PATH, safeFull, writeConfigAtomic } from './paths.js';
 // R26: Lernmodus – Karteikarten-Sidecars, Review-Log und Faecher liegen im Vault,
 // die Auswertung (Faelligkeit, Pruefungs-Planung) ist pure Logik in lernen.js.
 import {
@@ -44,6 +45,10 @@ const toolsMap = {};
 for (const v of cfg.vaults) {
   try {
     mkdirSync(v.path, { recursive: true });
+    // R27a: Reste abgebrochener atomarer Writes (<datei>.nexustmp) wegraeumen, bevor
+    // der Index laeuft – sonst stehen sie ewig als unsichtbare Leichen im Vault.
+    const tmpRest = cleanupNexusTmp(v.path, cfg.ignore ?? []);
+    if (tmpRest) console.log(`[Nexus] Vault "${v.name}": ${tmpRest} .nexustmp-Rest(e) entfernt`);
     const idx = buildIndexer(v.path, resolveDbPath(v), cfg.ignore ?? []);
     idx.reindex();
     indexers[v.name] = idx;
@@ -62,7 +67,75 @@ function getVault(name) {
 
 // ── Express ───────────────────────────────────────────────────────────────────
 const app = express();
-app.use(express.json());
+// R27a: 2 MB statt der 100-kB-Voreinstellung – ein Kartensatz mit 300 Karten samt
+// Bild-Regionen liegt darueber und scheiterte vorher still mit 413.
+app.use(express.json({ limit: '2mb' }));
+
+const WEB = process.env.NEXUS_WEB === '1';
+
+// ── R27a: Start-Token fuer die UI-API ─────────────────────────────────────────
+// Der Server lauscht zwar nur noch auf Loopback (siehe app.listen unten), aber
+// jeder lokale Prozess/Browser-Tab koennte die API trotzdem ansprechen. Deshalb:
+// pro Start ein Zufalls-Token (32 Byte hex). Es liegt in <DATA_DIR>/.nexus/ui-token
+// (nur Besitzer lesbar) – die Tauri-Shell liest es dort und haengt es als ?t=…
+// an die Fenster-URL; der Server setzt daraus ein HttpOnly-Cookie und leitet auf
+// die URL ohne Query um. Danach prueft eine Middleware vor /api/*: Cookie ODER
+// Header X-Nexus-Token (fuer Skripte/Tests). Ausnahmen: GET /api/version (Anzeige
+// im Wizard/Hilfe), /api/events nur per Cookie (EventSource kann keine Header).
+// Im Web-Betrieb (NEXUS_WEB=1) ist das Token AUS – dort authentifiziert
+// Authelia/Caddy vor dem Container, und lernen.html hat keinen ?t=-Weg.
+// NEXUS_UI_TOKEN (Env) ueberschreibt das Zufalls-Token – fuer Tests und Dev.
+const UI_TOKEN = WEB ? null : (
+  /^[0-9a-f]{16,128}$/i.test(process.env.NEXUS_UI_TOKEN || '') ? process.env.NEXUS_UI_TOKEN : randomBytes(32).toString('hex')
+);
+const UI_TOKEN_FILE = dataPath('.nexus', 'ui-token');
+const UI_COOKIE = 'nexus_ui';
+if (UI_TOKEN) {
+  try {
+    mkdirSync(dataPath('.nexus'), { recursive: true });
+    writeFileSync(UI_TOKEN_FILE, UI_TOKEN, { encoding: 'utf8', mode: 0o600 });
+    try { chmodSync(UI_TOKEN_FILE, 0o600); } catch {}
+  } catch (e) { console.error(`[Nexus] ui-token nicht schreibbar (${UI_TOKEN_FILE}): ${e.message}`); }
+}
+function tokenOk(given) {
+  if (!UI_TOKEN || typeof given !== 'string' || given.length !== UI_TOKEN.length) return false;
+  return timingSafeEqual(Buffer.from(given, 'utf8'), Buffer.from(UI_TOKEN, 'utf8'));
+}
+function cookieValue(req, name) {
+  const raw = req.headers.cookie;
+  if (!raw) return null;
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i < 0) continue;
+    if (part.slice(0, i).trim() === name) { try { return decodeURIComponent(part.slice(i + 1).trim()); } catch { return null; } }
+  }
+  return null;
+}
+function tokenUrl(base, token) {
+  if (!token) return base;
+  return base + (base.includes('?') ? '&' : '?') + 't=' + encodeURIComponent(token);
+}
+if (UI_TOKEN) {
+  // 1) ?t=<token> auf einer Seiten-URL -> Cookie setzen, ohne Query weiterleiten.
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || typeof req.query.t !== 'string' || req.path.startsWith('/api/')) return next();
+    if (tokenOk(req.query.t)) {
+      res.setHeader('Set-Cookie', `${UI_COOKIE}=${UI_TOKEN}; Path=/; HttpOnly; SameSite=Strict`);
+    } else {
+      console.error('[Nexus] ?t= mit falschem Token – kein Cookie gesetzt');
+    }
+    const u = new URL(req.originalUrl, 'http://x');
+    u.searchParams.delete('t');
+    res.redirect(302, u.pathname + u.search);
+  });
+  // 2) /api/* nur mit gueltigem Cookie oder Header.
+  app.use('/api', (req, res, next) => {
+    if (req.method === 'GET' && (req.path === '/version' || req.path === '/version/')) return next();
+    if (tokenOk(cookieValue(req, UI_COOKIE))) return next();
+    if (req.path !== '/events' && tokenOk(req.headers['x-nexus-token'])) return next();
+    res.status(401).json({ error: 'Nicht autorisiert: UI-Token fehlt oder ist ungueltig (Nexus-App neu starten).' });
+  });
+}
 
 // ── Web-Betrieb (Container hinter Reverse-Proxy): NEXUS_WEB=1 ────────────────
 // Auf dem Heimserver laeuft derselbe Server, aber ohne Desktop drumherum. Routen,
@@ -73,11 +146,11 @@ const WEB_GESPERRT = new Set([
   '/api/open-external',      // startet das Standardprogramm des SERVERS
   '/api/open-external-url',
   '/api/connect-claude',     // schreibt Claude-Desktop-Konfiguration des SERVERS
-  '/api/claude-usage',       // Session-Key im Query-String
-  '/api/claude-orgs',
+  '/api/claude-usage',       // Claude-Session-Key liegt auf dem Desktop, nicht im Container
+  '/api/claude-orgs', '/api/claude-auth',
   '/api/vaults/create', '/api/vaults/remove', '/api/vaults/active',
 ]);
-if (process.env.NEXUS_WEB === '1') {
+if (WEB) {
   app.use((req, res, next) => {
     if (WEB_GESPERRT.has(req.path) || (req.method === 'POST' && req.path === '/api/settings/vaultsRoot')) {
       return res.status(403).json({ error: 'Im Web-Betrieb deaktiviert (NEXUS_WEB=1).' });
@@ -181,8 +254,10 @@ app.get('/api/vaults', (_req, res) => {
 });
 
 // ── Vault-Management (anlegen / entfernen / aktiv) ─────────────────────────────
+// R27a: atomar (tmp + rename) – ein Absturz mitten im Schreiben laesst nie eine
+// halbe nexus.config.json zurueck, aus der der naechste Start nicht mehr hochkommt.
 function saveConfig() {
-  writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8');
+  writeConfigAtomic(CONFIG_PATH, cfg);
 }
 function safeVaultName(n) {
   return (typeof n === 'string' && /^[^\\/:*?"<>|]+$/.test(n.trim()) && n.trim().length) ? n.trim() : null;
@@ -604,25 +679,44 @@ if (process.env.NEXUS_SHELL === 'tauri' && !DEV) {
 // ── Drag & Drop Upload ────────────────────────────────────────────────────────
 const UPLOAD_TMP = dataPath('.nexus', 'tmp');
 mkdirSync(UPLOAD_TMP, { recursive: true });
-const upload = multer({ dest: UPLOAD_TMP });
+// R27a: harte Obergrenzen (200 MB je Datei, 50 Dateien je Request) – multer wirft
+// dann einen MulterError, den der Fehler-Handler unten als 413 beantwortet.
+const UPLOAD_MAX_BYTES = 200 * 1024 * 1024;
+const UPLOAD_MAX_FILES = 50;
+const upload = multer({ dest: UPLOAD_TMP, limits: { fileSize: UPLOAD_MAX_BYTES, files: UPLOAD_MAX_FILES } });
+
+// rename ueber Laufwerks-/Mount-Grenzen (EXDEV: Upload-Temp in %APPDATA%, Vault auf D:)
+// faellt auf copy + unlink zurueck.
+function moveFileSync(from, to) {
+  try { renameSync(from, to); }
+  catch (e) {
+    if (e.code !== 'EXDEV') throw e;
+    copyFileSync(from, to);
+    unlinkSync(from);
+  }
+}
 
 app.post('/api/upload', upload.array('files'), (req, res) => {
+  const cleanup = () => { for (const f of req.files ?? []) { try { unlinkSync(f.path); } catch {} } };
   try {
     const { vault, indexer } = getVault(req.body.vault);
-    const targetDir = req.body.targetPath
-      ? join(vault.path, req.body.targetPath)
-      : vault.path;
+    // R27a: targetPath geht durch safeFull – vorher konnte ../ aus dem Vault fuehren.
+    const targetDir = safeFull(vault.path, req.body.targetPath || '');
+    if (!targetDir) { cleanup(); return res.status(400).json({ error: 'Zielordner ausserhalb des Vaults' }); }
     mkdirSync(targetDir, { recursive: true });
 
     const moved = [];
     for (const f of req.files ?? []) {
-      const dest = join(targetDir, f.originalname);
-      renameSync(f.path, dest);
+      // Nur der Dateiname zaehlt – Pfadanteile im Upload-Namen (a/../b) werden verworfen.
+      const name = basename(String(f.originalname || '').replace(/\\/g, '/'));
+      const dest = name ? safeFull(targetDir, name) : null;
+      if (!dest || dest === targetDir) { try { unlinkSync(f.path); } catch {} continue; }
+      moveFileSync(f.path, dest);
       if (extname(dest).toLowerCase() === '.md') indexer.indexFile(dest);
-      moved.push({ name: f.originalname, path: relative(vault.path, dest).replace(/\\/g, '/') });
+      moved.push({ name, path: relative(vault.path, dest).replace(/\\/g, '/') });
     }
     res.json({ ok: true, files: moved });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { cleanup(); res.status(500).json({ error: e.message }); }
 });
 
 // ── Python/markitdown-Interpreter robust aufloesen (R16) ───────────────────────
@@ -658,7 +752,10 @@ app.post('/api/convert/markitdown', (req, res) => {
   let vaultObj;
   try { vaultObj = getVault(vaultName).vault; } catch (e) { return res.status(404).json({ error: e.message }); }
 
-  const fullPath = join(vaultObj.path, filePath);
+  // R27a: safeFull statt join – vorher liess sich per ../ jede Datei des Rechners
+  // an markitdown verfuettern und das Ergebnis daneben ablegen.
+  const fullPath = safeFull(vaultObj.path, filePath);
+  if (!fullPath || fullPath === resolve(vaultObj.path)) return res.status(400).json({ error: 'Pfad ausserhalb des Vaults' });
   if (!existsSync(fullPath)) return res.status(404).json({ error: 'Datei nicht gefunden' });
 
   const outPath = fullPath.replace(/\.[^.]+$/, '.md');
@@ -671,10 +768,14 @@ app.post('/api/convert/markitdown', (req, res) => {
   const proc = spawn(py, ['-m', 'markitdown', fullPath, '-o', outPath], { windowsHide: true });
 
   let stderr = '', replied = false;
-  const reply = (status, body) => { if (replied) return; replied = true; res.status(status).json(body); };
+  const reply = (status, body) => { if (replied) return; replied = true; clearTimeout(timer); res.status(status).json(body); };
+  // 25-s-Deckel wie /api/preview/office: ein haengender Konverter blockiert sonst
+  // die Anfrage endlos (und die UI zeigt ewig den Spinner).
+  const timer = setTimeout(() => { try { proc.kill(); } catch {} reply(504, { error: 'Zeitueberschreitung bei der Konvertierung' }); }, 25_000);
   proc.stderr.on('data', d => stderr += d.toString());
   proc.on('error', e => reply(500, { error: `markitdown nicht gestartet: ${e.message}` }));
   proc.on('close', code => {
+    if (replied) return;
     if (code !== 0) return reply(500, { error: `markitdown Fehler (code ${code}): ${stderr}` });
     const relOut = relative(vaultObj.path, outPath).replace(/\\/g, '/');
     // Index neue .md-Datei
@@ -689,36 +790,38 @@ app.post('/api/save', (req, res) => {
     const { vault: vaultName, path: relPath, content, create } = req.body || {};
     if (typeof relPath !== 'string' || !relPath.length) return res.status(400).json({ error: 'path fehlt' });
     if (typeof content !== 'string') return res.status(400).json({ error: 'content fehlt' });
-    const { vault, indexer } = getVault(vaultName);
-    const root = resolve(vault.path);
-    const full = resolve(vault.path, relPath);
-    if (full !== root && !full.startsWith(root + sep)) return res.status(400).json({ error: 'Pfad ausserhalb des Vaults' });
+    const { vault, tools } = getVault(vaultName);
+    const full = safeFull(vault.path, relPath);
+    if (!full || full === resolve(vault.path)) return res.status(400).json({ error: 'Pfad ausserhalb des Vaults' });
     const existed = existsSync(full);
     if (!existed && !create) return res.status(404).json({ error: 'Datei existiert nicht (create=false)' });
-    mkdirSync(dirname(full), { recursive: true });
-    writeFileSync(full, content, 'utf8');
-    if (extname(full).toLowerCase() === '.md') indexer.indexFile(full);
-    res.json({ ok: true, path: relPath.replace(/\\/g, '/'), created: !existed });
+    // R27a: derselbe gehaertete Schreibpfad wie das MCP-Tool write_note – atomar
+    // (tmp + rename) mit vollem Read-Back statt nacktem writeFileSync. writeNote prueft
+    // die Existenz ueber den Index; fuer Nicht-Markdown (.txt/.json) gilt die Datei
+    // auf Platte als Existenzbeweis, deshalb create: existed || create.
+    const r = tools.writeNote({ path: relPath.replace(/\\/g, '/'), content, create: existed || !!create });
+    if (r.error) return res.status(500).json({ error: r.error });
+    res.json({ ok: true, path: relPath.replace(/\\/g, '/'), created: !existed, bytes: r.bytes });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── Datei lesen (fuer Preview) ────────────────────────────────────────────────
-function safeFull(vaultPath, relPath) {
-  const root = resolve(vaultPath);
-  const full = resolve(vaultPath, relPath || '');
-  if (full !== root && !full.startsWith(root + sep)) return null;
-  return full;
+// ── Ordner/Datei-Operationen ──────────────────────────────────────────────────
+// R27a: nur noch Duennschicht ueber tools.createFolder/move/delete – Pfadpruefung,
+// Sidecar-Mitnahme und Reindex leben an EINER Stelle (tools.js). Die HTTP-Codes
+// bleiben wie vorher: 400 ungueltig, 404 nicht gefunden, 409 existiert bereits.
+function toolStatus(err) {
+  if (/nicht gefunden/i.test(err)) return 404;
+  if (/existiert bereits/i.test(err)) return 409;
+  return 400;
 }
 
 app.post('/api/mkdir', (req, res) => {
   try {
     const { vault: vaultName, path: relPath } = req.body || {};
     if (typeof relPath !== 'string' || !relPath.trim()) return res.status(400).json({ error: 'path fehlt' });
-    const { vault } = getVault(vaultName);
-    const full = safeFull(vault.path, relPath);
-    if (!full) return res.status(400).json({ error: 'Pfad ausserhalb des Vaults' });
-    if (existsSync(full)) return res.status(409).json({ error: 'Existiert bereits' });
-    mkdirSync(full, { recursive: true });
+    const { tools } = getVault(vaultName);
+    const r = tools.createFolder({ path: relPath });
+    if (r.error) return res.status(toolStatus(r.error)).json({ error: r.error });
     res.json({ ok: true, path: relPath.replace(/\\/g, '/') });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -728,27 +831,10 @@ app.post('/api/rename', (req, res) => {
     const { vault: vaultName, oldPath, newPath } = req.body || {};
     if (typeof oldPath !== 'string' || typeof newPath !== 'string' || !oldPath || !newPath)
       return res.status(400).json({ error: 'oldPath/newPath fehlt' });
-    const { vault, tools } = getVault(vaultName);
-    const from = safeFull(vault.path, oldPath);
-    const to   = safeFull(vault.path, newPath);
-    if (!from || !to) return res.status(400).json({ error: 'Pfad ausserhalb des Vaults' });
-    if (from === resolve(vault.path)) return res.status(400).json({ error: 'Ungueltiger Pfad' });
-    if (!existsSync(from)) return res.status(404).json({ error: 'Quelle nicht gefunden' });
-    if (existsSync(to)) return res.status(409).json({ error: 'Ziel existiert bereits' });
-    mkdirSync(dirname(to), { recursive: true });
-    renameSync(from, to);
-    // R24/R26: Sidecars der Notiz mit umbenennen (im Baum unsichtbar). Der gestempelte
-    // Hash haengt am Inhalt, nicht am Pfad – bleibt also gueltig. Der Lernstand haengt
-    // an den Karten-IDs, nicht am Pfad – bleibt ebenfalls unberuehrt.
-    if (/\.md$/i.test(from) && /\.md$/i.test(to)) {
-      for (const suf of SIDECAR_SUFFIXES) {
-        const scFrom = from.replace(/\.md$/i, suf);
-        const scTo   = to.replace(/\.md$/i, suf);
-        if (existsSync(scFrom) && !existsSync(scTo)) { try { renameSync(scFrom, scTo); } catch {} }
-      }
-    }
-    const result = tools.reindex();
-    res.json({ ok: true, oldPath: oldPath.replace(/\\/g, '/'), newPath: newPath.replace(/\\/g, '/'), indexed: result.indexed });
+    const { tools } = getVault(vaultName);
+    const r = tools.move({ from: oldPath, to: newPath });
+    if (r.error) return res.status(toolStatus(r.error)).json({ error: r.error });
+    res.json({ ok: true, oldPath: oldPath.replace(/\\/g, '/'), newPath: newPath.replace(/\\/g, '/'), indexed: r.indexed });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -756,22 +842,10 @@ app.post('/api/delete', (req, res) => {
   try {
     const { vault: vaultName, path: relPath } = req.body || {};
     if (typeof relPath !== 'string' || !relPath) return res.status(400).json({ error: 'path fehlt' });
-    const { vault, tools } = getVault(vaultName);
-    const full = safeFull(vault.path, relPath);
-    if (!full || full === resolve(vault.path)) return res.status(400).json({ error: 'Ungueltiger Pfad' });
-    if (!existsSync(full)) return res.status(404).json({ error: 'Nicht gefunden' });
-    // maxRetries/retryDelay faengt kurzzeitige Windows-Locks (EPERM/EBUSY) ab,
-    // z.B. wenn ein Datei-Watcher den Ordner gerade noch losgelassen hat.
-    rmSync(full, { recursive: true, force: true, maxRetries: 5, retryDelay: 120 });
-    // R24/R26: Sidecars der geloeschten Notiz mit entfernen (unsichtbar im Baum).
-    if (/\.md$/i.test(full)) {
-      for (const suf of SIDECAR_SUFFIXES) {
-        const sc = full.replace(/\.md$/i, suf);
-        if (existsSync(sc)) { try { rmSync(sc, { force: true, maxRetries: 5, retryDelay: 120 }); } catch {} }
-      }
-    }
-    const result = tools.reindex();
-    res.json({ ok: true, path: relPath.replace(/\\/g, '/'), indexed: result.indexed });
+    const { tools } = getVault(vaultName);
+    const r = tools.delete({ path: relPath });
+    if (r.error) return res.status(toolStatus(r.error)).json({ error: r.error });
+    res.json({ ok: true, path: relPath.replace(/\\/g, '/'), indexed: r.indexed });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -809,8 +883,16 @@ app.get('/api/file', (req, res) => {
     // UND beantwortet Range-Requests mit 206. Chromiums PDF-Viewer (PDFium) und die nativen
     // <audio>/<video>-Tags fordern Range/Content-Length an -> sonst "Fehler beim Laden
     // des PDF-Dokuments" bzw. kein Seeking bei Medien.
-    res.type(mimeForExt(extname(full).toLowerCase()));
+    const ext = extname(full).toLowerCase();
+    res.type(mimeForExt(ext));
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(basename(full))}"`);
+    // R27a: Vault-HTML/SVG darf nie auf der App-Origin laufen. Die Vorschau in
+    // index.html laedt HTML per fetch() in ein sandboxed <iframe srcdoc> (eigene,
+    // opake Origin) – dort greift dieser Header nicht. Er sichert den ANDEREN Weg:
+    // wird die Datei direkt als Dokument geoeffnet (Link, <iframe src>, <object>),
+    // sperrt CSP `sandbox` Skripte, localStorage und Cookies der App-Origin.
+    // PDF/Bilder unveraendert (PDF.js und <img> brauchen keine Sandbox).
+    if (ext === '.html' || ext === '.htm' || ext === '.svg') res.setHeader('Content-Security-Policy', 'sandbox');
     res.sendFile(full, err => { if (err && !res.headersSent) res.status(err.statusCode || 500).end(); });
   } catch (e) { if (!res.headersSent) res.status(500).send(e.message); }
 });
@@ -893,36 +975,74 @@ app.post('/api/preview/office', (req, res) => {
 });
 
 // ── R9: Claude Usage Proxy ───────────────────────────────────────────────────
-app.get('/api/claude-usage', async (req, res) => {
-  const { sessionKey, orgId } = req.query;
-  if (!sessionKey || !orgId) return res.status(400).json({ error: 'Fehlende Parameter: sessionKey, orgId' });
+// R27a: Der Session-Key wandert NICHT mehr als URL-Query durch Logs/History und
+// liegt nicht mehr im localStorage der UI (dort konnte jede eingebettete HTML-
+// Datei ihn lesen). Die UI schickt ihn einmal per POST /api/claude-auth, der
+// Server verwahrt ihn in <DATA_DIR>/.nexus/claude-auth.json (nur Besitzer lesbar)
+// und benutzt ihn serverseitig. GET liefert nur "konfiguriert ja/nein" + Org-ID.
+const CLAUDE_AUTH_FILE = dataPath('.nexus', 'claude-auth.json');
+function readClaudeAuth() {
+  try {
+    const a = JSON.parse(readFileSync(CLAUDE_AUTH_FILE, 'utf8'));
+    return (a && typeof a.sessionKey === 'string' && a.sessionKey) ? a : null;
+  } catch { return null; }
+}
+function writeClaudeAuth(a) {
+  mkdirSync(dataPath('.nexus'), { recursive: true });
+  const tmp = CLAUDE_AUTH_FILE + '.nexustmp';
+  writeFileSync(tmp, JSON.stringify(a, null, 2), { encoding: 'utf8', mode: 0o600 });
+  renameSync(tmp, CLAUDE_AUTH_FILE);
+  try { chmodSync(CLAUDE_AUTH_FILE, 0o600); } catch {}
+}
+const CLAUDE_HEADERS = (sessionKey) => ({
+  'Cookie': `sessionKey=${sessionKey}`,
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'application/json',
+  'Referer': 'https://claude.ai/',
+});
+
+app.get('/api/claude-auth', (_req, res) => {
+  const a = readClaudeAuth();
+  res.json({ configured: !!a, orgId: a?.orgId ?? null });
+});
+app.post('/api/claude-auth', (req, res) => {
+  try {
+    const { sessionKey, orgId } = req.body || {};
+    const prev = readClaudeAuth();
+    // Leerer Key + vorhandener Eintrag: nur die Org-ID aktualisieren.
+    const key = (typeof sessionKey === 'string' && sessionKey.trim()) ? sessionKey.trim() : prev?.sessionKey;
+    if (!key) return res.status(400).json({ error: 'sessionKey fehlt' });
+    const org = (typeof orgId === 'string' && orgId.trim()) ? orgId.trim() : (prev?.orgId ?? null);
+    if (!org) return res.status(400).json({ error: 'orgId fehlt' });
+    writeClaudeAuth({ sessionKey: key, orgId: org, updated: new Date().toISOString() });
+    res.json({ ok: true, configured: true, orgId: org });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/claude-auth', (_req, res) => {
+  try { if (existsSync(CLAUDE_AUTH_FILE)) unlinkSync(CLAUDE_AUTH_FILE); res.json({ ok: true, configured: false }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/claude-usage', async (_req, res) => {
+  const a = readClaudeAuth();
+  if (!a || !a.orgId) return res.status(400).json({ error: 'Claude-Zugang nicht konfiguriert (Session-Key + Org-ID im Usage-Widget eintragen)' });
   try {
     const resp = await fetch(
-      `https://claude.ai/api/organizations/${encodeURIComponent(orgId)}/usage`,
-      { headers: {
-          'Cookie': `sessionKey=${sessionKey}`,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'application/json',
-          'Referer': 'https://claude.ai/'
-      }}
+      `https://claude.ai/api/organizations/${encodeURIComponent(a.orgId)}/usage`,
+      { headers: CLAUDE_HEADERS(a.sessionKey) }
     );
     if (!resp.ok) return res.status(resp.status).json({ error: `HTTP ${resp.status}` });
     res.json(await resp.json());
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/claude-orgs', async (req, res) => {
-  const { sessionKey } = req.query;
-  if (!sessionKey) return res.status(400).json({ error: 'Fehlende Parameter: sessionKey' });
+// Org-Liste zur Auto-Erkennung. Der Key kommt im POST-Body (frisch eingetippt,
+// noch nicht gespeichert) oder – ohne Body – aus der Server-Ablage.
+app.post('/api/claude-orgs', async (req, res) => {
+  const sessionKey = (typeof req.body?.sessionKey === 'string' && req.body.sessionKey.trim()) || readClaudeAuth()?.sessionKey;
+  if (!sessionKey) return res.status(400).json({ error: 'sessionKey fehlt' });
   try {
-    const resp = await fetch('https://claude.ai/api/organizations', {
-      headers: {
-        'Cookie': `sessionKey=${sessionKey}`,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-        'Referer': 'https://claude.ai/'
-      }
-    });
+    const resp = await fetch('https://claude.ai/api/organizations', { headers: CLAUDE_HEADERS(sessionKey) });
     if (!resp.ok) return res.status(resp.status).json({ error: `HTTP ${resp.status}` });
     const data = await resp.json();
     if (Array.isArray(data)) {
@@ -988,14 +1108,36 @@ setInterval(() => {
 // NEXUS_PORT (von der Tauri-Shell gesetzt: Release 3000, tauri dev 3002) hat Vorrang.
 // Standalone (npm run ui) faellt auf cfg.ui.port zurueck.
 const port = Number(process.env.NEXUS_PORT) || cfg.ui?.port || 3000;
-const httpServer = app.listen(port, () => {
-  console.log(`[Nexus UI] http://localhost:${port}`);
+
+// R27a: Fehler-Handler ganz am Ende – Body zu gross (express.json, 2 MB) und
+// multer-Limits (Dateigroesse/Anzahl) antworten als 413 mit JSON statt als
+// HTML-Fehlerseite; alles andere bleibt ein 500 mit Meldung.
+app.use((err, _req, res, next) => {
+  if (res.headersSent) return next(err);
+  if (err && (err.type === 'entity.too.large' || err.code === 'LIMIT_FILE_SIZE' || err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE')) {
+    return res.status(413).json({ error: `Anfrage zu gross: ${err.message}` });
+  }
+  if (err && err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Ungueltiges JSON im Request-Body' });
+  res.status(err?.status || 500).json({ error: err?.message || 'Interner Fehler' });
+});
+
+// R27a: Loopback-Default. Vorher lauschte der Server auf allen Interfaces – jeder im
+// selben WLAN (Uni, Zug) konnte lesen, schreiben, loeschen. Nur der Web-Betrieb
+// (NEXUS_WEB=1, Container hinter Authelia/Caddy) bindet 0.0.0.0; cfg.ui.host
+// ueberschreibt beides bewusst.
+const host = cfg.ui?.host ?? (WEB ? '0.0.0.0' : '127.0.0.1');
+const startUrl = tokenUrl(`http://127.0.0.1:${port}/`, UI_TOKEN);
+const httpServer = app.listen(port, host, () => {
+  console.log(`[Nexus UI] lauscht auf ${host}:${port} (${WEB ? 'Web-Betrieb, kein UI-Token' : 'nur lokal, UI-Token aktiv'})`);
+  // Token-URL nur ausserhalb der gepackten Shell zeigen (Dev-Konsole, npm run ui):
+  // die Shell liest das Token selbst aus <DATA_DIR>/.nexus/ui-token.
+  if (process.env.NEXUS_SHELL !== 'tauri') console.log(`[Nexus UI] ${WEB ? `http://127.0.0.1:${port}/` : startUrl}`);
   // autoOpen NUR im echten Standalone-Betrieb (npm run ui) einen Browser starten.
   // Unter der Tauri-Shell (NEXUS_SHELL=tauri) laedt bereits das App-Fenster diese
   // URL -> ein zusaetzlicher Browser-Tab waere ein doppeltes Fenster.
   if (cfg.ui?.autoOpen && process.env.NEXUS_SHELL !== 'tauri') {
     const opener = process.platform === 'win32' ? 'start' : 'open';
-    spawn(opener, [`http://localhost:${port}`], { shell: true, detached: true, windowsHide: true });
+    spawn(opener, [startUrl], { shell: true, detached: true, windowsHide: true });
   }
 });
 // Belegten Port sauber abfangen statt als "JavaScript error"-Dialog hochblubbern zu lassen.
@@ -1007,3 +1149,12 @@ httpServer.on('error', (err) => {
   }
   throw err;
 });
+// "localhost" loest je nach Resolver zuerst auf ::1 auf (Windows, neuere Node/Chromium).
+// Damit http://localhost:PORT (Fenster-URL der Shell, Lesezeichen) mit dem IPv4-Loopback-
+// Bind weiter geht, lauscht derselbe Express-Stack zusaetzlich auf ::1 – rein optional:
+// ohne IPv6 (EADDRNOTAVAIL/EAFNOSUPPORT) wird der Versuch still verworfen.
+if (host === '127.0.0.1') {
+  const v6 = createServer(app);
+  v6.on('error', () => { try { v6.close(); } catch {} });
+  try { v6.listen(port, '::1'); } catch { /* kein IPv6 */ }
+}

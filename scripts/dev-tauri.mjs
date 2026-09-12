@@ -7,4 +7,8 @@ process.env.NEXUS_PORT = process.env.NEXUS_PORT || '3002';
 // Button schreibt dadurch den Claude-Key "nexus-dev" statt den Prod-Key
 // "nexus" zu ueberschreiben (src/ui-server.js liest NEXUS_DEV fuer mcpKey).
 process.env.NEXUS_DEV = process.env.NEXUS_DEV || '1';
+// R27a: der UI-Server lauscht nur noch auf 127.0.0.1 und verlangt fuer /api/* ein
+// Start-Token. Er schreibt es nach <Repo>/.nexus/ui-token (die Dev-Shell liest es
+// dort und haengt ?t=... an die Fenster-URL) und druckt die fertige Start-URL in
+// diese Konsole – fuer einen normalen Browser-Tab einfach diese URL oeffnen.
 await import('../src/ui-server.js');

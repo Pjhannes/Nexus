@@ -40,21 +40,25 @@ writeFileSync(join(scratch, 'nexus.config.json'), JSON.stringify({
 
 const base = `http://127.0.0.1:${PORT}`;
 const V = 'testvault';
-const get  = async (p) => (await fetch(base + p)).json();
+// R27a: /api/* verlangt das UI-Token (Cookie oder Header). Der Test setzt es per
+// NEXUS_UI_TOKEN und schickt es als Header – wie ein Skript/Tool es taete.
+const TOKEN = 'cd'.repeat(32);
+const H = { 'X-Nexus-Token': TOKEN };
+const get  = async (p) => (await fetch(base + p, { headers: H })).json();
 // Roh-Antwort inkl. Headern – fuer den Anki-Export (Textdatei, kein JSON)
 const getRaw = async (p) => {
-  const r = await fetch(base + p);
+  const r = await fetch(base + p, { headers: H });
   return { status: r.status, headers: Object.fromEntries(r.headers.entries()), body: await r.text() };
 };
 const post = async (p, body) => {
-  const r = await fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...H }, body: JSON.stringify(body) });
   return { status: r.status, json: await r.json() };
 };
 const heute = (() => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); })();
 const tagPlus = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 
 const srv = spawn(process.execPath, [UI_SERVER], {
-  env: { ...process.env, NEXUS_DATA_DIR: scratch, NEXUS_PORT: String(PORT), NEXUS_DEV: '', NEXUS_SHELL: '' },
+  env: { ...process.env, NEXUS_DATA_DIR: scratch, NEXUS_PORT: String(PORT), NEXUS_DEV: '', NEXUS_SHELL: '', NEXUS_WEB: '', NEXUS_UI_TOKEN: TOKEN },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let serverLog = '';
@@ -63,7 +67,7 @@ srv.stderr.on('data', d => { serverLog += d; });
 
 async function warten() {
   for (let i = 0; i < 100; i++) {
-    try { const r = await fetch(base + '/api/vaults'); if (r.ok) return true; } catch { /* noch nicht da */ }
+    try { const r = await fetch(base + '/api/vaults', { headers: H }); if (r.ok) return true; } catch { /* noch nicht da */ }
     await new Promise(r => setTimeout(r, 100));
   }
   return false;
@@ -181,8 +185,8 @@ try {
   writeFileSync(join(vaultDir, 'Uni', 'NHM', 'VL 01.md'),
     readFileSync(join(vaultDir, 'Uni', 'NHM', 'VL 01.md'), 'utf8') + '\nNachtrag.\n', 'utf8');
   ok('nach Notiz-Aenderung -> stale', (await get(`/api/karten?vault=${V}&path=${encodeURIComponent('Uni/NHM/VL 01.md')}`)).stale === true);
-  ok('Nicht-.md -> 400', (await fetch(`${base}/api/karten?vault=${V}&path=x.txt`)).status === 400);
-  ok('fehlende Notiz -> 404', (await fetch(`${base}/api/karten?vault=${V}&path=Gibts/Nicht.md`)).status === 404);
+  ok('Nicht-.md -> 400', (await fetch(`${base}/api/karten?vault=${V}&path=x.txt`, { headers: H })).status === 400);
+  ok('fehlende Notiz -> 404', (await fetch(`${base}/api/karten?vault=${V}&path=Gibts/Nicht.md`, { headers: H })).status === 404);
 
   console.log('\n── 8. Lernstand ueberlebt Regeneration + Umbenennen ──');
   const save2 = await post('/api/karten/save', {

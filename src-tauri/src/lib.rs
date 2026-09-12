@@ -200,6 +200,79 @@ fn wait_for_port(port: u16, timeout: Duration) -> Result<(), String> {
     Err(format!("Timeout: Port {port} nicht bereit"))
 }
 
+// ── R27a: UI-Token ────────────────────────────────────────────────────────────
+// Der Sidecar (src/ui-server.js) erzeugt pro Start ein Zufalls-Token und legt es
+// unter <DATA_DIR>/.nexus/ui-token ab; /api/* verlangt es als Cookie. Die Shell
+// haengt es einmalig als ?t=… an die Fenster-URL – der Server setzt daraus das
+// HttpOnly-Cookie und leitet auf die URL ohne Query um. Fehlt die Datei (z. B.
+// Web-Betrieb, alter Sidecar), bleibt die URL nackt – der Server meldet dann 401
+// statt still zu scheitern. Gelesen wird ERST nach ensure_server (Datei ist vor
+// dem listen() geschrieben), sonst stuende hier ein Token vom letzten Lauf.
+fn read_ui_token(data_dir: &Path) -> Option<String> {
+    let raw = std::fs::read_to_string(data_dir.join(".nexus").join("ui-token")).ok()?;
+    let t = raw.trim();
+    if t.len() >= 16 && t.chars().all(|c| c.is_ascii_hexdigit()) {
+        Some(t.to_string())
+    } else {
+        None
+    }
+}
+
+// Reine URL-Bildung, ohne App-Handle (testbar): Basis + Pfad + optional ?t=<token>.
+fn with_ui_token(base: &str, path: &str, token: Option<&str>) -> String {
+    let p = if path.starts_with('/') { path.to_string() } else { format!("/{path}") };
+    match token {
+        Some(t) if !t.is_empty() => format!("{base}{p}?t={t}"),
+        _ => format!("{base}{p}"),
+    }
+}
+
+fn ui_url(app: &AppHandle, path: &str) -> String {
+    let token = app
+        .try_state::<Shell>()
+        .and_then(|s| read_ui_token(&s.data_dir));
+    with_ui_token(&format!("http://localhost:{PORT}"), path, token.as_deref())
+}
+
+#[cfg(test)]
+mod ui_token_tests {
+    use super::{read_ui_token, with_ui_token};
+
+    #[test]
+    fn url_carries_token_as_query() {
+        assert_eq!(
+            with_ui_token("http://localhost:3000", "/", Some("abcd1234abcd1234")),
+            "http://localhost:3000/?t=abcd1234abcd1234"
+        );
+        assert_eq!(
+            with_ui_token("http://localhost:3000", "help.html", Some("ff")),
+            "http://localhost:3000/help.html?t=ff"
+        );
+    }
+
+    #[test]
+    fn url_without_token_stays_plain() {
+        assert_eq!(with_ui_token("http://localhost:3000", "/", None), "http://localhost:3000/");
+        assert_eq!(with_ui_token("http://localhost:3000", "/help.html", Some("")), "http://localhost:3000/help.html");
+    }
+
+    #[test]
+    fn token_file_is_validated() {
+        let dir = std::env::temp_dir().join(format!("nexus-ui-token-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(read_ui_token(&dir), None, "fehlende Datei -> None");
+        std::fs::create_dir_all(dir.join(".nexus")).unwrap();
+        let f = dir.join(".nexus").join("ui-token");
+        std::fs::write(&f, "0123456789abcdef0123456789abcdef\n").unwrap();
+        assert_eq!(read_ui_token(&dir).as_deref(), Some("0123456789abcdef0123456789abcdef"));
+        std::fs::write(&f, "nicht-hex!").unwrap();
+        assert_eq!(read_ui_token(&dir), None, "kein Hex -> None");
+        std::fs::write(&f, "abc").unwrap();
+        assert_eq!(read_ui_token(&dir), None, "zu kurz -> None");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
 // Startet den UI-Server, falls er nicht schon laeuft. Debug: beforeDevCommand
 // hat ihn gestartet -> nur warten. Release: Node-Sidecar spawnen.
 fn ensure_server(app: &AppHandle) -> Result<(), String> {
@@ -341,7 +414,7 @@ fn create_main_window(app: &AppHandle) -> tauri::Result<()> {
     // Frisches Fenster -> etwaige Reste des Dirty-Schutz-Zustands verwerfen
     // (z. B. macOS-Reopen nach bestaetigtem Close).
     *app.state::<Shell>().close.lock().unwrap() = CloseState::default();
-    let url: tauri::Url = format!("http://localhost:{PORT}").parse().unwrap();
+    let url: tauri::Url = ui_url(app, "/").parse().unwrap();
     WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
         .title(APP_NAME)
         .inner_size(1280.0, 860.0)
@@ -393,7 +466,7 @@ fn create_help_window(app: &AppHandle) -> tauri::Result<()> {
     // Laeuft der Server (noch) nicht, faellt es wie Electron auf die lokale
     // Datei zurueck (ungethemt, aber funktionsfaehig).
     let url = if port_open(PORT) {
-        let u: tauri::Url = format!("http://localhost:{PORT}/help.html").parse().unwrap();
+        let u: tauri::Url = ui_url(app, "/help.html").parse().unwrap();
         WebviewUrl::External(u)
     } else {
         WebviewUrl::App("help.html".into())
