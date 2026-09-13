@@ -57,7 +57,7 @@
   <div class="card">
     <p>Trägt Nexus als Wissensquelle (MCP-Server) in Claude Desktop ein. Danach kann Claude
        deine Notizen durchsuchen, lesen und bearbeiten.</p>
-    <button class="primary" onclick="connect()">Jetzt mit Claude Desktop verbinden</button>
+    <button class="primary" id="connectBtn">Jetzt mit Claude Desktop verbinden</button>
     <div class="status" id="connStatus"></div>
     <p class="note">Nach dem Verbinden <b>Claude Desktop komplett beenden und neu starten</b>,
        damit die Nexus-Tools geladen werden.</p>
@@ -68,7 +68,7 @@
     <p>Das Verbrauchs-Widget unten rechts zeigt deine 5-Stunden- und Wochen-Auslastung.
        Dafür braucht Nexus einmalig deinen <code>sessionKey</code> aus claude.ai.</p>
     <ol>
-      <li>Öffne <span class="link" onclick="open1()">claude.ai</span> im Browser und melde dich an. <span>(falls noch nicht geschehen)</span></li>
+      <li>Öffne <span class="link" id="openClaudeLink">claude.ai</span> im Browser und melde dich an. <span>(falls noch nicht geschehen)</span></li>
       <li>Drücke <kbd>F12</kbd> → Tab <b>„Application"</b> (Chrome/Edge) bzw. <b>„Speicher"</b> (Firefox).</li>
       <li>Links: <b>Cookies</b> → <code>https://claude.ai</code> auswählen.</li>
       <li>Eintrag <code>sessionKey</code> suchen, den <b>Wert</b> kopieren <span>(beginnt mit <code>sk-ant-sid01-…</code>)</span>.</li>
@@ -81,7 +81,7 @@
   </div>
 
   <div class="done">
-    <button class="primary" onclick="window.close()">Schließen</button>
+    <button class="primary" id="closeBtn">Schließen</button>
   </div>
 
 <script>
@@ -127,6 +127,10 @@
   function open1(){
     fetch('/api/open-external-url', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ url: 'https://claude.ai' }) });
   }
+  // R27c: keine Inline-onclick mehr (CSP script-src ohne 'unsafe-inline', s. src/csp.js).
+  document.getElementById('connectBtn').addEventListener('click', connect);
+  document.getElementById('openClaudeLink').addEventListener('click', open1);
+  document.getElementById('closeBtn').addEventListener('click', () => window.close());
 </script>
 </body>
 </html>

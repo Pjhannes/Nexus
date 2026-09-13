@@ -97,6 +97,30 @@ ok('Script-Tag entfernt', !/<script/i.test(evil));
 ok('Inline-Event-Handler entfernt', !/onclick/i.test(evil));
 ok('javascript:-URL neutralisiert', !/javascript:/i.test(evil) && evil.includes('href="#"'));
 
+// R27c: Sanitizer-Faelle. Unter Node gibt es kein DOM -> hier laeuft die Regex-Fallback-Stufe
+// (sanitizeRawHtmlFallback); der DOMPurify-Pfad wird im Browser gegen dieselben Eingaben geprueft.
+const x1 = renderMarkdown(['<div>', '<iframe srcdoc="<script>alert(1)</script>" src="x"></iframe>',
+  '<object data="x.swf"></object><embed src="x"><meta http-equiv="refresh" content="0"><base href="http://evil/">',
+  '<form action="http://evil"><input name="a"><button>b</button></form><link rel="stylesheet" href="x">', '</div>'].join('\n')).html;
+ok('R27c iframe + srcdoc entfernt', !/<iframe|srcdoc/i.test(x1) && !/alert\(1\)/.test(x1), x1);
+ok('R27c object/embed/meta/base/form/input/button/link entfernt', !/<(object|embed|meta|base|form|input|button|link)\b/i.test(x1), x1);
+ok('R27c div-Huelle bleibt', x1.includes('<div>') && x1.includes('</div>'));
+const x2 = renderMarkdown('<div><a href=javascript:alert(1)>u</a><a href="JaVaScRiPt:alert(2)">q</a><a href="&#106;avascript:alert(3)">e</a><a href="javascript&colon;alert(4)">c</a><a href="ja\tvascript:alert(5)">t</a></div>').html;
+ok('R27c ungequotetes javascript: neutralisiert', !/href=javascript/i.test(x2) && !/alert\(1\)"/.test(x2), x2);
+ok('R27c javascript: in jeder Schreibweise (Case, &#106;, &colon;, Tab) neutralisiert', !/javascript:/i.test(x2) && !/&#106;avascript/i.test(x2) && !/&colon;/i.test(x2) && (x2.match(/href="#"/g) || []).length === 5, x2);
+const x3 = renderMarkdown('<svg viewBox="0 0 10 10"><use href="data:image/svg+xml;base64,PHN2Zz48c2NyaXB0Pg==" xlink:href="#x"/><rect width="1" height="1"/></svg>').html;
+ok('R27c svg <use> entfernt, rect bleibt', !/<use\b/i.test(x3) && x3.includes('<rect'), x3);
+const x4 = renderMarkdown('<div><style>body{display:none}</style>sichtbar</div>').html;
+ok('R27c <style> samt Inhalt entfernt', !/<style|display:none/i.test(x4) && x4.includes('sichtbar'), x4);
+const x5 = renderMarkdown('<div><img src="x" onerror="alert(1)"><img src=x onerror=alert(2)><span onmouseover=\'alert(3)\'>s</span></div>').html;
+ok('R27c onerror/onmouseover (gequotet + ungequotet) entfernt', !/onerror|onmouseover|alert\(/i.test(x5) && (x5.match(/<img/g) || []).length === 2, x5);
+const x6 = renderMarkdown('<div><a href="data:text/html;base64,PHNjcmlwdD4=">d</a><img src="data:image/png;base64,iVBOR"></div>').html;
+ok('R27c data:text/html neutralisiert, data:image bleibt', !/data:text\/html/i.test(x6) && x6.includes('data:image/png;base64,iVBOR'), x6);
+const x7 = renderMarkdown('<iframe src="https://evil"></iframe>\n\nText').html;
+ok('R27c iframe ist kein Roh-HTML-Block mehr (wird escaped angezeigt)', x7.includes('&lt;iframe') && !/<iframe/i.test(x7), x7);
+const x8 = renderMarkdown('<div><a href="https://ok.example/a?b=1" title="t">ok</a><video src="v.mp4" controls></video><details><summary>s</summary>x</details></div>').html;
+ok('R27c erlaubtes HTML unveraendert (a/video/details)', x8.includes('href="https://ok.example/a?b=1"') && x8.includes('<video src="v.mp4" controls>') && x8.includes('<summary>s</summary>'), x8);
+
 const gluedHtml = renderMarkdown('Absatz direkt davor\n<svg viewBox="0 0 10 10"><rect/></svg>').html;
 ok('HTML-Block ohne Leerzeile trennt vom Absatz', gluedHtml.includes('<p>Absatz direkt davor</p>') && gluedHtml.includes('<svg viewBox="0 0 10 10">'));
 

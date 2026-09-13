@@ -14,3 +14,8 @@
 #
 # -text = Git fasst die Zeilenenden nie an, in keine Richtung.
 public/vendor/cm6/** -text
+
+# R27c: dieselbe Regel fuer die weiteren byte-identischen Tarball-Kopien (Pruefung: node scripts/fetch-vendor.mjs --verify)
+public/vendor/dompurify/** -text
+public/vendor/katex/** -text
+public/vendor/mermaid/** -text

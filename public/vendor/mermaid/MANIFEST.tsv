@@ -1,0 +1,7 @@
+# Nexus R27c - mermaid 11.17.2, lokal gevendort (kein Bundler, kein npm-Dependency)
+# Jede Datei ist eine unveraenderte Kopie aus dem npm-Tarball des Pakets.
+# Nachpruefen: node scripts/fetch-vendor.mjs --verify   (rechnet gegen die Registry)
+# paket	mermaid	version	11.17.2	lizenz	MIT	tarball_sha512	sha512-V6K3C8EBdEsPFZXSKMJe6ppQOENxuHARr9GvHX4hh47lAbhMRD9qf4oEK7LoaRQxULMa80/qt5gHO73aCleBBg==
+#
+datei	pfad_im_tarball	bytes	sha256
+mermaid.min.js	dist/mermaid.min.js	3572661	581ed7d74bd9048d0e3a91363927d72ef22942d7722546b27f7cc29e35390eb8

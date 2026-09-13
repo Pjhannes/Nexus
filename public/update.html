@@ -43,6 +43,7 @@
   button:hover{ border-color:var(--accent); background:#322d27 }
   button.primary{ background:linear-gradient(135deg,var(--accent),var(--accent2)); border:none; color:#221701; font-weight:700 }
   button.primary:hover{ filter:brightness(1.07) }
+.hide{display:none!important}
 </style>
 </head>
 <body>
@@ -65,7 +66,7 @@
     </div>
 
     <!-- Fortschritts-Ansicht -->
-    <div id="progressView" style="display:none">
+    <div id="progressView" class="hide">
       <div class="prog-label"><span id="progLabel">Wird heruntergeladen…</span><span id="progPct">0%</span></div>
       <div class="track"><div class="fill" id="progFill"></div></div>
     </div>
@@ -89,8 +90,8 @@
   let cancelIndex = -1;
 
   function showPrompt(d){
-    $('progressView').style.display = 'none';
-    $('promptView').style.display = '';
+    $('progressView').classList.add('hide');
+    $('promptView').classList.remove('hide');
     $('ttl').textContent = d.title || 'Nexus Update';
     $('msg').textContent = d.message || '';
     $('detail').textContent = d.detail || '';
@@ -108,8 +109,8 @@
   }
 
   function showProgress(d){
-    $('promptView').style.display = 'none';
-    $('progressView').style.display = '';
+    $('promptView').classList.add('hide');
+    $('progressView').classList.remove('hide');
     $('nav').innerHTML = '';
     cancelIndex = -1;
     $('ttl').textContent = 'Update wird geladen';

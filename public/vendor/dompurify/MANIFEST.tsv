@@ -1,0 +1,7 @@
+# Nexus R27c - dompurify 3.4.15, lokal gevendort (kein Bundler, kein npm-Dependency)
+# Jede Datei ist eine unveraenderte Kopie aus dem npm-Tarball des Pakets.
+# Nachpruefen: node scripts/fetch-vendor.mjs --verify   (rechnet gegen die Registry)
+# paket	dompurify	version	3.4.15	lizenz	(MPL-2.0 OR Apache-2.0)	tarball_sha512	sha512-EUBjM+B+lkDE41iE82DDSCfkoPGfXx8IxFxPMjNzm/Uk4xDet77rTN9wqlxlVg71kK7XGuUMv6wUxJUwwv+Xyw==
+#
+datei	pfad_im_tarball	bytes	sha256
+purify.min.js	dist/purify.min.js	29369	f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5

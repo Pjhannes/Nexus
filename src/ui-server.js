@@ -24,7 +24,8 @@ import {
 // Route funktioniert in-process unter Electron UND spaeter als eigenstaendiger
 // Tauri-Sidecar-Prozess (computeLaunchSpec() unten erkennt die Umgebung selbst).
 import { piperStatus, piperInstallVoice, piperDeleteVoice, piperSynth } from './piper.js';
-import { connectClaude, migrateClaudeEntryIfStale } from './claude-connect.js';
+import { connectClaude, migrateClaudeEntryIfStale, claudeEntryStatus } from './claude-connect.js';
+import { cspForFile } from './csp.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const cfg   = loadConfig();
@@ -154,6 +155,7 @@ const WEB_GESPERRT = new Set([
   '/api/open-external',      // startet das Standardprogramm des SERVERS
   '/api/open-external-url',
   '/api/connect-claude',     // schreibt Claude-Desktop-Konfiguration des SERVERS
+  '/api/connect-claude/status',
   '/api/claude-usage',       // Claude-Session-Key liegt auf dem Desktop, nicht im Container
   '/api/claude-orgs', '/api/claude-auth',
   '/api/vaults/create', '/api/vaults/remove', '/api/vaults/active',
@@ -175,6 +177,13 @@ app.use(express.static(join(__dir, '..', 'public'), {
     // .html und die geteilte Lern-Logik nie cachen – etag/lastModified sind aus, es gaebe
     // sonst gar keinen Validator und Handy/Desktop liefen auf alter Wertungslogik.
     if (path.endsWith('.html') || path.endsWith('lernen-kern.js')) res.setHeader('Cache-Control', 'no-store, must-revalidate');
+    // R27c: Content-Security-Policy fuer jede eigene HTML-Seite (script-src ohne 'unsafe-inline',
+    // Inline-Skripte per sha256-Hash; Details + Tauri-Gegenstueck in src/csp.js). Gilt im
+    // Desktop-Hauptfenster (laedt localhost) genauso wie im Browser- und Web-Betrieb (NEXUS_WEB=1).
+    if (path.endsWith('.html')) {
+      try { res.setHeader('Content-Security-Policy', cspForFile(path, p => readFileSync(p, 'utf8'), statSync(path).mtimeMs)); }
+      catch (e) { console.error('[Nexus] CSP-Header nicht gesetzt:', e.message); }
+    }
   }
 }));
 
@@ -667,6 +676,12 @@ app.post('/api/connect-claude', (_req, res) => {
   try {
     res.json(connectClaude({ launchSpec: computeLaunchSpec(), mcpKey: DEV ? 'nexus-dev' : 'nexus' }));
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// R27c (D1e): Nur-Lese-Status fuer die Statusleiste ("MCP bereit" haengt am echten Eintrag
+// in claude_desktop_config.json, statt statischer Text zu sein). Schreibt nichts.
+app.get('/api/connect-claude/status', (_req, res) => {
+  try { res.json(claudeEntryStatus({ mcpKey: DEV ? 'nexus-dev' : 'nexus' })); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Phase 3 – Auto-Migration beim Start unter der GEPACKTEN Tauri-Shell:

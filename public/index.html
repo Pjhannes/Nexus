@@ -28,6 +28,8 @@
 }}
 </script>
 <script src="/lernen-kern.js"></script>
+<!-- R27c: DOMPurify (public/vendor/dompurify, Allowlist-Sanitizer fuer Roh-HTML in Notizen + mammoth-Ausgabe) -->
+<script src="/vendor/dompurify/purify.min.js"></script>
 <style>
 :root {
   --bg:#07090f; --panel:rgba(255,255,255,.04); --panel2:rgba(255,255,255,.07);
@@ -53,6 +55,12 @@
   --sb-thumb-h:var(--dim);
 }
 *{margin:0;padding:0;box-sizing:border-box}
+/* R27c (D1a): sichtbarer Tastatur-Fokus nur bei Tastaturbedienung (:focus-visible); Maus bleibt ruhig.
+   CM6 zeichnet keinen Ring – der Editor hat seinen eigenen Cursor (&.cm-focused{outline:none}). */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cm-editor :focus-visible,.cm-editor:focus-visible,.cm-content:focus-visible{outline:none}
+/* R27c (D1b): Bewegungsreduktion – alle Transitions/Animationen aus (Such-Highlight/Vortrag-Dim hatten schon eigene Regeln). */
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition-duration:0s!important;transition-delay:0s!important;animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;scroll-behavior:auto!important}}
 html,body{height:100%;overflow:hidden}
 body{
   background:var(--app-bg);
@@ -497,6 +505,9 @@ canvas{display:block;width:100%;height:100%}
 body[data-layout="softdark"] .statusbar .ok{color:var(--accent)}
 body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box-shadow:0 0 5px var(--accent)}
 .statusbar .ml{margin-left:auto}
+/* R27c (D1e): Statusleiste zeigt den echten Zustand – .off = getrennt/nicht eingetragen */
+.statusbar #sb-watcher.off,.statusbar #sb-mcp.off .ok{color:var(--dim)}
+.statusbar #sb-mcp.off .dot-status{background:var(--dim);box-shadow:none}
 
 /* Command Palette */
 .overlay{position:fixed;inset:0;background:var(--scrim);backdrop-filter:blur(6px);display:none;align-items:flex-start;justify-content:center;padding-top:14vh;z-index:99}
@@ -551,8 +562,8 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 /* Toast + drop */
 #toast{position:fixed;bottom:36px;right:20px;padding:9px 16px;border-radius:8px;font-size:12.5px;box-shadow:0 4px 20px rgba(0,0,0,.6);display:none;max-width:320px;z-index:1000;background:var(--pop);border:1px solid var(--border)}
 #toast.show{display:block}
-#toast.error{background:#2d0f0f;border-color:rgba(239,68,68,.5)}
-#toast.success{background:#0b1f14;border-color:rgba(16,185,129,.4)}
+#toast.err{background:#2d0f0f;border-color:rgba(239,68,68,.5)}
+#toast.ok{background:#0b1f14;border-color:rgba(16,185,129,.4)}
 #drop-overlay{position:fixed;inset:0;background:var(--accent-04);border:2px dashed var(--accent);display:none;align-items:center;justify-content:center;font-size:22px;font-weight:600;color:var(--accent);pointer-events:none;z-index:100}
 #drop-overlay.active{display:flex}
 #upload-bar{height:2px;background:var(--accent);width:0%;transition:width .3s;position:fixed;top:0;left:0;z-index:200}
@@ -642,7 +653,7 @@ body[data-layout="softdark"] .statusbar .dot-status{background:var(--accent);box
 /* CM6 bringt sein restliches CSS selbst mit (style-mod injiziert es zur Laufzeit) ->
    es gibt bewusst KEINE gevendorte .css-Datei. CM5 lud dafuer codemirror.min.css vom CDN.
    Farben/Schrift kommen aus cm6Theme() (dort, weil CM6s eigene Regeln sonst gewinnen). */
-.ed-textarea{width:100%;height:100%;box-sizing:border-box;resize:none;background:transparent;color:var(--text);border:none;outline:none;padding:18px 22px;font-family:Consolas,'SF Mono',monospace;font-size:var(--editor-fs,13.5px);line-height:1.65;tab-size:2}
+.ed-textarea{width:100%;height:100%;box-sizing:border-box;resize:none;background:transparent;color:var(--text);border:none;outline:none;padding:18px 22px;font-family:Consolas,'SF Mono',monospace;font-size:var(--editor-fs,var(--reader-fs,13.5px));line-height:1.65;tab-size:2}
 .ed-preview-pane{flex:1;min-height:0;overflow:auto}
 .ed-preview-pane .note-content{padding:24px 40px 70px}
 .new-note-btn{float:right;font-size:10.5px;color:var(--accent);background:var(--accent-10);border:1px solid var(--accent-30);border-radius:99px;padding:1px 9px;cursor:pointer;transition:.15s}
@@ -833,10 +844,10 @@ body.row-resizing{cursor:row-resize;user-select:none}
   --app-bg:#e6dccb;--scrim:color-mix(in srgb,#2a2316 38%,transparent);
 }
 /* Creme: hartkodierte weisse Texte an das helle Theme anpassen */
-body[data-studio="cream"] h1.note-title{background:linear-gradient(90deg,var(--text),var(--accent-tx));-webkit-background-clip:text;background-clip:text}
-body[data-studio="cream"] .md-body strong{color:var(--text)}
-body[data-studio="cream"] .folder-label{color:var(--text)}
-body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05)}
+body[data-studio="cream"] h1.note-title,body[data-light] h1.note-title{background:linear-gradient(90deg,var(--text),var(--accent-tx));-webkit-background-clip:text;background-clip:text}
+body[data-studio="cream"] .md-body strong,body[data-light] .md-body strong{color:var(--text)}
+body[data-studio="cream"] .folder-label,body[data-light] .folder-label{color:var(--text)}
+body[data-studio="cream"] #outline-panel .ol-row:hover,body[data-light] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05)}
 /* Hell: schwächerer Panel-Schatten (auf hellem Grund wirkt der dunkle Schatten sonst zu hart) */
 .app[data-layout="softdark"][data-studio="cream"] .right-panel{box-shadow:0 6px 18px rgba(60,53,42,.18)}
 .app[data-layout="softdark"]{font-family:var(--app-font);background:var(--bg)}
@@ -913,7 +924,7 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
    ("cream") lagen die kraeftigen Farben bei 1.7–2.8 Kontrast und waren praktisch
    unlesbar. Alle uebrigen Themes der App sind dunkel, dort bleiben sie unveraendert. */
 :root{--lern-ok:#4caf82;--lern-bad:#e2726e;--lern-warn:#e0b070;--lern-neu:#7ec8e3}
-:root[data-studio="cream"]{--lern-ok:#176b47;--lern-bad:#9d2f2b;--lern-warn:#7a4f0c;--lern-neu:#175a77}
+:root[data-studio="cream"],:root[data-light]{--lern-ok:#176b47;--lern-bad:#9d2f2b;--lern-warn:#7a4f0c;--lern-neu:#175a77}
 #lern-toggle{-webkit-app-region:no-drag;background:var(--panel2);border:1px solid var(--border);color:var(--dim);border-radius:99px;padding:5px 13px;font-size:12.5px;cursor:pointer;transition:.18s;white-space:nowrap;flex-shrink:0}
 #lern-toggle:hover{border-color:var(--accent);color:var(--text);box-shadow:0 0 18px var(--accent-20)}
 .ln-ok{--ln-c:var(--lern-ok)}
@@ -1154,9 +1165,9 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
   <div class="cp-title">Ordnerfarbe</div>
   <div class="cp-row"><input type="color" id="cp-input"><span class="cp-name" id="cp-name"></span></div>
   <div class="cp-btns">
-    <button onclick="cpApply()">Übernehmen</button>
-    <button id="cp-remove" onclick="cpRemove()">Entfernen</button>
-    <button onclick="cpClose()">Abbrechen</button>
+    <button data-action="cpApply">Übernehmen</button>
+    <button id="cp-remove" data-action="cpRemove">Entfernen</button>
+    <button data-action="cpClose">Abbrechen</button>
   </div>
 </div>
 <div id="icon-pop">
@@ -1164,9 +1175,9 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
   <div class="cp-row"><input type="text" id="ip-input" maxlength="4" placeholder="🙂"><span class="cp-name" id="ip-name"></span></div>
   <div class="ip-grid" id="ip-grid"></div>
   <div class="cp-btns">
-    <button onclick="iconApply()">Übernehmen</button>
-    <button id="ip-remove" onclick="iconRemove()">Entfernen</button>
-    <button onclick="iconClose()">Abbrechen</button>
+    <button data-action="iconApply">Übernehmen</button>
+    <button id="ip-remove" data-action="iconRemove">Entfernen</button>
+    <button data-action="iconClose">Abbrechen</button>
   </div>
 </div>
 <div id="rail-flyout"></div>
@@ -1177,26 +1188,26 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
   <div class="titlebar" data-tauri-drag-region>
     <div class="logo">&#9670; NEXUS</div>
     <div class="crumb" id="crumb">&mdash;</div>
-    <button id="read-toggle" title="Lesemodus – Vollbild-Fokus (Esc beendet)" style="display:none" onclick="toggleReading()">&#128214; Lesen</button>
-    <button id="vortrag-toggle" title="Vortrag &ndash; Notiz vorlesen &amp; mitzeigen (Esc stoppt)" style="display:none" onclick="toggleVortrag()">&#127908; Vortrag</button>
-    <button id="karten-toggle" title="Karteikarten zu dieser Notiz lernen" style="display:none" onclick="lnKartenZuNotiz()">&#127891; Karten</button>
-    <button id="lern-toggle" title="Lernmodus &ndash; Karteikarten abfragen (Abfrage-&Uuml;bersicht)" onclick="openLernDashboard()">&#127891; Lernen</button>
-    <div class="search-btn" onclick="openPalette()">&#8981; &nbsp;Suchen oder Befehl&hellip; <kbd>Ctrl K</kbd></div>
+    <button id="read-toggle" title="Lesemodus – Vollbild-Fokus (Esc beendet)" style="display:none" data-action="toggleReading">&#128214; Lesen</button>
+    <button id="vortrag-toggle" title="Vortrag &ndash; Notiz vorlesen &amp; mitzeigen (Esc stoppt)" style="display:none" data-action="toggleVortrag">&#127908; Vortrag</button>
+    <button id="karten-toggle" title="Karteikarten zu dieser Notiz lernen" style="display:none" data-action="lnKartenZuNotiz">&#127891; Karten</button>
+    <button id="lern-toggle" title="Lernmodus &ndash; Karteikarten abfragen (Abfrage-&Uuml;bersicht)" data-action="openLernDashboard">&#127891; Lernen</button>
+    <div class="search-btn" data-action="openPalette">&#8981; &nbsp;Suchen oder Befehl&hellip; <kbd>Ctrl K</kbd></div>
   </div>
 
   <div class="main">
     <div class="col side">
       <div class="vault-row">
-        <div id="vault-sel-wrap"><div id="vault-sel-btn" onclick="toggleVaultDrop()"><span class="vs-label" id="vault-sel-label">Vault</span><span class="vs-chev">&#9660;</span></div><div id="vault-sel-drop"></div></div>
-        <div class="vault-add" title="Vaults verwalten" onclick="openVaultModal()">+</div>
+        <div id="vault-sel-wrap"><div id="vault-sel-btn" data-action="toggleVaultDrop"><span class="vs-label" id="vault-sel-label">Vault</span><span class="vs-chev">&#9660;</span></div><div id="vault-sel-drop"></div></div>
+        <div class="vault-add" title="Vaults verwalten" data-action="openVaultModal">+</div>
       </div>
       <div class="rail-sep" id="rail-sep-top"></div>
       <div class="side-scroll" id="side-scroll">
-        <div class="side-section">Vault <span class="new-note-btn" title="Neue Notiz" onclick="newNote()">+ Notiz</span></div>
+        <div class="side-section">Vault <span class="new-note-btn" title="Neue Notiz" data-action="newNote">+ Notiz</span></div>
         <div id="folder-list"></div>
       </div>
       <div id="rail-bottom"></div>
-      <div class="side-settings" onclick="openSettings()" title="Einstellungen oeffnen"><span class="ss-ic">&#9881;</span><span>Einstellungen</span></div>
+      <div class="side-settings" data-action="openSettings" title="Einstellungen oeffnen"><span class="ss-ic">&#9881;</span><span>Einstellungen</span></div>
     </div>
 
     <div class="resizer" id="rz-l"></div>
@@ -1212,12 +1223,12 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
       </span>
       <!-- R24: Vortrag-Player - schwebende Leiste unten in der Mittelspalte -->
       <div id="vortrag-bar">
-        <button class="vt-btn" id="vt-prev" title="Voriges Segment" onclick="vtPrev()">&#9198;</button>
-        <button class="vt-btn primary" id="vt-play" title="Pause / Weiter" onclick="vtPlayPause()">&#9208;</button>
-        <button class="vt-btn" id="vt-next" title="N&auml;chstes Segment" onclick="vtNext()">&#9197;</button>
+        <button class="vt-btn" id="vt-prev" title="Voriges Segment" data-action="vtPrev">&#9198;</button>
+        <button class="vt-btn primary" id="vt-play" title="Pause / Weiter" data-action="vtPlayPause">&#9208;</button>
+        <button class="vt-btn" id="vt-next" title="N&auml;chstes Segment" data-action="vtNext">&#9197;</button>
         <span class="vt-info" id="vt-info">&ndash;</span>
         <span class="vt-mode" id="vt-mode">linear</span>
-        <button class="vt-btn" id="vt-stop" title="Vortrag beenden (Esc)" onclick="vtStop()">&#9209;</button>
+        <button class="vt-btn" id="vt-stop" title="Vortrag beenden (Esc)" data-action="vtStop">&#9209;</button>
       </div>
       <div class="center-body" id="center-body">
         <div class="note-area" id="note-area">
@@ -1231,9 +1242,9 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
     <div class="resizer" id="rz-r"></div>
     <div class="right-panel">
       <div id="right-toggle">
-        <button data-mode="graph" onclick="setRightMode('graph')">Graph</button>
-        <button data-mode="outline" onclick="setRightMode('outline')">Gliederung</button>
-        <button data-mode="split" onclick="setRightMode('split')">Split</button>
+        <button data-mode="graph" data-action="setRightMode">Graph</button>
+        <button data-mode="outline" data-action="setRightMode">Gliederung</button>
+        <button data-mode="split" data-action="setRightMode">Split</button>
       </div>
       <div id="outline-panel"></div>
       <div id="rz-split"></div>
@@ -1274,18 +1285,18 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
   </div>
 
   <div class="statusbar">
-    <span><span class="dot-status"></span><span class="ok">MCP bereit</span></span>
+    <span id="sb-mcp" class="off" title="Claude-Desktop-Eintrag (MCP) wird gepr&uuml;ft&hellip;"><span class="dot-status"></span><span class="ok" id="sb-mcp-text">MCP &hellip;</span></span>
     <span id="sb-index">&mdash;</span>
-    <span id="sb-watcher">Watcher aktiv</span>
-    <span class="ml" id="sb-vault">&mdash;</span><span id="usage-widget" onclick="openUsagePopover()" title="Claude-Verbrauch">— / —</span>
+    <span id="sb-watcher" class="off" title="Live-Updates (SSE) noch nicht verbunden">Watcher &hellip;</span>
+    <span class="ml" id="sb-vault">&mdash;</span><span id="usage-widget" data-action="openUsagePopover" title="Claude-Verbrauch">— / —</span>
   </div>
 </div>
 
-<div class="overlay" id="pal-overlay" onclick="closePalette()">
-  <div class="palette" onclick="event.stopPropagation()">
+<div class="overlay" id="pal-overlay" data-action="closePalette" data-self>
+  <div class="palette">
     <div class="pal-inputrow">
       <span class="pal-srch">🔍</span>
-      <input id="pal-input" placeholder="Notiz, Ordner oder Befehl…" oninput="onPalInput()" onkeydown="onPalKey(event)">
+      <input id="pal-input" placeholder="Notiz, Ordner oder Befehl…">
       <span class="pal-esc">Esc</span>
     </div>
     <div class="pal-results" id="pal-results"></div>
@@ -1293,67 +1304,67 @@ body[data-studio="cream"] #outline-panel .ol-row:hover{background:rgba(0,0,0,.05
   </div>
 </div>
 
-<div class="overlay" id="vault-overlay" onclick="closeVaultModal()">
-  <div class="palette" style="width:460px" onclick="event.stopPropagation()">
+<div class="overlay" id="vault-overlay" data-action="closeVaultModal" data-self>
+  <div class="palette" style="width:460px">
     <div style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px">📚 Vaults verwalten</div>
     <div id="vault-list" style="max-height:300px;overflow:auto;padding:6px"></div>
     <div style="display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--border)">
-      <input id="vault-new" placeholder="Neuer Vault-Name…" style="flex:1;padding:9px 12px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;color:var(--text);outline:none" onkeydown="if(event.key==='Enter')createVault()">
-      <button class="ft-btn" style="padding:9px 14px" onclick="createVault()">Anlegen</button>
+      <input id="vault-new" placeholder="Neuer Vault-Name…" style="flex:1;padding:9px 12px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;color:var(--text);outline:none">
+      <button class="ft-btn" style="padding:9px 14px" data-action="createVault">Anlegen</button>
     </div>
     <div class="pal-footer"><span>Vaults liegen unter dem vaultsRoot. Entfernen löscht keine Dateien.</span></div>
   </div>
 </div>
 
-<div class="overlay" id="prompt-overlay" onclick="uiPromptCancel()">
-  <div class="palette" style="width:440px" onclick="event.stopPropagation()">
+<div class="overlay" id="prompt-overlay" data-action="uiPromptCancel" data-self>
+  <div class="palette" style="width:440px">
     <div id="prompt-title" style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600"></div>
     <div style="padding:16px 18px">
-      <input id="prompt-input" style="width:100%;padding:9px 12px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;color:var(--text);outline:none;box-sizing:border-box" onkeydown="uiPromptKey(event)">
+      <input id="prompt-input" style="width:100%;padding:9px 12px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;color:var(--text);outline:none;box-sizing:border-box">
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--border)">
-      <button class="ft-btn" onclick="uiPromptCancel()">Abbrechen</button>
-      <button class="ft-btn" style="border-color:var(--accent);color:var(--accent)" onclick="uiPromptOk()">OK</button>
+      <button class="ft-btn" data-action="uiPromptCancel">Abbrechen</button>
+      <button class="ft-btn" style="border-color:var(--accent);color:var(--accent)" data-action="uiPromptOk">OK</button>
     </div>
   </div>
 </div>
 
-<div class="overlay" id="confirm-overlay" onclick="_confirmCancel()">
-  <div class="palette" style="width:420px" onclick="event.stopPropagation()">
+<div class="overlay" id="confirm-overlay" data-action="_confirmCancel" data-self>
+  <div class="palette" style="width:420px">
     <div id="confirm-msg" class="ovl-msg"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--border)">
-      <button class="ft-btn" onclick="_confirmCancel()">Abbrechen</button>
-      <button class="ft-btn" id="confirm-ok" style="border-color:var(--accent);color:var(--accent)" onclick="confirmOk()">OK</button>
+      <button class="ft-btn" data-action="_confirmCancel">Abbrechen</button>
+      <button class="ft-btn" id="confirm-ok" style="border-color:var(--accent);color:var(--accent)" data-action="confirmOk">OK</button>
     </div>
   </div>
 </div>
 
-<div class="overlay" id="picker-overlay" onclick="pickerCancel()">
-  <div class="palette" style="width:480px" onclick="event.stopPropagation()">
+<div class="overlay" id="picker-overlay" data-action="pickerCancel" data-self>
+  <div class="palette" style="width:480px">
     <div id="picker-title" style="padding:14px 18px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600"></div>
     <div id="picker-crumb" style="padding:9px 18px;font-size:12px;color:var(--dim);border-bottom:1px solid var(--border)"></div>
     <div id="picker-list" style="max-height:340px;overflow:auto;padding:8px"></div>
     <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;padding:12px 18px;border-top:1px solid var(--border)">
-      <button class="ft-btn" onclick="pickerCancel()">Abbrechen</button>
-      <button class="ft-btn" id="picker-ok" style="border-color:var(--accent);color:var(--accent)" onclick="pickerConfirm()">Hierhin verschieben</button>
+      <button class="ft-btn" data-action="pickerCancel">Abbrechen</button>
+      <button class="ft-btn" id="picker-ok" style="border-color:var(--accent);color:var(--accent)" data-action="pickerConfirm">Hierhin verschieben</button>
     </div>
   </div>
 </div>
 
-<div class="overlay" id="settings-overlay" onclick="closeSettings()">
-  <div class="palette settings-modal" onclick="event.stopPropagation()">
+<div class="overlay" id="settings-overlay" data-action="closeSettings" data-self>
+  <div class="palette settings-modal">
     <div class="set-head">&#9881; Einstellungen</div>
     <div class="set-tabs" id="settings-tabs"></div>
     <div class="set-body" id="settings-body"></div>
     <div class="pal-footer"><span>Einstellungen lokal &middot; Vault-Speicherort: nexus.config.json</span><span class="set-version" id="set-version"></span></div>
   </div>
 </div>
-<div id="usage-popover"><div class="uw-head">&#x26A1; Claude-Verbrauch<span class="uw-refresh" id="uw-refresh-btn" onclick="uwManualRefresh()" title="Jetzt aktualisieren">&#x27F3;</span><span class="uw-close" onclick="closeUsagePopover()">&#xD7;</span></div><div class="uw-body" id="uw-body"></div></div>
+<div id="usage-popover"><div class="uw-head">&#x26A1; Claude-Verbrauch<span class="uw-refresh" id="uw-refresh-btn" data-action="uwManualRefresh" title="Jetzt aktualisieren">&#x27F3;</span><span class="uw-close" data-action="closeUsagePopover">&#xD7;</span></div><div class="uw-body" id="uw-body"></div></div>
 <!-- R26: Lernmodus. Die Sitzung ist bewusst KEIN .overlay (die Esc-Kaskade behandelt
      .overlay wie einen Dialog; der Player ist ein eigener Modus, s. keydown-Handler). -->
 <div class="lern-ovl" id="lern-overlay"></div>
-<div class="overlay" id="lern-modal" onclick="lnModalBg(event)"></div>
-<input id="file-input" type="file" multiple style="display:none" onchange="uploadFiles(this.files,currentFolder)">
+<div class="overlay" id="lern-modal" data-action="lnModalClose" data-self></div>
+<input id="file-input" type="file" multiple style="display:none">
 <script>
 // ───────── State ─────────
 let activeVault=null, vaultTree=[], selectedPath=null, currentFolder='';
@@ -1389,7 +1400,7 @@ function folderIcon(name){const c=_customFolderIcons();if(c[name])return c[name]
 let _authWarned=false;
 async function api(url,opts){
   const r=await fetch(url,opts);
-  if(r.status===401&&!_authWarned){_authWarned=true;try{toast('Nicht autorisiert: UI-Token fehlt. Nexus-App neu starten (Dev: die ?t=…-URL aus der Konsole öffnen).','error');}catch(e){}}
+  if(r.status===401&&!_authWarned){_authWarned=true;try{toast('Nicht autorisiert: UI-Token fehlt. Nexus-App neu starten (Dev: die ?t=…-URL aus der Konsole öffnen).','err');}catch(e){}}
   return r.json();
 }
 function esc(s){return (s??'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -1405,7 +1416,8 @@ function aq(s){return (s??'').toString().replace(/"/g,'&quot;');}
 function dangerScheme(u){return /^(javascript|data|vbscript|file):/i.test((u??"").toString().replace(/[\u0000-\u0020]+/g,""));}
 function setCrumb(html){document.getElementById('crumb').innerHTML=html;}
 let toastTimer;
-function toast(msg,type=''){const el=document.getElementById('toast');el.textContent=msg;el.className='show'+(type?' '+type:'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),3200);}
+// R27c (D1f): genau zwei Varianten – 'ok' und 'err' (alte Namen success/error werden noch gemappt).
+function toast(msg,type=''){type=type==='success'?'ok':type==='error'?'err':type;const el=document.getElementById('toast');el.textContent=msg;el.className='show'+(type?' '+type:'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),3200);}
 const IMG_EXT=['.png','.jpg','.jpeg','.gif','.webp','.svg','.bmp','.avif'];
 const VIDEO_EXT=['.mp4','.webm','.ogv','.mov','.mkv'];
 const AUDIO_EXT=['.mp3','.wav','.ogg','.m4a','.flac','.aac'];
@@ -1426,9 +1438,9 @@ async function openExternalFile(path){
     const r=await fetch('/api/open-external',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,path})});
     const j=await r.json().catch(()=>({}));
     if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status));
-    toast('Geoeffnet in '+(app==='dem Standardprogramm'?'Standardprogramm':app),'success');
+    toast('Geoeffnet in '+(app==='dem Standardprogramm'?'Standardprogramm':app),'ok');
     logActivity('#7ec8e3','open_external → <b>'+esc(path.split('/').pop())+'</b>');
-  }catch(e){toast('Konnte nicht oeffnen: '+e.message,'error');}
+  }catch(e){toast('Konnte nicht oeffnen: '+e.message,'err');}
 }
 function fileUrl(path){return `/api/file?vault=${encodeURIComponent(activeVault)}&path=${encodeURIComponent(path)}`;}
 
@@ -1441,13 +1453,13 @@ function renderTabBar(){
   const cur=tabs[activeTab]||{};
   const canB=!!(cur.hist&&cur.hi>0), canF=!!(cur.hist&&cur.hi<cur.hist.length-1);
   const nav='<div class="tab-nav">'
-    +'<button class="tnav'+(canB?'':' off')+'" title="Zurück" onclick="tabBack()">‹</button>'
-    +'<button class="tnav'+(canF?'':' off')+'" title="Vor" onclick="tabForward()">›</button></div>';
+    +'<button class="tnav'+(canB?'':' off')+'" title="Zurück" data-action="tabBack">‹</button>'
+    +'<button class="tnav'+(canF?'':' off')+'" title="Vor" data-action="tabForward">›</button></div>';
   bar.innerHTML=nav+tabs.map((t,i)=>
-    '<div class="tab'+(i===activeTab?' active':'')+'" draggable="true" data-tidx="'+i+'" data-tid="'+t.id+'" onclick="switchTab('+i+')" title="'+esc(t.path||'')+'">'
+    '<div class="tab'+(i===activeTab?' active':'')+'" draggable="true" data-tidx="'+i+'" data-tid="'+t.id+'" data-action="switchTab" title="'+esc(t.path||'')+'">'
     +'<span class="tab-i">'+tabIcon(t)+'</span><span class="tab-t">'+esc(tabTitle(t))+'</span>'
-    +'<span class="tab-x" onclick="event.stopPropagation();closeTab('+i+')">×</span></div>'
-  ).join('')+'<div class="tab-add" title="Neuer Tab" onclick="newTab()">+</div>';
+    +'<span class="tab-x" data-action="closeTab" data-i="'+i+'">×</span></div>'
+  ).join('')+'<div class="tab-add" title="Neuer Tab" data-action="newTab">+</div>';
   saveTabs();
 }
 function updateActiveTab(path,mode){
@@ -1684,6 +1696,7 @@ async function init(){
     if(startNote) await openFile(startNote.path,{startup:true});
   }
   startLiveUpdates();
+  refreshMcpStatus();
 }
 // Live-Updates: lauscht via Server-Sent Events auf Datei-/Ordneraenderungen im Vault
 // und laedt den Baum inkrementell nach -> neue/geloeschte Dateien und Ordner erscheinen
@@ -1693,6 +1706,9 @@ function startLiveUpdates(){
   if(_es||typeof EventSource==='undefined')return;
   try{
     _es=new EventSource('/api/events');
+    // D1e: "Watcher aktiv" haengt an der echten SSE-Verbindung (onopen/onerror), nicht an statischem Text.
+    _es.onopen=()=>setWatcherStatus(true);
+    _es.onerror=()=>setWatcherStatus(false);
     _es.onmessage=(ev)=>{
       let m;try{m=JSON.parse(ev.data);}catch{return;}
       if(m&&m.type==='tree-changed'&&m.vault===activeVault){
@@ -1709,8 +1725,18 @@ function startLiveUpdates(){
         handlePiperProgress(m);
       }
     };
-    // onerror: EventSource verbindet dank "retry" automatisch neu -> nichts zu tun.
-  }catch{/* SSE nicht verfuegbar -> manuelles Reindex bleibt als Fallback */}
+    // onerror: EventSource verbindet dank "retry" automatisch neu; bis dahin steht "Watcher getrennt".
+  }catch{setWatcherStatus(false);/* SSE nicht verfuegbar -> manuelles Reindex bleibt als Fallback */}
+}
+function setWatcherStatus(on){const el=document.getElementById('sb-watcher');if(!el)return;el.classList.toggle('off',!on);el.textContent=on?'Watcher aktiv':'Watcher getrennt';el.title=on?'Live-Updates (SSE) verbunden':'Live-Updates (SSE) getrennt – verbindet automatisch neu';}
+// D1e: "MCP bereit" = Nexus steht als MCP-Server in claude_desktop_config.json (Nur-Lese-Check, GET /api/connect-claude/status).
+async function refreshMcpStatus(){
+  const el=document.getElementById('sb-mcp'),tx=document.getElementById('sb-mcp-text');if(!el||!tx)return;
+  try{
+    const r=await api('/api/connect-claude/status');
+    if(r&&r.configured){el.classList.remove('off');tx.textContent='MCP bereit';el.title='Claude Desktop: Eintrag „'+(r.key||'nexus')+'" vorhanden';}
+    else{el.classList.add('off');tx.textContent='MCP nicht verbunden';el.title=(r&&r.error)?r.error:'Kein Eintrag „'+((r&&r.key)||'nexus')+'" in claude_desktop_config.json – Einstellungen → System → Mit Claude Desktop verbinden';}
+  }catch(e){el.classList.add('off');tx.textContent='MCP –';el.title='Status nicht abrufbar: '+e.message;}
 }
 async function loadVault(){
   setCrumb(esc(activeVault));
@@ -2219,17 +2245,40 @@ function renderList(buf){
 
 // Roh-HTML-Blöcke (inkl. inline-SVG, <details> etc.) durchreichen statt escapen.
 // Container-Tags mit Schluss-Tag; Void-Tags (img/br/hr/…) bewusst NICHT, sonst läuft die Tiefenzählung nie auf 0.
-const RAW_HTML_TAGS=new Set(['svg','details','summary','div','section','article','aside','header','footer','nav','main','figure','figcaption','table','thead','tbody','tfoot','tr','td','th','caption','colgroup','blockquote','dl','dt','dd','iframe','video','audio','picture','canvas','math','center','pre']);
+const RAW_HTML_TAGS=new Set(['svg','details','summary','div','section','article','aside','header','footer','nav','main','figure','figcaption','table','thead','tbody','tfoot','tr','td','th','caption','colgroup','blockquote','dl','dt','dd','video','audio','picture','canvas','math','center','pre']);
 function isRawHtmlStart(l){const m=/^\s*<([a-zA-Z][a-zA-Z0-9-]*)/.exec(l);return m&&RAW_HTML_TAGS.has(m[1].toLowerCase())?m[1].toLowerCase():null;}
 // Verschachtelungs-Saldo eines Tags auf einer Zeile: +1 je <tag …>, -1 je </tag>, 0 für selbstschließende <tag …/>.
 function htmlTagDepth(text,tag){let d=0;const re=new RegExp('<(/?)'+tag+'(?=[\\s/>])([^>]*)>','gi');let m;while((m=re.exec(text))){if(m[1]==='/')d--;else if(/\/\s*$/.test(m[2])){}else d++;}return d;}
-// Sicherheitsnetz für durchgereichtes HTML (Notizen können aus markitdown-Konvertierungen stammen):
-// Skripte, Inline-Event-Handler (on…) und javascript:-URLs raus; SVG/Style/Details bleiben erhalten.
-function sanitizeRawHtml(html){return html
-  .replace(/<script\b[\s\S]*?<\/script\s*>/gi,'')
-  .replace(/<script\b[^>]*>/gi,'')
-  .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,'')
-  .replace(/((?:href|src|xlink:href)\s*=\s*)(["'])\s*javascript:[^"']*\2/gi,'$1$2#$2');}
+// Sicherheitsnetz fuer durchgereichtes HTML (Notizen aus markitdown-/mammoth-Konvertierungen, Inline-SVG).
+// R27c: DOMPurify (public/vendor/dompurify, Allowlist-Parser) statt Regex-Blockliste. Verboten sind
+// script/iframe/object/embed/meta/base/form/style/link/svg-use (+ Formularelemente), die Attribute
+// srcdoc/formaction/action sowie on*-Handler und javascript:/vbscript:-URLs (DOMPurify-Standard).
+// Ohne DOM (test/md-render.test.mjs unter Node) oder wenn purify.min.js fehlt, greift die
+// konservative Regex-Stufe sanitizeRawHtmlFallback – gleiche Verbotsliste, aber kein Parser.
+const RAW_HTML_FORBID_TAGS=['script','iframe','object','embed','meta','base','form','style','link','use','input','button','textarea','select','option','template','frame','frameset','applet','noscript'];
+const RAW_HTML_FORBID_ATTR=['srcdoc','formaction','action'];
+function sanitizeRawHtml(html){
+  const dp=(typeof window!=='undefined'&&window.DOMPurify)||null;
+  if(dp&&typeof dp.sanitize==='function')return dp.sanitize(html,{FORBID_TAGS:RAW_HTML_FORBID_TAGS,FORBID_ATTR:RAW_HTML_FORBID_ATTR,ALLOW_UNKNOWN_PROTOCOLS:false});
+  return sanitizeRawHtmlFallback(html);
+}
+function sanitizeRawHtmlFallback(html){
+  const tags=RAW_HTML_FORBID_TAGS.join('|');
+  const decode=s=>s.replace(/&#x([0-9a-f]+);?/gi,(m,h)=>String.fromCharCode(parseInt(h,16)||0)).replace(/&#(\d+);?/g,(m,d)=>String.fromCharCode(parseInt(d,10)||0)).replace(/&colon;/gi,':').replace(/&(?:tab|newline);/gi,'');
+  return html
+    // Container samt Inhalt (script/style/iframe/… duerfen keinen Text durchreichen)
+    .replace(new RegExp('<(script|style|iframe|object|embed|form|template|noscript|textarea|select|frameset)\\b[\\s\\S]*?<\\/\\1\\s*>','gi'),'')
+    // uebrige verbotene Tags (oeffnend, schliessend, selbstschliessend)
+    .replace(new RegExp('<\\/?(?:'+tags+')\\b[^>]*>','gi'),'')
+    // on*-Handler und verbotene Attribute (gequotet oder nicht)
+    .replace(/\s(?:on[a-z]+|srcdoc|formaction|action)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,'')
+    // URL-Attribute: Scheme pruefen (Entities + Steuerzeichen vorher entschaerft); data: nur fuer Bilder
+    .replace(/(\s(?:href|src|xlink:href|poster|data|background)\s*=\s*)("([^"]*)"|'([^']*)'|([^\s>]+))/gi,(m,pre,q,d,s,u)=>{
+      const raw=d!==undefined?d:(s!==undefined?s:u);
+      const v=decode(raw).replace(/[\u0000-\u0020]+/g,'').toLowerCase();
+      if(/^(javascript|vbscript|file):/.test(v)||(/^data:/.test(v)&&!/^data:image\//.test(v)))return pre+'"#"';
+      return m;});
+}
 
 function isBlockStart(l){return /^\s*(#{1,6}\s|```|~~~|>|[-*+]\s|\d+[.)]\s)/.test(l)||/^\s*\$\$\s*$/.test(l)||/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(l)||!!isRawHtmlStart(l);}
 
@@ -2423,7 +2472,7 @@ async function openCenterSplit(path){
   if(!cb||!pane)return;
   _centerSplitPath=path;
   const fname=path.split('/').pop(),ext=extOf(path);
-  pane.innerHTML='<div class="np2-head"><span class="np2-tag">2. Ansicht</span><span class="np2-name">'+esc(fname)+'</span><span class="np2-x" title="Schliessen" onclick="closeCenterSplit()">&times;</span></div><div class="np2-body" id="np2-body"><div class="placeholder" style="padding-top:40px">Lade&hellip;</div></div>';
+  pane.innerHTML='<div class="np2-head"><span class="np2-tag">2. Ansicht</span><span class="np2-name">'+esc(fname)+'</span><span class="np2-x" title="Schliessen" data-action="closeCenterSplit">&times;</span></div><div class="np2-body" id="np2-body"><div class="placeholder" style="padding-top:40px">Lade&hellip;</div></div>';
   cb.classList.add('split');
   window.dispatchEvent(new Event('resize'));
   const body=document.getElementById('np2-body');
@@ -2570,7 +2619,7 @@ function wireRendered(area,path,res){
       try{
         await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,path:_curNotePath,content:newRaw})});
         renderMarkdownView(document.getElementById('note-area'),_curNotePath.split('/').pop(),newRaw,_curNotePath);
-      }catch(e){toast('Fehler: '+e.message,'error');}
+      }catch(e){toast('Fehler: '+e.message,'err');}
     });
   });
   renderMermaid(area);
@@ -2992,9 +3041,9 @@ function cm6Theme(m){
     '&.cm-focused':{outline:'none'},
     // E2 Typografie-Paritaet: exakt die Werte der Leseansicht (.md-body, Z.201 + --reader-font),
     // damit Zeilenumbrueche im Editor an denselben Woertern sitzen wie in der Notiz.
-    // --editor-fs (Settings-Slider) gilt nur noch fuer den Textarea-Fallback; Mono bleibt
-    // gezielt auf .lp-code/Codebloecken.
-    '.cm-scroller':{fontFamily:'var(--reader-font)',fontSize:'var(--reader-fs,14.5px)',lineHeight:'1.72'},
+    // R27c (D1g): --editor-fs (Settings-Slider „Editor-Schriftgroesse") wirkt jetzt auch hier; ohne
+    // eigene Einstellung faellt es auf --reader-fs zurueck (Typografie-Paritaet bleibt der Standard).
+    '.cm-scroller':{fontFamily:'var(--reader-font)',fontSize:'var(--editor-fs,var(--reader-fs,14.5px))',lineHeight:'1.72'},
     '.cm-content':{caretColor:'var(--accent)'},
     '.cm-cursor,.cm-dropCursor':{borderLeftColor:'var(--accent)',borderLeftWidth:'1.7px'},
     '.cm-activeLine,.cm-activeLineGutter':{backgroundColor:'transparent'},
@@ -3468,7 +3517,28 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='Escape'&&editorState){const pv=document.getElementById('ed-preview-pane');if(pv&&pv.style.display!=='none'){e.stopPropagation();togglePreview();}}
 },true);
 
-// ── Mermaid + Math (lazy CDN, Fallback = Quelltext) ──
+// ── Mermaid + Math (R27c: lokal aus public/vendor, lazy; Fallback = Quelltext) ──
+// Skripte nacheinander probieren (lokal zuerst). Der CDN-Eintrag bleibt als dokumentierter Notnagel,
+// wird aber von der CSP (script-src 'self', s. src/csp.js) blockiert – die App ist offline-first.
+function loadScriptChain(urls){return new Promise(res=>{const next=i=>{if(i>=urls.length)return res(false);const s=document.createElement('script');s.src=urls[i];s.onload=()=>res(true);s.onerror=()=>{s.remove();next(i+1);};document.head.appendChild(s);};next(0);});}
+// Farbe einer CSS-Variablen als konkreten rgb()-Wert aufloesen (Mermaid/khroma koennen kein color-mix/var()).
+function resolveCssColor(expr,fallback){try{const el=document.createElement('span');el.style.color=expr;el.style.display='none';document.body.appendChild(el);const c=getComputedStyle(el).color;el.remove();if(!c||c==='rgba(0, 0, 0, 0)')return fallback;if(/^rgba?\(/.test(c))return c;
+  // color-mix() liefert color(srgb r g b) – Mermaid/khroma verstehen nur rgb()/hex (Browser-Befund R27c): ueber ein 1x1-Canvas nach rgb() wandeln
+  const cv=document.createElement('canvas');cv.width=cv.height=1;const ctx=cv.getContext('2d');ctx.fillStyle=c;ctx.fillRect(0,0,1,1);const d=ctx.getImageData(0,0,1,1).data;return 'rgb('+d[0]+', '+d[1]+', '+d[2]+')';}catch(e){return fallback;}}
+// D1d: Mermaid-Theme 'base' aus den App-Variablen (--bg/--text/--accent) – lesbar in jedem Theme, auch Creme/Papier.
+function mermaidThemeVars(){
+  const bg=resolveCssColor('var(--bg)','#07090f'),text=resolveCssColor('var(--text)','#dbe2ee'),accent=resolveCssColor('var(--accent)','#7C8CFF');
+  const m=/rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(bg);const lum=m?(0.2126*m[1]+0.7152*m[2]+0.0722*m[3])/255:0;
+  const cs=getComputedStyle(document.documentElement);
+  return {darkMode:lum<0.5,background:bg,fontFamily:cs.getPropertyValue('--app-font').trim()||'system-ui,sans-serif',
+    primaryColor:resolveCssColor('color-mix(in srgb,var(--bg),var(--text) 12%)','#1a2038'),primaryTextColor:text,primaryBorderColor:accent,
+    secondaryColor:resolveCssColor('color-mix(in srgb,var(--bg),var(--accent) 28%)','#232a4a'),secondaryTextColor:text,secondaryBorderColor:accent,
+    tertiaryColor:resolveCssColor('color-mix(in srgb,var(--bg),var(--text) 6%)','#12172a'),tertiaryTextColor:text,tertiaryBorderColor:accent,
+    lineColor:accent,textColor:text,mainBkg:resolveCssColor('color-mix(in srgb,var(--bg),var(--text) 12%)','#1a2038'),nodeBorder:accent,
+    clusterBkg:resolveCssColor('color-mix(in srgb,var(--bg),var(--text) 5%)','#10152a'),clusterBorder:accent,titleColor:text,edgeLabelBackground:bg,
+    noteBkgColor:resolveCssColor('color-mix(in srgb,var(--bg),var(--accent) 20%)','#2a2f4a'),noteTextColor:text,noteBorderColor:accent,
+    actorBkg:resolveCssColor('color-mix(in srgb,var(--bg),var(--text) 12%)','#1a2038'),actorBorder:accent,actorTextColor:text,signalColor:text,signalTextColor:text,labelBoxBkgColor:bg,labelTextColor:text,loopTextColor:text};
+}
 let _mermaidLoaded=null,_katexLoaded=null,_pdfjsLoaded=null,_mammothLoaded=null,_fflateLoaded=null;
 // PDF.js LOKAL eingebunden (public/vendor/pdfjs) -> offline-tauglich in Electron, kein CDN.
 function loadPdfJs(){
@@ -3510,8 +3580,13 @@ function loadFflate(){
   });
   return _fflateLoaded;
 }
-function loadMermaid(){if(_mermaidLoaded!==null)return _mermaidLoaded;_mermaidLoaded=new Promise(res=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';s.onload=()=>{try{window.mermaid.initialize({startOnLoad:false,theme:'dark'});res(window.mermaid);}catch(e){res(null);}};s.onerror=()=>res(null);document.head.appendChild(s);});return _mermaidLoaded;}
-function renderMermaid(area){const blocks=area.querySelectorAll('.mermaid-block[data-mermaid]');if(!blocks.length)return;loadMermaid().then(m=>{if(!m)return;blocks.forEach(async(b,i)=>{try{const {svg}=await m.render('mmd'+Date.now()+'_'+i,b.getAttribute('data-mermaid'));b.innerHTML=svg;}catch(e){}});});}
+function loadMermaid(){if(_mermaidLoaded!==null)return _mermaidLoaded;_mermaidLoaded=loadScriptChain(['/vendor/mermaid/mermaid.min.js','https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js']).then(ok=>{if(!ok||!window.mermaid)return null;try{window.mermaid.initialize({startOnLoad:false,theme:'base',themeVariables:mermaidThemeVars()});return window.mermaid;}catch(e){return null;}});return _mermaidLoaded;}
+let _mmdSeq=0;
+function renderMermaid(area){const blocks=area.querySelectorAll('.mermaid-block[data-mermaid]');if(!blocks.length)return;loadMermaid().then(m=>{if(!m)return;
+  try{m.initialize({startOnLoad:false,theme:'base',themeVariables:mermaidThemeVars()});}catch(e){}
+  blocks.forEach(async b=>{try{const {svg}=await m.render('mmd'+(++_mmdSeq),b.getAttribute('data-mermaid'));b.innerHTML=svg;}catch(e){}});});}
+// D1d: Theme gewechselt -> alle sichtbaren Diagramme mit den neuen Farben neu zeichnen (data-mermaid bleibt am Block).
+function rerenderMermaid(){if(_mermaidLoaded===null)return;renderMermaid(document);}
 
 // ── Dataview: ```dataview-Bloecke serverseitig aufloesen + themed rendern ──
 function dvCellHtml(c){
@@ -3548,7 +3623,11 @@ function renderDataview(area){
     done();
   });
 }
-function loadKatex(){if(_katexLoaded!==null)return _katexLoaded;_katexLoaded=new Promise(res=>{const css=document.createElement('link');css.rel='stylesheet';css.href='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css';document.head.appendChild(css);const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js';s.onload=()=>res(window.katex);s.onerror=()=>res(null);document.head.appendChild(s);});return _katexLoaded;}
+function loadKatex(){if(_katexLoaded!==null)return _katexLoaded;_katexLoaded=(async()=>{
+  let base='/vendor/katex/';
+  if(!(await loadScriptChain([base+'katex.min.js']))){base='https://cdn.jsdelivr.net/npm/katex@0.16.47/dist/';if(!(await loadScriptChain([base+'katex.min.js'])))return null;}
+  const css=document.createElement('link');css.rel='stylesheet';css.href=base+'katex.min.css';document.head.appendChild(css);
+  return window.katex||null;})();return _katexLoaded;}
 function renderMath(area){const els=area.querySelectorAll('[data-tex]');if(!els.length)return;loadKatex().then(k=>{if(!k)return;els.forEach(el=>{try{el.innerHTML=k.renderToString(el.getAttribute('data-tex'),{displayMode:el.classList.contains('math-block'),throwOnError:false});}catch(e){}});});}
 
 // ── Non-Markdown Viewer ──
@@ -4152,7 +4231,7 @@ function renderPlain(area,fname,raw,path){
   // Unbekannte Binaerdatei -> keinen Quellcode-Salat zeigen, sondern extern oeffnen anbieten.
   if(looksBinary(raw)){renderExternalFallback(area,fname,path,'Diese Datei ist kein Text und kann in Nexus nicht angezeigt werden.');return;}
   area.innerHTML=`<div class="file-toolbar"><span class="ft-name">📎 ${esc(fname)}</span><span class="ft-spacer"></span><button class="ft-btn" id="pl-copy">Kopieren</button></div><pre class="file-pre">${escHtml(raw)}</pre>`;
-  area.querySelector('#pl-copy').onclick=()=>{navigator.clipboard.writeText(raw);toast('Kopiert','success');};
+  area.querySelector('#pl-copy').onclick=()=>{navigator.clipboard.writeText(raw);toast('Kopiert','ok');};
 }
 
 // ===================== GRAPH (force-directed, interaktiv) =====================
@@ -4472,7 +4551,7 @@ function renderPalItems(){
     const g=it.group||'';
     if(g!==lastG){if(g)html+=`<div class="pal-group">${esc(g)}</div>`;lastG=g;}
     const sub=it.crumb||(it.sub?esc(it.sub):'');
-    html+=`<div class="pal-item ${i===palSel?'sel':''}" onclick="palItems[${i}].fn()"><span class="pal-tile" style="${it.tile||''}">${it.icon||'📝'}</span><div class="pal-main"><div class="pal-name">${esc(it.label)}</div>${sub?`<div class="pal-sub">${sub}</div>`:''}</div>${it.hint?`<span class="pal-hint">${esc(it.hint)}</span>`:''}</div>`;
+    html+=`<div class="pal-item ${i===palSel?'sel':''}" data-action="palItem" data-i="${i}"><span class="pal-tile" style="${it.tile||''}">${it.icon||'📝'}</span><div class="pal-main"><div class="pal-name">${esc(it.label)}</div>${sub?`<div class="pal-sub">${sub}</div>`:''}</div>${it.hint?`<span class="pal-hint">${esc(it.hint)}</span>`:''}</div>`;
   });
   document.getElementById('pal-results').innerHTML=html;
 }
@@ -4484,34 +4563,40 @@ function onPalKey(e){
 }
 
 // ═════════════════════ CONTEXT MENU ═════════════════════
+let _ctxItems=[];
 function showCtx(e,path,type,ext){
   e.preventDefault();e.stopPropagation();ctxTarget={path,type,ext};
+  // R27c: Eintraege tragen Funktionsreferenzen (run) statt JS-Strings – der Pfad landet nie in
+  // einem Attribut oder String, der delegierte Handler (UI_ACTIONS.ctxItem) ruft run() auf.
   const items=[];
   if(type==='file'){
-    items.push({icon:'📖',label:'Öffnen',fn:`openFile('${cssAttr(path)}')`});
-    if(!ext||ext==='.md'||ext==='.markdown')items.push({icon:'✎',label:'Bearbeiten',fn:`openEditor('${cssAttr(path)}')`});
-    if(!ext||ext==='.md'||ext==='.markdown')items.push({icon:'🎓',label:'Karteikarten…',fn:`openKartenEditor('${cssAttr(path)}')`});
+    items.push({icon:'📖',label:'Öffnen',run:()=>openFile(path)});
+    if(!ext||ext==='.md'||ext==='.markdown')items.push({icon:'✎',label:'Bearbeiten',run:()=>openEditor(path)});
+    if(!ext||ext==='.md'||ext==='.markdown')items.push({icon:'🎓',label:'Karteikarten…',run:()=>openKartenEditor(path)});
     items.push({sep:true});
-    if(ext&&ext!=='.md')items.push({icon:'🔄',label:'Mit Markitdown → .md',fn:`convertMarkitdown('${cssAttr(path)}')`});
-    items.push({icon:'📋',label:'Pfad kopieren',fn:`copyPath('${cssAttr(path)}')`});
+    if(ext&&ext!=='.md')items.push({icon:'🔄',label:'Mit Markitdown → .md',run:()=>convertMarkitdown(path)});
+    items.push({icon:'📋',label:'Pfad kopieren',run:()=>copyPath(path)});
     items.push({sep:true});
-    items.push({icon:'✏️',label:'Umbenennen',fn:`ctxRename('${cssAttr(path)}','file')`});
-    items.push({icon:'📦',label:'Verschieben nach…',fn:`ctxMove('${cssAttr(path)}')`});
-    items.push({icon:'🗑',label:'Löschen',fn:`ctxDelete('${cssAttr(path)}','file')`});
+    items.push({icon:'✏️',label:'Umbenennen',run:()=>ctxRename(path,'file')});
+    items.push({icon:'📦',label:'Verschieben nach…',run:()=>ctxMove(path)});
+    items.push({icon:'🗑',label:'Löschen',run:()=>ctxDelete(path,'file')});
   } else {
-    items.push({icon:'📂',label:'Ordner-Übersicht',fn:`openFolderView('${cssAttr(path)}')`});
-    items.push({icon:'📥',label:'Dateien hier ablegen…',fn:`uploadToFolder('${cssAttr(path)}')`});
+    items.push({icon:'📂',label:'Ordner-Übersicht',run:()=>openFolderView(path)});
+    items.push({icon:'📥',label:'Dateien hier ablegen…',run:()=>uploadToFolder(path)});
     items.push({sep:true});
-    items.push({icon:'📝',label:'Neue Notiz',fn:`ctxNewNote('${cssAttr(path)}')`});
-    items.push({icon:'📁',label:'Neuer Ordner',fn:`ctxNewFolder('${cssAttr(path)}')`});
-    items.push({icon:'✏️',label:'Umbenennen',fn:`ctxRename('${cssAttr(path)}','folder')`});
-    items.push({icon:'📦',label:'Verschieben nach…',fn:`ctxMove('${cssAttr(path)}')`});
-    items.push({icon:'🗑',label:'Löschen',fn:`ctxDelete('${cssAttr(path)}','folder')`});
-    if(path.indexOf('/')===-1){items.push({sep:true});items.push({icon:'🎨',label:'Farbe anpassen…',fn:`ctxColor('${cssAttr(path)}');event.stopPropagation()`});items.push({icon:'🖼',label:'Icon ändern…',fn:`ctxIcon('${cssAttr(path)}');event.stopPropagation()`});}
+    items.push({icon:'📝',label:'Neue Notiz',run:()=>ctxNewNote(path)});
+    items.push({icon:'📁',label:'Neuer Ordner',run:()=>ctxNewFolder(path)});
+    items.push({icon:'✏️',label:'Umbenennen',run:()=>ctxRename(path,'folder')});
+    items.push({icon:'📦',label:'Verschieben nach…',run:()=>ctxMove(path)});
+    items.push({icon:'🗑',label:'Löschen',run:()=>ctxDelete(path,'folder')});
+    // Farbe/Icon oeffnen ein Popup: der Dispatcher laeuft NACH dem globalen Klick-Schliesser
+    // (Z. "document.addEventListener('click',e=>{closeCtx();…"), das Popup bleibt also offen.
+    if(path.indexOf('/')===-1){items.push({sep:true});items.push({icon:'🎨',label:'Farbe anpassen…',run:()=>ctxColor(path)});items.push({icon:'🖼',label:'Icon ändern…',run:()=>ctxIcon(path)});}
   }
-  items.push({sep:true});items.push({icon:'♻️',label:'Papierkorb…',fn:'openTrashView()'});items.push({icon:'🔄',label:'Index aktualisieren',fn:'reindex()'});
+  items.push({sep:true});items.push({icon:'♻️',label:'Papierkorb…',run:()=>openTrashView()});items.push({icon:'🔄',label:'Index aktualisieren',run:()=>reindex()});
+  _ctxItems=items;
   const menu=document.getElementById('ctx-menu');
-  menu.innerHTML=items.map(it=>it.sep?'<div class="ctx-sep"></div>':`<div class="ctx-item" onclick="${it.fn};closeCtx()"><span>${it.icon}</span>${esc(it.label)}</div>`).join('');
+  menu.innerHTML=items.map((it,i)=>it.sep?'<div class="ctx-sep"></div>':`<div class="ctx-item" data-action="ctxItem" data-i="${i}"><span>${it.icon}</span>${esc(it.label)}</div>`).join('');
   menu.style.left=Math.min(e.clientX,window.innerWidth-210)+'px';
   menu.style.top=Math.min(e.clientY,window.innerHeight-items.length*36)+'px';
   menu.classList.add('show');
@@ -4621,7 +4706,7 @@ function ctxIcon(name){
   document.getElementById('ip-input').value=_customFolderIcons()[name]||'';
   document.getElementById('ip-name').textContent=name;
   document.getElementById('ip-remove').style.display=_customFolderIcons()[name]?'':'none';
-  document.getElementById('ip-grid').innerHTML=ICON_PRESETS.map(ic=>`<button onclick="document.getElementById('ip-input').value='${ic}'">${ic}</button>`).join('');
+  document.getElementById('ip-grid').innerHTML=ICON_PRESETS.map(ic=>`<button data-action="iconPick" data-ic="${esc(ic)}">${ic}</button>`).join('');
   const menu=document.getElementById('ctx-menu');const pop=document.getElementById('icon-pop');
   pop.style.left=menu.style.left;pop.style.top=menu.style.top;pop.classList.add('show');
   setTimeout(()=>document.getElementById('ip-input').focus(),0);
@@ -4680,9 +4765,9 @@ async function uploadFiles(fileList,targetPath){
   const fd=new FormData();for(const f of fileList)fd.append('files',f);fd.append('vault',activeVault);if(targetPath)fd.append('targetPath',targetPath);
   try{
     const r=await fetch('/api/upload',{method:'POST',body:fd});bar.style.width='80%';const json=await r.json();
-    if(json.error)toast('Fehler: '+json.error,'error');
-    else{toast(`✓ ${json.files.length} Datei(en) hochgeladen`,'success');logActivity(folderColor(activeVault),`upload → ${json.files.length} Datei(en)`);vaultTree=await api(`/api/tree?vault=${encodeURIComponent(activeVault)}`);buildNoteIndex();renderSidebar();setGraphVault(true);}
-  }catch(ex){toast('Upload-Fehler: '+ex.message,'error');}
+    if(json.error)toast('Fehler: '+json.error,'err');
+    else{toast(`✓ ${json.files.length} Datei(en) hochgeladen`,'ok');logActivity(folderColor(activeVault),`upload → ${json.files.length} Datei(en)`);vaultTree=await api(`/api/tree?vault=${encodeURIComponent(activeVault)}`);buildNoteIndex();renderSidebar();setGraphVault(true);}
+  }catch(ex){toast('Upload-Fehler: '+ex.message,'err');}
   finally{bar.style.width='100%';setTimeout(()=>bar.style.width='0%',600);}
 }
 
@@ -4691,9 +4776,9 @@ async function convertMarkitdown(path){
   toast('🔄 Konvertiere…');logActivity('#F59E0B',`markitdown → ${path.split('/').pop()}`);
   try{
     const r=await api('/api/convert/markitdown',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filePath:path,vault:activeVault})});
-    if(r.error){toast('Fehler: '+r.error,'error');return;}
-    toast(`✓ Konvertiert: ${r.mdPath}`,'success');vaultTree=await api(`/api/tree?vault=${encodeURIComponent(activeVault)}`);buildNoteIndex();renderSidebar();setGraphVault(true);openFile(r.mdPath);
-  }catch(ex){toast('Fehler: '+ex.message,'error');}
+    if(r.error){toast('Fehler: '+r.error,'err');return;}
+    toast(`✓ Konvertiert: ${r.mdPath}`,'ok');vaultTree=await api(`/api/tree?vault=${encodeURIComponent(activeVault)}`);buildNoteIndex();renderSidebar();setGraphVault(true);openFile(r.mdPath);
+  }catch(ex){toast('Fehler: '+ex.message,'err');}
 }
 async function reindex(){
   toast('🔄 Reindexiere…');logActivity('#7C8CFF','reindex() gestartet');
@@ -4701,10 +4786,10 @@ async function reindex(){
     const r=await api('/api/reindex',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault})});
     vaultTree=await api(`/api/tree?vault=${encodeURIComponent(activeVault)}`);buildNoteIndex();renderSidebar();setGraphVault(true);
     const total=countFiles(vaultTree);document.getElementById('sb-index').textContent=`Index: ${total.toLocaleString('de')} Dateien`;
-    toast(`✓ Reindex – ${r.indexed??total} Dateien`,'success');logActivity('#10B981',`reindex → ${r.indexed??total} Dateien`);
-  }catch(ex){toast('Fehler: '+ex.message,'error');}
+    toast(`✓ Reindex – ${r.indexed??total} Dateien`,'ok');logActivity('#10B981',`reindex → ${r.indexed??total} Dateien`);
+  }catch(ex){toast('Fehler: '+ex.message,'err');}
 }
-function copyPath(p){navigator.clipboard.writeText(p);toast('Pfad kopiert','success');}
+function copyPath(p){navigator.clipboard.writeText(p);toast('Pfad kopiert','ok');}
 
 // ═════════════════════ ACTIVITY LOG ═════════════════════
 const actLog=[];
@@ -4840,20 +4925,20 @@ async function createVault(){
   if(!name)return;
   try{
     const r=await api('/api/vaults/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
-    if(r.error){toast('Fehler: '+r.error,'error');return;}
-    inp.value='';toast(`✓ Vault „${name}" angelegt`,'success');logActivity('#10B981',`Vault angelegt → ${name}`);
+    if(r.error){toast('Fehler: '+r.error,'err');return;}
+    inp.value='';toast(`✓ Vault „${name}" angelegt`,'ok');logActivity('#10B981',`Vault angelegt → ${name}`);
     await refreshVaultSelector();await renderVaultList();
-  }catch(ex){toast('Fehler: '+ex.message,'error');}
+  }catch(ex){toast('Fehler: '+ex.message,'err');}
 }
 async function removeVault(name){
   if(!(await uiConfirm(`Vault „${name}" aus Nexus entfernen? Dateien bleiben erhalten.`)))return;
   try{
     const r=await api('/api/vaults/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
-    if(r.error){toast('Fehler: '+r.error,'error');return;}
+    if(r.error){toast('Fehler: '+r.error,'err');return;}
     logActivity('#EF4444',`Vault entfernt → ${name}`);
     if(name===activeVault&&r.activeVault){activeVault=r.activeVault;await loadVault();}
     await refreshVaultSelector();await renderVaultList();
-  }catch(ex){toast('Fehler: '+ex.message,'error');}
+  }catch(ex){toast('Fehler: '+ex.message,'err');}
 }
 
 // ───────── Einstellungs-Menue (R7) ─────────
@@ -4863,14 +4948,22 @@ const NEXUS_THEMES={
   blue:{label:'Himmel',sw:'#16385f',vars:{'--bg':'#0a1326','--panel':'rgba(124,150,255,.05)','--panel2':'rgba(124,150,255,.09)','--border':'rgba(124,150,255,.16)','--text':'#dde5f5','--dim':'#8893b5','--accent':'#6AA8FF'}},
   softdark:{label:'Bernstein',sw:'#e8a94a',vars:{'--bg':'#1f1e1d','--panel':'#262524','--panel2':'#31302e','--border':'#3a3836','--text':'#e8e6e3','--dim':'#9b968f','--accent':'#e8a94a','--app-bg':'#1f1e1d','--app-font':"'Inter','Segoe UI',system-ui,sans-serif"}},
   kanban:{label:'Kupfer',sw:'#d99a3d',vars:{'--bg':'#1f1e1d','--panel':'#272522','--panel2':'#34312d','--border':'#45403a','--text':'#ece7df','--dim':'#aaa199','--accent':'#d99a3d','--app-bg':'linear-gradient(180deg,#211f1c,#1b1a18)','--app-font':"'Inter','Segoe UI',system-ui,sans-serif"}},
-  reader:{label:'Wald',sw:'#8fc5a3',vars:{'--bg':'#151715','--panel':'#242820','--panel2':'#30362d','--border':'#3b4439','--text':'#ecefe8','--dim':'#a8b2a3','--accent':'#8fc5a3','--app-bg':'linear-gradient(90deg,#171a16 0,#171a16 68%,#141614)','--reader-font':"Georgia,'Times New Roman',serif"}}
+  reader:{label:'Wald',sw:'#8fc5a3',vars:{'--bg':'#151715','--panel':'#242820','--panel2':'#30362d','--border':'#3b4439','--text':'#ecefe8','--dim':'#a8b2a3','--accent':'#8fc5a3','--app-bg':'linear-gradient(90deg,#171a16 0,#171a16 68%,#141614)','--reader-font':"Georgia,'Times New Roman',serif"}},
+  // R27c (D1c): helles Theme im Standard-Layout – dieselben Werte wie Studio-„Creme" (:root[data-studio="cream"] oben).
+  light:{label:'Papier',sw:'#faf6ee',light:true,vars:{'--bg':'#e6dccb','--panel':'#faf6ee','--panel2':'#f0e8d8','--border':'#d6cbb5','--text':'#3c352a','--dim':'#8a7f6c','--accent':'#c8893a','--app-bg':'#e6dccb','--scrim':'color-mix(in srgb,#2a2316 38%,transparent)'}}
 };
-const THEME_VARS=['--bg','--panel','--panel2','--border','--text','--dim','--accent','--app-bg','--app-font','--reader-font'];
-function currentTheme(){return localStorage.getItem('nexus.theme')||'darker';}
+const THEME_VARS=['--bg','--panel','--panel2','--border','--text','--dim','--accent','--app-bg','--app-font','--reader-font','--scrim'];
+// R27c (D1c): 'auto' (Standard beim Erststart) folgt prefers-color-scheme – hell → 'light', sonst 'darker'.
+function themeSetting(){const v=localStorage.getItem('nexus.theme');return (v==='auto'||NEXUS_THEMES[v])?v:'auto';}
+function systemTheme(){try{return window.matchMedia('(prefers-color-scheme: light)').matches?'light':'darker';}catch(e){return 'darker';}}
+function currentTheme(){const v=themeSetting();return v==='auto'?systemTheme():v;}
+function setLightFlag(on){[document.documentElement,document.body].forEach(el=>{if(!el)return;if(on)el.dataset.light='1';else delete el.dataset.light;});}
 function applyTheme(id){
   const t=NEXUS_THEMES[id]||NEXUS_THEMES.dark;
   THEME_VARS.forEach(v=>document.documentElement.style.removeProperty(v));
   Object.keys(t.vars).forEach(k=>document.documentElement.style.setProperty(k,t.vars[k]));
+  setLightFlag(!!t.light);
+  refreshGraphColors();
   syncExternalTheme();
 }
 // Aktuelle Theme-Farben + Layout in localStorage spiegeln, damit das Hilfe-Fenster (help.html, gleiche
@@ -4882,11 +4975,14 @@ function syncExternalTheme(){
     const lay=currentLayout();
     localStorage.setItem('nexus.themeVars',JSON.stringify({layout:lay,studio:(lay==='softdark'?currentStudioVariant():''),vars}));
   }catch(e){}
+  rerenderMermaid();
 }
-function setTheme(id){if(!NEXUS_THEMES[id])return;localStorage.setItem('nexus.theme',id);if(currentLayout()==='classic')applyTheme(id);}
-function currentEditorFs(){const n=parseInt(localStorage.getItem('nexus.editorFontSize')||'',10);return (n>=12&&n<=20)?n:14;}
-function applyEditorFs(px){document.documentElement.style.setProperty('--editor-fs',px+'px');}
-function onEditorFsInput(v){const px=parseInt(v,10)||14;localStorage.setItem('nexus.editorFontSize',String(px));applyEditorFs(px);const e=document.getElementById('set-fs-val');if(e)e.textContent=px+'px';}
+function setTheme(id){if(id!=='auto'&&!NEXUS_THEMES[id])return;localStorage.setItem('nexus.theme',id);if(currentLayout()==='classic')applyTheme(currentTheme());}
+try{window.matchMedia('(prefers-color-scheme: light)').addEventListener('change',()=>{if(themeSetting()==='auto'&&currentLayout()==='classic')applyTheme(currentTheme());});}catch(e){}
+// R27c (D1g): null = keine eigene Einstellung -> Editor folgt der Notiz-Schriftgroesse (--reader-fs).
+function currentEditorFs(){const n=parseFloat(localStorage.getItem('nexus.editorFontSize')||'');return (n>=12&&n<=20)?n:null;}
+function applyEditorFs(px){if(px)document.documentElement.style.setProperty('--editor-fs',px+'px');else document.documentElement.style.removeProperty('--editor-fs');}
+function onEditorFsInput(v){const px=Math.max(12,Math.min(20,parseFloat(v)||14));localStorage.setItem('nexus.editorFontSize',String(px));applyEditorFs(px);const e=document.getElementById('set-fs-val');if(e)e.textContent=px+'px';}
 // Notiz-Schriftgroesse (Lese-Ansicht, .md-body) – getrennt vom Editor
 function currentReaderFs(){const n=parseFloat(localStorage.getItem('nexus.readerFontSize')||'');return (n>=12&&n<=24)?n:14.5;}
 function applyReaderFs(px){document.documentElement.style.setProperty('--reader-fs',px+'px');}
@@ -5336,18 +5432,18 @@ async function vtTestSatz(){
 }
 function settingsVortragHtml(){
   if(!window.speechSynthesis)return '<div class="set-section"><div class="set-label">Vortrag</div><div class="set-hint">Sprachausgabe wird von dieser Umgebung nicht unterstützt.</div></div>';
-  let h='<div class="set-section"><div class="set-label">Stimme</div><select class="set-select" id="set-vt-voice" onchange="setVtVoice(this.value)"></select>';
+  let h='<div class="set-section"><div class="set-label">Stimme</div><select class="set-select" id="set-vt-voice" data-change="vtVoice"></select>';
   h+='<div class="set-hint">Deutsche Stimmen zuerst. Mehr/natürlichere Stimmen: Windows-Einstellungen &rarr; Zeit &amp; Sprache &rarr; Sprache &rarr; Sprachpaket mit Text-zu-Sprache installieren, danach Nexus neu starten.</div></div>';
-  h+='<div class="set-section"><div class="set-label">Tempo <span class="set-val" id="set-vt-rate-val">'+currentVtRate().toFixed(2).replace(/\.?0+$/,'')+'×</span></div><input type="range" class="set-range" id="set-vt-rate" min="0.6" max="1.4" step="0.05" value="'+currentVtRate()+'" oninput="onVtRateInput(this.value)"></div>';
-  h+='<div class="set-section"><div class="set-label">Tonhöhe <span class="set-val" id="set-vt-pitch-val">'+currentVtPitch().toFixed(2).replace(/\.?0+$/,'')+'×</span></div><input type="range" class="set-range" id="set-vt-pitch" min="0.7" max="1.3" step="0.05" value="'+currentVtPitch()+'" oninput="onVtPitchInput(this.value)"></div>';
-  h+='<div class="set-section"><div class="set-label">Pause zwischen Segmenten <span class="set-val" id="set-vt-pause-val">'+currentVtPause()+' ms</span></div><input type="range" class="set-range" id="set-vt-pause" min="0" max="1500" step="50" value="'+currentVtPause()+'" oninput="onVtPauseInput(this.value)"></div>';
+  h+='<div class="set-section"><div class="set-label">Tempo <span class="set-val" id="set-vt-rate-val">'+currentVtRate().toFixed(2).replace(/\.?0+$/,'')+'×</span></div><input type="range" class="set-range" id="set-vt-rate" min="0.6" max="1.4" step="0.05" value="'+currentVtRate()+'" data-input="vtRate"></div>';
+  h+='<div class="set-section"><div class="set-label">Tonhöhe <span class="set-val" id="set-vt-pitch-val">'+currentVtPitch().toFixed(2).replace(/\.?0+$/,'')+'×</span></div><input type="range" class="set-range" id="set-vt-pitch" min="0.7" max="1.3" step="0.05" value="'+currentVtPitch()+'" data-input="vtPitch"></div>';
+  h+='<div class="set-section"><div class="set-label">Pause zwischen Segmenten <span class="set-val" id="set-vt-pause-val">'+currentVtPause()+' ms</span></div><input type="range" class="set-range" id="set-vt-pause" min="0" max="1500" step="50" value="'+currentVtPause()+'" data-input="vtPause"></div>';
   {
     h+='<div class="set-section"><div class="set-label">Neural-Stimmen (Piper, offline)</div>';
     h+='<div id="set-piper-list" class="set-hint">Lade Stimmen-Status ...</div>';
     h+='<div class="set-hint" id="set-piper-progress" style="min-height:16px"></div>';
     h+='<div class="set-hint">Einmaliger Download je Stimme (plus ~21 MB Engine beim ersten Mal), danach komplett offline. Tonh&ouml;he wirkt nur bei System-Stimmen.</div></div>';
   }
-  h+='<div class="set-section"><div class="set-label">Test</div><button class="ft-btn" style="padding:8px 14px" onclick="vtTestSatz()">Testsatz vorlesen</button>';
+  h+='<div class="set-section"><div class="set-label">Test</div><button class="ft-btn" style="padding:8px 14px" data-action="vtTestSatz">Testsatz vorlesen</button>';
   h+='<div class="set-hint">Der Vortrag-Button (&#127908;) neben &bdquo;Lesen&ldquo; trägt die offene Notiz vor. Liegt ein Vortragsskript daneben (&lt;Notiz&gt;.vortrag.json, per Claude-Tool write_vortrag erzeugt), wird moderiert vorgetragen &ndash; sonst linear Abschnitt für Abschnitt.</div></div>';
   return h;
 }
@@ -5392,8 +5488,8 @@ function renderPiperList(st){
       '<span style="min-width:150px;color:var(--text)">'+esc(k.name)+'</span>'+
       '<span style="color:var(--dim);font-size:11px">&approx; '+k.groesseMB+' MB</span>'+
       (da
-        ?'<span style="color:var(--accent)">&#10003; installiert</span><button class="ft-btn" style="padding:4px 10px" onclick="vtPiperDelete(&quot;'+id+'&quot;)">L&ouml;schen</button>'
-        :'<button class="ft-btn" style="padding:4px 10px" onclick="vtPiperInstall(&quot;'+id+'&quot;)">Installieren</button>')+
+        ?'<span style="color:var(--accent)">&#10003; installiert</span><button class="ft-btn" style="padding:4px 10px" data-action="piperDelete" data-id="'+esc(id)+'">L&ouml;schen</button>'
+        :'<button class="ft-btn" style="padding:4px 10px" data-action="piperInstall" data-id="'+esc(id)+'">Installieren</button>')+
       '</div>';
   }).join('');
   host.innerHTML=rows+(st.engine?'':'<div style="margin-top:4px">Engine (&approx; 21 MB) wird mit der ersten Stimme automatisch geladen.</div>');
@@ -5700,6 +5796,7 @@ function applyLayout(id){
     // Studio: Theme-Inline-Variablen entfernen, damit die warme Palette (:root[data-layout]) + Akzent greifen.
     // (Sonst ueberschreibt ein inline --accent des Standard-Themes die Layout-Farbe -> alles blau.)
     THEME_VARS.forEach(k=>document.documentElement.style.removeProperty(k));
+    setLightFlag(false);
     applySdAccent(currentSdAccent());
     applyStudioVariant(currentStudioVariant());
   }else{
@@ -6830,7 +6927,7 @@ document.addEventListener('keydown',e=>{
 // ── 3a. Faecher-Modal ────────────────────────────────────────────────────────
 function lnModalOeffnen(html){
   const m=document.getElementById('lern-modal');
-  m.innerHTML='<div class="palette ln-modal" onclick="event.stopPropagation()">'+html+'</div>';
+  m.innerHTML='<div class="palette ln-modal">'+html+'</div>';
   m.classList.add('show');
   return m;
 }
@@ -7198,14 +7295,15 @@ const SETTINGS_TABS=[{id:'appearance',label:'Darstellung'},{id:'graph',label:'Gr
 let _settingsTab='appearance';
 function setSettingsTab(id){_settingsTab=SETTINGS_TABS.some(t=>t.id===id)?id:'appearance';renderSettings();}
 function settingsAppearanceHtml(){
-  const th=currentTheme();
+  const th=themeSetting();
   const lay=currentLayout();
   let h='<div class="set-section"><div class="set-label">Layout</div><div class="set-themes">';
-  h+='<button class="set-theme'+(lay==='classic'?' active':'')+'" onclick="setLayout(&quot;classic&quot;)"><span class="st-sw" style="background:#0e1430"></span>Standard</button>';
-  h+='<button class="set-theme'+(lay==='softdark'?' active':'')+'" onclick="setLayout(&quot;softdark&quot;)"><span class="st-sw" style="background:#e8a94a"></span>Studio</button>';
+  h+='<button class="set-theme'+(lay==='classic'?' active':'')+'" data-action="setLayout" data-arg="classic"><span class="st-sw" style="background:#0e1430"></span>Standard</button>';
+  h+='<button class="set-theme'+(lay==='softdark'?' active':'')+'" data-action="setLayout" data-arg="softdark"><span class="st-sw" style="background:#e8a94a"></span>Studio</button>';
   h+='</div></div>';
   if(lay==='classic'){
   h+='<div class="set-section"><div class="set-label">Farbe</div><div class="set-themes">';
+  h+='<button class="set-theme'+(th==='auto'?' active':'')+'" data-set-theme="auto" title="Folgt der Systemeinstellung (hell/dunkel)"><span class="st-sw" style="background:linear-gradient(90deg,#faf6ee 50%,#04060a 50%)"></span>Automatisch (System)</button>';
   for(const id of Object.keys(NEXUS_THEMES)){const t=NEXUS_THEMES[id];
     h+='<button class="set-theme'+(id===th?' active':'')+'" data-set-theme="'+id+'"><span class="st-sw" style="background:'+t.sw+'"></span>'+esc(t.label)+'</button>';}
   h+='</div></div>';
@@ -7213,28 +7311,28 @@ function settingsAppearanceHtml(){
   if(lay==='softdark'){
     const sv=currentStudioVariant();
     h+='<div class="set-section"><div class="set-label">Studio-Variante</div><div class="set-themes">';
-    h+='<button class="set-theme'+(sv==='default'?' active':'')+'" onclick="setStudioVariant(&quot;default&quot;)"><span class="st-sw" style="background:#2a2928"></span>Standard</button>';
-    h+='<button class="set-theme'+(sv==='dark'?' active':'')+'" onclick="setStudioVariant(&quot;dark&quot;)"><span class="st-sw" style="background:#161514"></span>Dunkler</button>';
-    h+='<button class="set-theme'+(sv==='cream'?' active':'')+'" onclick="setStudioVariant(&quot;cream&quot;)"><span class="st-sw" style="background:#faf6ee;border:1px solid #d6cbb5"></span>Hell</button>';
+    h+='<button class="set-theme'+(sv==='default'?' active':'')+'" data-action="setStudioVariant" data-arg="default"><span class="st-sw" style="background:#2a2928"></span>Standard</button>';
+    h+='<button class="set-theme'+(sv==='dark'?' active':'')+'" data-action="setStudioVariant" data-arg="dark"><span class="st-sw" style="background:#161514"></span>Dunkler</button>';
+    h+='<button class="set-theme'+(sv==='cream'?' active':'')+'" data-action="setStudioVariant" data-arg="cream"><span class="st-sw" style="background:#faf6ee;border:1px solid #d6cbb5"></span>Hell</button>';
     h+='</div></div>';
     const sa=currentSdAccent();
-    h+='<div class="set-section"><div class="set-label">Akzentfarbe (Studio)</div><div class="set-folder"><input type="color" class="set-color" id="set-sd-accent" value="'+(sa||'#e8a94a')+'" oninput="setSdAccent(this.value)"><span class="set-folder-name">F&auml;rbt den gesamten Akzent um</span>'+(sa?'<span class="set-folder-reset" onclick="setSdAccent(\'\');renderSettings()" title="Standard (Bernstein)">&#8635;</span>':'')+'</div></div>';
+    h+='<div class="set-section"><div class="set-label">Akzentfarbe (Studio)</div><div class="set-folder"><input type="color" class="set-color" id="set-sd-accent" value="'+(sa||'#e8a94a')+'" data-input="sdAccent"><span class="set-folder-name">F&auml;rbt den gesamten Akzent um</span>'+(sa?'<span class="set-folder-reset" data-action="sdAccentReset" title="Standard (Bernstein)">&#8635;</span>':'')+'</div></div>';
     const rw=currentRailW();
-    h+='<div class="set-section"><div class="set-label">Icon-Leiste Breite<span class="set-val" id="set-railw-val">'+rw+'px</span></div><input type="range" class="set-range" id="set-railw" min="48" max="96" step="2" value="'+rw+'" oninput="onRailWInput(this.value)"></div>';
+    h+='<div class="set-section"><div class="set-label">Icon-Leiste Breite<span class="set-val" id="set-railw-val">'+rw+'px</span></div><input type="range" class="set-range" id="set-railw" min="48" max="96" step="2" value="'+rw+'" data-input="railW"></div>';
   }
-  const fs=currentEditorFs();
-  h+='<div class="set-section"><div class="set-label">Editor-Schriftgr&ouml;&szlig;e<span class="set-val" id="set-fs-val">'+fs+'px</span></div><input type="range" class="set-range" id="set-fs" min="12" max="20" step="1" value="'+fs+'" oninput="onEditorFsInput(this.value)"></div>';
+  const fsSet=currentEditorFs(),fs=fsSet||Math.min(20,currentReaderFs());
+  h+='<div class="set-section"><div class="set-label">Editor-Schriftgr&ouml;&szlig;e<span class="set-val" id="set-fs-val">'+fs+'px'+(fsSet?'':' (wie Notiz)')+'</span>'+(fsSet?'<span class="set-folder-reset" data-action="editorFsReset" title="Wieder wie Notiz-Schriftgr&ouml;&szlig;e">&#8635;</span>':'')+'</div><input type="range" class="set-range" id="set-fs" min="12" max="20" step="0.5" value="'+fs+'" data-input="editorFs"></div>';
   const rfs=currentReaderFs();
-  h+='<div class="set-section"><div class="set-label">Notiz-Schriftgr&ouml;&szlig;e<span class="set-val" id="set-readerfs-val">'+rfs+'px</span></div><input type="range" class="set-range" id="set-readerfs" min="12" max="24" step="0.5" value="'+rfs+'" oninput="onReaderFsInput(this.value)"></div>';
+  h+='<div class="set-section"><div class="set-label">Notiz-Schriftgr&ouml;&szlig;e<span class="set-val" id="set-readerfs-val">'+rfs+'px</span></div><input type="range" class="set-range" id="set-readerfs" min="12" max="24" step="0.5" value="'+rfs+'" data-input="readerFs"></div>';
   const pfs=currentPanelFs();
-  h+='<div class="set-section"><div class="set-label">Schriftgr&ouml;&szlig;e rechtes Panel (Gliederung)<span class="set-val" id="set-panelfs-val">'+pfs+'px</span></div><input type="range" class="set-range" id="set-panelfs" min="10" max="22" step="0.5" value="'+pfs+'" oninput="onPanelFsInput(this.value)"></div>';
+  h+='<div class="set-section"><div class="set-label">Schriftgr&ouml;&szlig;e rechtes Panel (Gliederung)<span class="set-val" id="set-panelfs-val">'+pfs+'px</span></div><input type="range" class="set-range" id="set-panelfs" min="10" max="22" step="0.5" value="'+pfs+'" data-input="panelFs"></div>';
   return h;
 }
 function settingsGraphHtml(){
   const gd=currentGraphDefault();
-  let h='<div class="set-section"><div class="set-label">Graph beim &Ouml;ffnen einer Notiz</div><select class="set-select" id="set-graph" onchange="setGraphDefault(this.value)"><option value="ego"'+(gd==='ego'?' selected':'')+'>Ego-Graph (Notiz im Fokus)</option><option value="main"'+(gd==='main'?' selected':'')+'>Hauptgraph (gesamtes Vault)</option></select></div>';
+  let h='<div class="set-section"><div class="set-label">Graph beim &Ouml;ffnen einer Notiz</div><select class="set-select" id="set-graph" data-change="graphDefault"><option value="ego"'+(gd==='ego'?' selected':'')+'>Ego-Graph (Notiz im Fokus)</option><option value="main"'+(gd==='main'?' selected':'')+'>Hauptgraph (gesamtes Vault)</option></select></div>';
   const gg=currentGraphGlow();
-  h+='<div class="set-section"><div class="set-label">Graph-Glow<span class="set-val" id="set-glow-val">'+(gg===0?'aus':gg+'%')+'</span></div><input type="range" class="set-range" id="set-glow" min="0" max="100" step="5" value="'+gg+'" oninput="onGraphGlowInput(this.value)"></div>';
+  h+='<div class="set-section"><div class="set-label">Graph-Glow<span class="set-val" id="set-glow-val">'+(gg===0?'aus':gg+'%')+'</span></div><input type="range" class="set-range" id="set-glow" min="0" max="100" step="5" value="'+gg+'" data-input="graphGlow"></div>';
   h+='<div class="set-section"><div class="set-label">Hauptthemen-Farben</div><div class="set-folders" id="set-folders"></div></div>';
   return h;
 }
@@ -7243,30 +7341,30 @@ function settingsUsageHtml(){
   let h='<div class="set-section"><div class="set-label">Claude Usage-Widget</div>';
   h+='<div style="margin-bottom:6px;font-size:10.5px;color:var(--dim)">Anzeige</div>';
   h+='<div class="set-toggle-group">';
-  h+='<button class="set-toggle'+(_uc.display==='pct'?' active':'')+'" onclick="setUsageCfg(&quot;display&quot;,&quot;pct&quot;);renderUsageWidget();renderSettings()">Prozent</button>';
-  h+='<button class="set-toggle'+(_uc.display==='bar'?' active':'')+'" onclick="setUsageCfg(&quot;display&quot;,&quot;bar&quot;);renderUsageWidget();renderSettings()">Balken</button>';
-  h+='<button class="set-toggle'+(_uc.display==='both'?' active':'')+'" onclick="setUsageCfg(&quot;display&quot;,&quot;both&quot;);renderUsageWidget();renderSettings()">Beides</button>';
+  h+='<button class="set-toggle'+(_uc.display==='pct'?' active':'')+'" data-action="usageCfg" data-k="display" data-v="pct">Prozent</button>';
+  h+='<button class="set-toggle'+(_uc.display==='bar'?' active':'')+'" data-action="usageCfg" data-k="display" data-v="bar">Balken</button>';
+  h+='<button class="set-toggle'+(_uc.display==='both'?' active':'')+'" data-action="usageCfg" data-k="display" data-v="both">Beides</button>';
   h+='</div>';
-  h+='<div class="set-thresh-row"><span>Warnung ab</span><input class="set-thresh-inp" type="number" min="1" max="99" value="'+_uc.warn+'" oninput="setUsageCfg(&quot;warn&quot;,+this.value);renderUsageWidget()"><span>%</span><span style="margin-left:6px">Kritisch ab</span><input class="set-thresh-inp" type="number" min="1" max="100" value="'+_uc.crit+'" oninput="setUsageCfg(&quot;crit&quot;,+this.value);renderUsageWidget()"><span>%</span></div>';
+  h+='<div class="set-thresh-row"><span>Warnung ab</span><input class="set-thresh-inp" type="number" min="1" max="99" value="'+_uc.warn+'" data-input="usageWarn"><span>%</span><span style="margin-left:6px">Kritisch ab</span><input class="set-thresh-inp" type="number" min="1" max="100" value="'+_uc.crit+'" data-input="usageCrit"><span>%</span></div>';
   h+='<div style="margin-top:10px;margin-bottom:6px;font-size:10.5px;color:var(--dim)">Position</div>';
   h+='<div class="set-toggle-group">';
-  h+='<button class="set-toggle'+(_uc.position==='right'?' active':'')+'" onclick="setUsageCfg(&quot;position&quot;,&quot;right&quot;);applyUsagePosition();renderSettings()">Rechts</button>';
-  h+='<button class="set-toggle'+(_uc.position==='left'?' active':'')+'" onclick="setUsageCfg(&quot;position&quot;,&quot;left&quot;);applyUsagePosition();renderSettings()">Links (neben Watcher)</button>';
+  h+='<button class="set-toggle'+(_uc.position==='right'?' active':'')+'" data-action="usageCfg" data-k="position" data-v="right">Rechts</button>';
+  h+='<button class="set-toggle'+(_uc.position==='left'?' active':'')+'" data-action="usageCfg" data-k="position" data-v="left">Links (neben Watcher)</button>';
   h+='</div>';
   h+='<div style="margin-top:10px;margin-bottom:6px;font-size:10.5px;color:var(--dim)">Aktualisierungsintervall</div>';
   h+='<div class="set-toggle-group">';
-  [1,5,15,30].forEach(function(m){h+='<button class="set-toggle'+(_uc.refreshMin===m?' active':'')+'" onclick="setUsageCfg(&quot;refreshMin&quot;,'+m+');applyUsageInterval();renderSettings();">'+m+'&nbsp;min</button>';});
+  [1,5,15,30].forEach(function(m){h+='<button class="set-toggle'+(_uc.refreshMin===m?' active':'')+'" data-action="usageCfg" data-k="refreshMin" data-v="'+m+'">'+m+'&nbsp;min</button>';});
   h+='</div></div>';
   return h;
 }
 function settingsSystemHtml(){
-  let h='<div class="set-section"><div class="set-label">Vault-Speicherort</div><div class="set-vaultroot"><input type="text" class="set-input" id="set-vaultroot" placeholder="Pfad zum Vaults-Ordner&hellip;"><button class="ft-btn" style="padding:8px 14px" onclick="saveVaultRoot()">Speichern</button></div><div class="set-hint" id="set-vaultroot-hint">Ordner, in dem neue Vaults angelegt werden. Bestehende Vaults behalten ihren Pfad.</div></div>';
+  let h='<div class="set-section"><div class="set-label">Vault-Speicherort</div><div class="set-vaultroot"><input type="text" class="set-input" id="set-vaultroot" placeholder="Pfad zum Vaults-Ordner&hellip;"><button class="ft-btn" style="padding:8px 14px" data-action="saveVaultRoot">Speichern</button></div><div class="set-hint" id="set-vaultroot-hint">Ordner, in dem neue Vaults angelegt werden. Bestehende Vaults behalten ihren Pfad.</div></div>';
   // Seit Phase 1 per REST (immer verfuegbar, egal ob Electron/Tauri/reiner Browser).
   h+='<div class="set-section"><div class="set-label">Claude Desktop &amp; Einrichtung</div>';
-  h+='<div class="set-vaultroot" style="flex-wrap:wrap;gap:8px"><button class="ft-btn" style="padding:8px 14px" onclick="connectClaudeFromSettings()">Mit Claude Desktop verbinden</button>';
+  h+='<div class="set-vaultroot" style="flex-wrap:wrap;gap:8px"><button class="ft-btn" style="padding:8px 14px" data-action="connectClaudeFromSettings">Mit Claude Desktop verbinden</button>';
   // Einrichtungsfenster oeffnen ist ein natives Fenster -> bleibt an die Nexus-App gebunden.
   if(window.nexusAPI&&window.nexusAPI.openHelp)
-    h+='<button class="ft-btn" style="padding:8px 14px" onclick="openHelpFromSettings()">Einrichtung &amp; Usage-Key&hellip;</button>';
+    h+='<button class="ft-btn" style="padding:8px 14px" data-action="openHelpFromSettings">Einrichtung &amp; Usage-Key&hellip;</button>';
   h+='</div>';
   h+='<div class="set-hint" id="set-claude-hint">Tr&auml;gt Nexus als MCP-Server in die Claude-Desktop-Konfiguration ein. Danach Claude Desktop komplett beenden und neu &ouml;ffnen.</div></div>';
   return h;
@@ -7280,7 +7378,7 @@ async function renderSettings(){
   const body=document.getElementById('settings-body');if(!body)return;
   const tab=_settingsTab;
   const tabsHost=document.getElementById('settings-tabs');
-  if(tabsHost)tabsHost.innerHTML=SETTINGS_TABS.map(t=>'<button class="set-tab'+(t.id===tab?' active':'')+'" onclick="setSettingsTab(&quot;'+t.id+'&quot;)">'+esc(t.label)+'</button>').join('');
+  if(tabsHost)tabsHost.innerHTML=SETTINGS_TABS.map(t=>'<button class="set-tab'+(t.id===tab?' active':'')+'" data-action="setSettingsTab" data-arg="'+t.id+'">'+esc(t.label)+'</button>').join('');
   let h='';
   if(tab==='graph')h=settingsGraphHtml();
   else if(tab==='usage')h=settingsUsageHtml();
@@ -7321,25 +7419,25 @@ async function saveVaultRoot(){
   if(!p){if(hint)hint.textContent='Bitte einen Pfad eingeben.';return;}
   try{
     const r=await api('/api/settings/vaultsRoot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vaultsRoot:p})});
-    if(r.error){toast('Fehler: '+r.error,'error');if(hint)hint.textContent='⚠ '+r.error;return;}
-    toast('✓ Vault-Speicherort gespeichert','success');logActivity('#10B981','vaultsRoot → '+esc(p));
+    if(r.error){toast('Fehler: '+r.error,'err');if(hint)hint.textContent='⚠ '+r.error;return;}
+    toast('✓ Vault-Speicherort gespeichert','ok');logActivity('#10B981','vaultsRoot → '+esc(p));
     if(hint)hint.textContent=r.note||'Gespeichert. Bitte Nexus neu starten.';
-  }catch(ex){toast('Fehler: '+ex.message,'error');}
+  }catch(ex){toast('Fehler: '+ex.message,'err');}
 }
 async function connectClaudeFromSettings(){
   const hint=document.getElementById('set-claude-hint');
   try{
     const r=await api('/api/connect-claude',{method:'POST'});
-    if(r&&r.error){toast('Fehler: '+r.error,'error');if(hint)hint.textContent='⚠ '+r.error;return;}
+    if(r&&r.error){toast('Fehler: '+r.error,'err');if(hint)hint.textContent='⚠ '+r.error;return;}
     const key=(r&&r.key)||'nexus';
-    toast('✓ Mit Claude Desktop verbunden','success');logActivity('#10B981','Claude Desktop verbunden ('+esc(key)+')');
+    toast('✓ Mit Claude Desktop verbunden','ok');logActivity('#10B981','Claude Desktop verbunden ('+esc(key)+')');refreshMcpStatus();
     if(hint)hint.textContent='✓ Eingetragen als „'+key+'". Claude Desktop bitte komplett beenden und neu öffnen.'+((r&&r.backedUp)?' Alte Config gesichert (…nexus-backup).':'');
-  }catch(ex){toast('Fehler: '+ex.message,'error');}
+  }catch(ex){toast('Fehler: '+ex.message,'err');}
 }
 async function openHelpFromSettings(){
-  if(!(window.nexusAPI&&window.nexusAPI.openHelp)){toast('Nur in der Nexus-App verf&uuml;gbar','error');return;}
-  try{const r=await window.nexusAPI.openHelp();if(r&&r.error)toast('Fehler: '+r.error,'error');}
-  catch(ex){toast('Fehler: '+ex.message,'error');}
+  if(!(window.nexusAPI&&window.nexusAPI.openHelp)){toast('Nur in der Nexus-App verf&uuml;gbar','err');return;}
+  try{const r=await window.nexusAPI.openHelp();if(r&&r.error)toast('Fehler: '+r.error,'err');}
+  catch(ex){toast('Fehler: '+ex.message,'err');}
 }
 
 
@@ -7428,11 +7526,11 @@ function renderUsagePopoverBody(){
     +'<input id="uw-sk" class="uw-inp" type="password" placeholder="'+(auth.configured?'✓ konfiguriert – neu eingeben zum Ersetzen':'sk-ant-…')+'" value="" autocomplete="off"></div>';
   html+='<div class="uw-auth-row"><label>Org-ID</label>'
     +'<input id="uw-org" class="uw-inp" type="text" placeholder="UUID…" value="'+esc(auth.orgId||'')+'" autocomplete="off">'
-    +'<button class="uw-btn" onclick="uwAutoDetect()" title="Org-ID automatisch ermitteln">⟳</button></div>';
+    +'<button class="uw-btn" data-action="uwAutoDetect" title="Org-ID automatisch ermitteln">⟳</button></div>';
   html+='<div class="uw-auth-btns">'
-    +(auth.configured?'<button class="uw-btn" onclick="uwRemoveAuth()" title="Session-Key vom Rechner entfernen">Entfernen</button>':'')
-    +'<button class="uw-btn" onclick="closeUsagePopover()">Schließen</button>'
-    +'<button class="uw-btn primary" onclick="uwSaveAndFetch()">Speichern</button></div>';
+    +(auth.configured?'<button class="uw-btn" data-action="uwRemoveAuth" title="Session-Key vom Rechner entfernen">Entfernen</button>':'')
+    +'<button class="uw-btn" data-action="closeUsagePopover">Schließen</button>'
+    +'<button class="uw-btn primary" data-action="uwSaveAndFetch">Speichern</button></div>';
   body.innerHTML=html;
 }
 async function uwRemoveAuth(){
@@ -7440,12 +7538,12 @@ async function uwRemoveAuth(){
   await loadUsageAuth();
   _usageData=null;if(_usageInterval){clearInterval(_usageInterval);_usageInterval=null;}
   renderUsageWidget();renderUsagePopoverBody();
-  toast('Zugangsdaten entfernt','success');
+  toast('Zugangsdaten entfernt','ok');
 }
 async function uwAutoDetect(){
   const sk=(document.getElementById('uw-sk')?document.getElementById('uw-sk').value:'').trim();
   // Ohne frische Eingabe nimmt der Server den gespeicherten Key (falls konfiguriert).
-  if(!sk&&!getUsageAuth().configured){toast('Session-Key eingeben','error');return;}
+  if(!sk&&!getUsageAuth().configured){toast('Session-Key eingeben','err');return;}
   const orgInp=document.getElementById('uw-org');
   if(orgInp){orgInp.placeholder='⟳ Ermittle…';orgInp.disabled=true;}
   try{
@@ -7455,28 +7553,28 @@ async function uwAutoDetect(){
     if(Array.isArray(orgs)&&orgs.length>0){
       const org=orgs.find(function(o){return o.isTeam;})||orgs[0];
       if(orgInp)orgInp.value=org.id;
-      toast('Org gefunden: '+org.name,'success');
+      toast('Org gefunden: '+org.name,'ok');
     }else{
-      toast(orgs.error?'Fehler: '+orgs.error:'Keine Org gefunden','error');
+      toast(orgs.error?'Fehler: '+orgs.error:'Keine Org gefunden','err');
     }
   }catch(e){
     if(orgInp){orgInp.placeholder='UUID…';orgInp.disabled=false;}
-    toast('Fehler: '+e.message,'error');
+    toast('Fehler: '+e.message,'err');
   }
 }
 async function uwSaveAndFetch(){
   const sk=(document.getElementById('uw-sk')?document.getElementById('uw-sk').value:'').trim();
   const orgId=(document.getElementById('uw-org')?document.getElementById('uw-org').value:'').trim();
-  if(!sk&&!getUsageAuth().configured){toast('Session-Key fehlt','error');return;}
-  if(!orgId){toast('Org-ID fehlt – ⟳ nutzen','error');return;}
+  if(!sk&&!getUsageAuth().configured){toast('Session-Key fehlt','err');return;}
+  if(!orgId){toast('Org-ID fehlt – ⟳ nutzen','err');return;}
   // Leerer Key bei konfiguriertem Zugang = nur Org-ID aendern (Server behaelt den Key).
   const body={orgId:orgId};if(sk)body.sessionKey=sk;
   let r=null;
   try{r=await api('/api/claude-auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});}
-  catch(e){toast('Speichern fehlgeschlagen: '+e.message,'error');return;}
-  if(!(r&&r.ok)){toast('Speichern fehlgeschlagen: '+((r&&r.error)||'unbekannt'),'error');return;}
+  catch(e){toast('Speichern fehlgeschlagen: '+e.message,'err');return;}
+  if(!(r&&r.ok)){toast('Speichern fehlgeschlagen: '+((r&&r.error)||'unbekannt'),'err');return;}
   await loadUsageAuth();
-  toast('Zugangsdaten gespeichert','success');
+  toast('Zugangsdaten gespeichert','ok');
   _usageData=null;renderUsageWidget();renderUsagePopoverBody();
   await fetchUsageData();
   renderUsageWidget();renderUsagePopoverBody();
@@ -7625,6 +7723,74 @@ if(window.__TAURI__&&!window.nexusAPI){
   }catch(e){}
 }
 initUsageWidget();
+// ═════════════════════ R27c: EVENT-DELEGATION (CSP ohne 'unsafe-inline') ═════════════════════
+// Im Markup und in HTML-Strings gibt es kein onclick/oninput/onchange/onkeydown mehr (Vorbedingung
+// fuer script-src ohne 'unsafe-inline', s. src/csp.js + tauri.conf.json). Elemente tragen
+// data-action / data-input / data-change; EIN Listener je Ereignis auf document schlaegt hier
+// nach. data-self: nur ausloesen, wenn das Element selbst getroffen wurde (Overlay-Hintergrund
+// schliesst den Dialog, ein Klick IM Dialog nicht – ersetzt das fruehere stopPropagation).
+// Argumente stehen in data-Attributen (Tab-Index, Layout-Name, Piper-Stimme); Dateipfade werden
+// nie mehr in Strings eingebettet – Kontextmenue und Palette halten Funktionsreferenzen.
+// Reihenfolge: dieser Block steht bewusst NACH dem globalen Klick-Schliesser (closeCtx/cpClose/
+// iconClose) – so oeffnet "Farbe anpassen…" sein Popup erst, nachdem der Schliesser gelaufen ist.
+const UI_ACTIONS={
+  cpApply:()=>cpApply(), cpRemove:()=>cpRemove(), cpClose:()=>cpClose(),
+  iconApply:()=>iconApply(), iconRemove:()=>iconRemove(), iconClose:()=>iconClose(),
+  iconPick:(el)=>{document.getElementById('ip-input').value=el.dataset.ic||'';},
+  toggleReading:()=>toggleReading(), toggleVortrag:()=>toggleVortrag(), lnKartenZuNotiz:()=>lnKartenZuNotiz(),
+  openLernDashboard:()=>openLernDashboard(), openPalette:()=>openPalette(), toggleVaultDrop:()=>toggleVaultDrop(),
+  openVaultModal:()=>openVaultModal(), newNote:()=>newNote(), openSettings:()=>openSettings(),
+  vtPrev:()=>vtPrev(), vtPlayPause:()=>vtPlayPause(), vtNext:()=>vtNext(), vtStop:()=>vtStop(),
+  setRightMode:(el)=>setRightMode(el.dataset.mode),
+  openUsagePopover:()=>openUsagePopover(), closeUsagePopover:()=>closeUsagePopover(), uwManualRefresh:()=>uwManualRefresh(),
+  uwAutoDetect:()=>uwAutoDetect(), uwRemoveAuth:()=>uwRemoveAuth(), uwSaveAndFetch:()=>uwSaveAndFetch(),
+  tabBack:()=>tabBack(), tabForward:()=>tabForward(), newTab:()=>newTab(),
+  switchTab:(el)=>switchTab(+el.dataset.tidx), closeTab:(el)=>closeTab(+el.dataset.i),
+  closeCenterSplit:()=>closeCenterSplit(),
+  closePalette:()=>closePalette(), closeVaultModal:()=>closeVaultModal(), createVault:()=>createVault(),
+  uiPromptCancel:()=>uiPromptCancel(), uiPromptOk:()=>uiPromptOk(), _confirmCancel:()=>_confirmCancel(), confirmOk:()=>confirmOk(),
+  pickerCancel:()=>pickerCancel(), pickerConfirm:()=>pickerConfirm(), closeSettings:()=>closeSettings(), lnModalClose:()=>lnModalClose(),
+  palItem:(el)=>{const it=palItems[+el.dataset.i];if(it&&typeof it.fn==='function')it.fn();},
+  ctxItem:(el)=>{const it=_ctxItems[+el.dataset.i];closeCtx();if(it&&typeof it.run==='function')it.run();},
+  setSettingsTab:(el)=>setSettingsTab(el.dataset.arg),
+  setLayout:(el)=>setLayout(el.dataset.arg),
+  setStudioVariant:(el)=>setStudioVariant(el.dataset.arg),
+  sdAccentReset:()=>{setSdAccent('');renderSettings();},
+  usageCfg:(el)=>{const k=el.dataset.k;const v=(k==='refreshMin')?+el.dataset.v:el.dataset.v;setUsageCfg(k,v);
+    if(k==='display')renderUsageWidget();else if(k==='position')applyUsagePosition();else if(k==='refreshMin')applyUsageInterval();renderSettings();},
+  saveVaultRoot:()=>saveVaultRoot(), connectClaudeFromSettings:()=>connectClaudeFromSettings(), openHelpFromSettings:()=>openHelpFromSettings(),
+  editorFsReset:()=>{localStorage.removeItem('nexus.editorFontSize');applyEditorFs(null);renderSettings();},
+  vtTestSatz:()=>vtTestSatz(), piperInstall:(el)=>vtPiperInstall(el.dataset.id), piperDelete:(el)=>vtPiperDelete(el.dataset.id),
+};
+const UI_INPUTS={
+  vtRate:(el)=>onVtRateInput(el.value), vtPitch:(el)=>onVtPitchInput(el.value), vtPause:(el)=>onVtPauseInput(el.value),
+  sdAccent:(el)=>setSdAccent(el.value), railW:(el)=>onRailWInput(el.value),
+  editorFs:(el)=>onEditorFsInput(el.value), readerFs:(el)=>onReaderFsInput(el.value), panelFs:(el)=>onPanelFsInput(el.value),
+  graphGlow:(el)=>onGraphGlowInput(el.value),
+  usageWarn:(el)=>{setUsageCfg('warn',+el.value);renderUsageWidget();},
+  usageCrit:(el)=>{setUsageCfg('crit',+el.value);renderUsageWidget();},
+};
+const UI_CHANGES={ vtVoice:(el)=>setVtVoice(el.value), graphDefault:(el)=>setGraphDefault(el.value) };
+function uiDelegate(evt,attr,table){
+  document.addEventListener(evt,e=>{
+    const el=e.target&&e.target.closest?e.target.closest('['+attr+']'):null;
+    if(!el)return;
+    if(el.hasAttribute('data-self')&&e.target!==el)return;
+    const fn=table[el.getAttribute(attr)];
+    if(fn)fn(el,e);
+  });
+}
+uiDelegate('click','data-action',UI_ACTIONS);
+uiDelegate('input','data-input',UI_INPUTS);
+uiDelegate('change','data-change',UI_CHANGES);
+// Statische Eingabefelder direkt binden (Target-Phase wie vorher – onPalKey/uiPromptKey stoppen
+// bei Escape die Propagation, das muss VOR der globalen Esc-Kaskade greifen).
+document.getElementById('pal-input').addEventListener('input',()=>onPalInput());
+document.getElementById('pal-input').addEventListener('keydown',e=>onPalKey(e));
+document.getElementById('prompt-input').addEventListener('keydown',e=>uiPromptKey(e));
+document.getElementById('vault-new').addEventListener('keydown',e=>{if(e.key==='Enter')createVault();});
+document.getElementById('file-input').addEventListener('change',function(){uploadFiles(this.files,currentFolder);});
+
 init();
 </script>
 </body>

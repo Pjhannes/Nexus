@@ -17,6 +17,7 @@ import { tmpdir, networkInterfaces } from 'os';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { safeFull } from '../src/paths.js';
+import { buildCsp, inlineScriptHashes, CSP_POLICY_TAURI } from '../src/csp.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const UI_SERVER = join(__dir, '..', 'src', 'ui-server.js');
@@ -38,6 +39,40 @@ console.log('\n── 0. safeFull (paths.js) ──');
   ok('erlaubt: "" -> Wurzel', safeFull(root, '') === join(root));
   ok('erlaubt: undefined -> Wurzel', safeFull(root, undefined) === join(root));
   ok('erlaubt: a/./b', safeFull(root, 'a/./b') === join(root, 'a', 'b'));
+}
+
+// ── Unit: CSP-Bausteine + statischer Scan der eigenen HTML-Seiten (R27c) ──────
+console.log('\n── 0b. CSP (csp.js), Inline-Handler-Scan, tauri.conf.json, Vendor-Lizenzen ──');
+{
+  const pub = (p) => readFileSync(join(__dir, '..', 'public', p), 'utf8');
+  const idx = pub('index.html');
+  const hashes = inlineScriptHashes(idx);
+  ok('index.html: 2 Inline-Skripte (Import-Map + App) gehasht', hashes.length === 2 && hashes.every(h => /^'sha256-[A-Za-z0-9+/=]+'$/.test(h)), hashes);
+  const csp = buildCsp(idx);
+  ok("CSP: script-src 'self' + Hashes, OHNE 'unsafe-inline'", /script-src 'self' 'sha256-/.test(csp) && !/script-src[^;]*unsafe-inline/.test(csp), csp);
+  ok("CSP: object-src 'none', base-uri 'self', form-action 'self'", csp.includes("object-src 'none'") && csp.includes("base-uri 'self'") && csp.includes("form-action 'self'"));
+  ok('CSP: keine CDN-Hosts (KaTeX/Mermaid/DOMPurify lokal)', !/jsdelivr|unpkg|cdnjs/.test(csp));
+  ok('CSP: Tauri-IPC in connect-src', /connect-src[^;]*ipc:[^;]*http:\/\/ipc\.localhost/.test(csp));
+  ok('CSP: Hash folgt dem Skript-Inhalt', inlineScriptHashes(idx.replace('init();', 'init(); //x'))[1] !== hashes[1]);
+  // Browser-Befund R27c: der HTML-Parser hasht den LF-normalisierten Skripttext – CRLF-Dateien muessen denselben Hash liefern.
+  ok('CSP: Hash unabhaengig von CRLF/LF (Parser normalisiert)', inlineScriptHashes('<script>\r\nconst a=1;\r\n</script>')[0] === inlineScriptHashes('<script>\nconst a=1;\n</script>')[0]);
+  for (const p of ['index.html', 'lernen.html', 'help.html', 'wizard.html', 'update.html']) {
+    const h = pub(p);
+    const markup = h.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+    const inl = markup.match(/<[a-z][^>]*\son[a-z]+\s*=/gi) || [];
+    ok(`${p}: keine Inline-Event-Handler im Markup`, inl.length === 0, inl.slice(0, 3));
+    ok(`${p}: keine javascript:-URLs im Markup`, !/href\s*=\s*["']?javascript:/i.test(markup));
+    ok(`${p}: keine on*="…"-Handler in HTML-Strings des Skripts`, !/\son(click|input|change|keydown|keyup|submit|load|error|mouse\w+|focus|blur|dblclick)="/.test(h));
+  }
+  ok('lernen-kern.js: keine on*="…"-Handler in HTML-Strings', !/\son(click|input|change|keydown|keyup|submit|load|error|mouse\w+|focus|blur|dblclick)="/.test(pub('lernen-kern.js')));
+  ok('wizard.html/update.html: keine style="…"-Attribute (Tauri-Nonce auf style-src)', !/\sstyle="/.test(pub('wizard.html').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')) && !/\sstyle="/.test(pub('update.html').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')));
+  ok('index.html: KaTeX/Mermaid/DOMPurify lokal referenziert, kein mermaid@10/katex@0.16.9-CDN mehr',
+    idx.includes("'/vendor/katex/'") && idx.includes('/vendor/mermaid/mermaid.min.js') && idx.includes('/vendor/dompurify/purify.min.js') && !idx.includes('mermaid@10') && !idx.includes('katex@0.16.9'));
+  ok("index.html: 'iframe' nicht mehr in RAW_HTML_TAGS", !/RAW_HTML_TAGS=new Set\(\[[^\]]*'iframe'/.test(idx));
+  const tauri = JSON.parse(readFileSync(join(__dir, '..', 'src-tauri', 'tauri.conf.json'), 'utf8'));
+  ok('tauri.conf.json: csp gesetzt und identisch zu csp.js (CSP_POLICY_TAURI)', tauri.app.security.csp === CSP_POLICY_TAURI, tauri.app.security.csp);
+  for (const d of ['dompurify', 'katex', 'mermaid', 'mammoth', 'pdfjs', 'fflate', 'cm6']) ok(`public/vendor/${d}/LICENSE vorhanden`, existsSync(join(__dir, '..', 'public', 'vendor', d, 'LICENSE')));
+  for (const d of ['dompurify', 'katex', 'mermaid']) ok(`public/vendor/${d}/MANIFEST.tsv vorhanden`, existsSync(join(__dir, '..', 'public', 'vendor', d, 'MANIFEST.tsv')));
 }
 
 // ── Scratch ───────────────────────────────────────────────────────────────────
@@ -274,12 +309,35 @@ try {
   mkdirSync(join(vaultDir, '.trash', '2020-01-01_120000', 'Alt'), { recursive: true });
   writeFileSync(join(vaultDir, '.trash', '2020-01-01_120000', 'Alt', 'uralt.md'), '# uralt\n', 'utf8');
 
+  console.log('\n── 10c. Content-Security-Policy-Header + MCP-Status (R27c) ──');
+  {
+    const pub = (p) => readFileSync(join(__dir, '..', 'public', p), 'utf8');
+    const r = await raw('/');
+    ok('GET / -> 200 mit CSP-Header', r.status === 200 && !!r.headers['content-security-policy'], r.headers);
+    ok('CSP-Header von / == buildCsp(index.html)', r.headers['content-security-policy'] === buildCsp(pub('index.html')));
+    for (const p of ['lernen.html', 'help.html', 'wizard.html', 'update.html']) {
+      const q = await raw('/' + p);
+      ok(`GET /${p} -> CSP-Header mit eigenen Hashes`, q.status === 200 && q.headers['content-security-policy'] === buildCsp(pub(p)), q.headers['content-security-policy']);
+    }
+    ok('Nicht-HTML (katex.min.css) ohne CSP-Header', (await raw('/vendor/katex/katex.min.css')).status === 200 && !(await raw('/vendor/katex/katex.min.css')).headers['content-security-policy']);
+    for (const v of ['/vendor/katex/katex.min.js', '/vendor/katex/fonts/KaTeX_Main-Regular.woff2', '/vendor/mermaid/mermaid.min.js', '/vendor/dompurify/purify.min.js'])
+      ok(`${v} erreichbar`, (await raw(v)).status === 200);
+    const st = await get('/api/connect-claude/status');
+    ok('GET /api/connect-claude/status -> {configured:boolean, key:"nexus"} (Nur-Lese)', st.status === 200 && st.json && typeof st.json.configured === 'boolean' && st.json.key === 'nexus', st.json);
+    ok('GET /api/connect-claude/status ohne Token -> 401', (await raw('/api/connect-claude/status')).status === 401);
+  }
+
   await stop(srv);
 
   console.log('\n── 11. Web-Betrieb (NEXUS_WEB=1): kein Token, gesperrte Routen ──');
   srv = startServer({ NEXUS_WEB: '1', NEXUS_UI_TOKEN: '' });
   ok('ui-server (Web) startet', await warten({}), srv.log.slice(-400));
   await new Promise(r => setTimeout(r, 200));
+  {
+    const q = await raw('/lernen.html');
+    ok('Web: /lernen.html traegt denselben CSP-Header', q.status === 200 && q.headers['content-security-policy'] === buildCsp(readFileSync(join(__dir, '..', 'public', 'lernen.html'), 'utf8')), q.headers['content-security-policy']);
+    ok('Web: /api/connect-claude/status -> 403 (geraetegebunden)', (await raw('/api/connect-claude/status')).status === 403);
+  }
   ok('Papierkorb-Eintrag aelter als 30 Tage beim Start entfernt', !existsSync(join(vaultDir, '.trash', '2020-01-01_120000')) && /Papierkorb-Eintrag/.test(srv.log), srv.log.slice(-300));
   ok('Startlog nennt 0.0.0.0 + "kein UI-Token"', /lauscht auf 0\.0\.0\.0:.*kein UI-Token/.test(srv.log), srv.log.slice(-300));
   ok('/api/vaults ohne Token -> 200 (Auth macht der Proxy)', (await raw('/api/vaults')).status === 200);

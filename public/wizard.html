@@ -55,6 +55,7 @@
   .nav{display:flex;gap:10px;justify-content:flex-end;padding-top:16px;border-top:1px solid var(--border);margin-top:14px}
   .nav .left{margin-right:auto}
   .hint{font-size:12px;color:var(--dim);margin-top:8px}
+.mt14{margin-top:14px}
 </style>
 </head>
 <body>
@@ -74,14 +75,14 @@
   <section class="page active" id="p0">
     <h2>Willkommen bei Nexus</h2>
     <p>Dein persönlicher Wissens-Workspace – mit Editor, Graph-Ansicht und direkter Anbindung an Claude.</p>
-    <div style="margin-top:14px">
+    <div class="mt14">
       <div class="feat"><span>◆</span><span><b>Vaults</b> – deine Notizen & Dateien an einem Ort, lokal auf deinem PC.</span></div>
       <div class="feat"><span>◆</span><span><b>Graph & Editor</b> – verknüpfte Notizen sichtbar machen und direkt bearbeiten.</span></div>
       <div class="feat"><span>◆</span><span><b>Claude-Anbindung</b> – Nexus als Wissensquelle in Claude Desktop.</span></div>
     </div>
     <p class="hint">Die Einrichtung dauert weniger als eine Minute.</p>
     <div class="nav">
-      <button class="primary" onclick="go(1)">Weiter</button>
+      <button class="primary" data-go="1">Weiter</button>
     </div>
   </section>
 
@@ -93,13 +94,13 @@
       <label class="fl">Vault-Speicherort</label>
       <div class="pathrow">
         <input type="text" id="vaultPath" spellcheck="false" placeholder="Dokumente\Nexus Vaults">
-        <button onclick="browse()">Durchsuchen…</button>
+        <button data-act="browse">Durchsuchen…</button>
       </div>
       <p class="hint">Es wird ein Start-Vault „knowledge-base" in diesem Ordner angelegt.</p>
     </div>
     <div class="nav">
-      <button class="left" onclick="go(0)">Zurück</button>
-      <button class="primary" onclick="go(2)">Weiter</button>
+      <button class="left" data-go="0">Zurück</button>
+      <button class="primary" data-go="2">Weiter</button>
     </div>
   </section>
 
@@ -123,8 +124,8 @@
       <span class="d">Schritt-für-Schritt: Claude-Desktop-Anbindung & Usage-Widget.</span></span>
     </label>
     <div class="nav">
-      <button class="left" onclick="go(1)">Zurück</button>
-      <button class="primary" id="finishBtn" onclick="finish()">Fertigstellen</button>
+      <button class="left" data-go="1">Zurück</button>
+      <button class="primary" id="finishBtn" data-act="finish">Fertigstellen</button>
     </div>
   </section>
 </div>
@@ -137,6 +138,15 @@
     browseFolder:     ()     => window.__TAURI__.core.invoke('wizard_browse').catch(() => null),
     defaultVaultPath: ()     => window.__TAURI__.core.invoke('wizard_default_vault_path').catch(() => null),
     finishWizard:     (opts) => window.__TAURI__.core.invoke('wizard_finish', { opts }).catch(e => ({ error: String(e) })),
+  });
+  // R27c: keine Inline-onclick/style-Attribute mehr. Tauri setzt bei gesetzter CSP (tauri.conf.json)
+  // Nonces auf <style> und Hashes auf <script>; Inline-Handler und style="…" waeren dann blockiert.
+  document.addEventListener('click', e => {
+    const b = e.target && e.target.closest ? e.target.closest('[data-go],[data-act]') : null;
+    if(!b) return;
+    if(b.dataset.go !== undefined) go(+b.dataset.go);
+    else if(b.dataset.act === 'browse') browse();
+    else if(b.dataset.act === 'finish') finish();
   });
   let cur = 0;
   function go(n){

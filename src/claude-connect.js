@@ -43,6 +43,18 @@ export function migrateClaudeEntryIfStale({ launchSpec, mcpKey }) {
   return { ...connectClaude({ launchSpec, mcpKey }), migrated: true };
 }
 
+// R27c (D1e): Nur-Lese-Status fuer die Statusleiste der UI – existiert der Eintrag mcpKey
+// in claude_desktop_config.json? Schreibt nichts, legt nichts an.
+export function claudeEntryStatus({ mcpKey }) {
+  const cfgPath = claudeConfigPath();
+  if (!existsSync(cfgPath)) return { configured: false, key: mcpKey, reason: 'keine Claude-Config' };
+  let cfg;
+  try { cfg = JSON.parse(readFileSync(cfgPath, 'utf8')); } catch { return { configured: false, key: mcpKey, reason: 'Claude-Config unlesbar' }; }
+  const entry = cfg?.mcpServers?.[mcpKey];
+  if (!entry || typeof entry !== 'object') return { configured: false, key: mcpKey, reason: 'kein Eintrag' };
+  return { configured: true, key: mcpKey, command: typeof entry.command === 'string' ? entry.command : null };
+}
+
 // launchSpec = { command, args, env } – vom Aufrufer gebaut (main.js: ELECTRON_RUN_AS_NODE;
 // spaeter Tauri: Node-Sidecar-Pfad ohne diesen Trick). mcpKey = 'nexus' oder 'nexus-dev'.
 export function connectClaude({ launchSpec, mcpKey }) {
