@@ -3518,8 +3518,8 @@ document.addEventListener('keydown',e=>{
 },true);
 
 // ── Mermaid + Math (R27c: lokal aus public/vendor, lazy; Fallback = Quelltext) ──
-// Skripte nacheinander probieren (lokal zuerst). Der CDN-Eintrag bleibt als dokumentierter Notnagel,
-// wird aber von der CSP (script-src 'self', s. src/csp.js) blockiert – die App ist offline-first.
+// Skripte nacheinander probieren (heute nur lokal: die CSP erlaubt script-src 'self', s. src/csp.js –
+// ein CDN-Fallback waere toter Code; R27d-Review 7). Versionen: public/vendor/*/MANIFEST.tsv.
 function loadScriptChain(urls){return new Promise(res=>{const next=i=>{if(i>=urls.length)return res(false);const s=document.createElement('script');s.src=urls[i];s.onload=()=>res(true);s.onerror=()=>{s.remove();next(i+1);};document.head.appendChild(s);};next(0);});}
 // Farbe einer CSS-Variablen als konkreten rgb()-Wert aufloesen (Mermaid/khroma koennen kein color-mix/var()).
 function resolveCssColor(expr,fallback){try{const el=document.createElement('span');el.style.color=expr;el.style.display='none';document.body.appendChild(el);const c=getComputedStyle(el).color;el.remove();if(!c||c==='rgba(0, 0, 0, 0)')return fallback;if(/^rgba?\(/.test(c))return c;
@@ -3580,13 +3580,16 @@ function loadFflate(){
   });
   return _fflateLoaded;
 }
-function loadMermaid(){if(_mermaidLoaded!==null)return _mermaidLoaded;_mermaidLoaded=loadScriptChain(['/vendor/mermaid/mermaid.min.js','https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js']).then(ok=>{if(!ok||!window.mermaid)return null;try{window.mermaid.initialize({startOnLoad:false,theme:'base',themeVariables:mermaidThemeVars()});return window.mermaid;}catch(e){return null;}});return _mermaidLoaded;}
+function loadMermaid(){if(_mermaidLoaded!==null)return _mermaidLoaded;_mermaidLoaded=loadScriptChain(['/vendor/mermaid/mermaid.min.js']).then(ok=>{if(!ok||!window.mermaid)return null;try{window.mermaid.initialize({startOnLoad:false,theme:'base',themeVariables:mermaidThemeVars()});return window.mermaid;}catch(e){return null;}});return _mermaidLoaded;}
 let _mmdSeq=0;
 function renderMermaid(area){const blocks=area.querySelectorAll('.mermaid-block[data-mermaid]');if(!blocks.length)return;loadMermaid().then(m=>{if(!m)return;
   try{m.initialize({startOnLoad:false,theme:'base',themeVariables:mermaidThemeVars()});}catch(e){}
-  blocks.forEach(async b=>{try{const {svg}=await m.render('mmd'+(++_mmdSeq),b.getAttribute('data-mermaid'));b.innerHTML=svg;}catch(e){}});});}
+  // R27d (Review 3): je Block die juengste Sequenznummer merken – ein aelterer, spaeter fertiger Render darf nicht ueberschreiben.
+  blocks.forEach(async b=>{const seq=++_mmdSeq;b.dataset.mmdSeq=String(seq);try{const {svg}=await m.render('mmd'+seq,b.getAttribute('data-mermaid'));if(b.dataset.mmdSeq===String(seq))b.innerHTML=svg;}catch(e){}});});}
 // D1d: Theme gewechselt -> alle sichtbaren Diagramme mit den neuen Farben neu zeichnen (data-mermaid bleibt am Block).
-function rerenderMermaid(){if(_mermaidLoaded===null)return;renderMermaid(document);}
+// Entprellt (R27d): der Studio-Farbwaehler feuert Dutzende input-Events pro Sekunde.
+let _mmdRerenderTimer=null;
+function rerenderMermaid(){if(_mermaidLoaded===null)return;clearTimeout(_mmdRerenderTimer);_mmdRerenderTimer=setTimeout(()=>renderMermaid(document),150);}
 
 // ── Dataview: ```dataview-Bloecke serverseitig aufloesen + themed rendern ──
 function dvCellHtml(c){
@@ -3624,8 +3627,8 @@ function renderDataview(area){
   });
 }
 function loadKatex(){if(_katexLoaded!==null)return _katexLoaded;_katexLoaded=(async()=>{
-  let base='/vendor/katex/';
-  if(!(await loadScriptChain([base+'katex.min.js']))){base='https://cdn.jsdelivr.net/npm/katex@0.16.47/dist/';if(!(await loadScriptChain([base+'katex.min.js'])))return null;}
+  const base='/vendor/katex/';
+  if(!(await loadScriptChain([base+'katex.min.js'])))return null;
   const css=document.createElement('link');css.rel='stylesheet';css.href=base+'katex.min.css';document.head.appendChild(css);
   return window.katex||null;})();return _katexLoaded;}
 function renderMath(area){const els=area.querySelectorAll('[data-tex]');if(!els.length)return;loadKatex().then(k=>{if(!k)return;els.forEach(el=>{try{el.innerHTML=k.renderToString(el.getAttribute('data-tex'),{displayMode:el.classList.contains('math-block'),throwOnError:false});}catch(e){}});});}
@@ -3637,8 +3640,10 @@ function renderHtmlView(area,fname,raw,path){
   const _cs=getComputedStyle(document.documentElement);
   const _gb=(n,f)=>{const v=_cs.getPropertyValue(n).trim();return v||f;};
   const _bg=_gb('--bg','#0d1017'),_tx=_gb('--text','#dbe2ee'),_dm=_gb('--dim','#7b8497');
-  const _isc='<style>::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:'+_bg+'}::-webkit-scrollbar-thumb{background:'+_dm+';border-radius:3px}::-webkit-scrollbar-thumb:hover{background:'+_tx+'}body{background:'+_bg+';color:'+_tx+'}</style>';
-  frame.srcdoc=raw.includes('</head>')?raw.replace('</head>',_isc+'</head>'):raw+_isc; pre.textContent=raw;
+  // R27d (Review 2): eigenes Dokument statt srcdoc – ein srcdoc-iframe erbt die App-CSP und
+  // blockiert jedes Skript der Vault-Seite. /api/file?preview=1 antwortet mit eigener Policy
+  // (CSP sandbox allow-scripts …, opake Origin) und injiziert die Theme-Farben aus der Query.
+  frame.src=fileUrl(path)+'&preview=1&bg='+encodeURIComponent(_bg)+'&tx='+encodeURIComponent(_tx)+'&dm='+encodeURIComponent(_dm); pre.textContent=raw;
   const vb=area.querySelector('#ht-view'),sb=area.querySelector('#ht-src');
   vb.onclick=()=>{frame.style.display='block';pre.style.display='none';vb.classList.add('on');sb.classList.remove('on');};
   sb.onclick=()=>{frame.style.display='none';pre.style.display='block';sb.classList.add('on');vb.classList.remove('on');};
@@ -6936,7 +6941,6 @@ function lnModalClose(){
   if(m){m.classList.remove('show');m.innerHTML='';}
   _ke=null;_lnFaecher=null;
 }
-function lnModalBg(e){if(e.target&&e.target.id==='lern-modal')lnModalClose();}
 async function openFaecherModal(){
   let d;
   try{d=await api('/api/lernen/faecher?vault='+encodeURIComponent(activeVault));}catch(e){d={error:e.message};}

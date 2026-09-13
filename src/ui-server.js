@@ -194,7 +194,7 @@ function istSidecar(name) {
   return SIDECAR_SUFFIXES.some(s => name.endsWith(s) || name.endsWith(s + '.nexustmp'));
 }
 
-function buildTree(root, relBase, ignoreSet, depth = 0) {
+function buildTree(root, relBase, depth = 0) {
   if (depth > 8) return [];
   let entries;
   try { entries = readdirSync(relBase === '' ? root : join(root, relBase), { withFileTypes: true }); }
@@ -205,7 +205,7 @@ function buildTree(root, relBase, ignoreSet, depth = 0) {
     if (IS_IGNORED(e.name)) continue;                                   // R27b: eine Regel fuer alle Walker
     const rel = relBase ? relBase + '/' + e.name : e.name;
     if (e.isDirectory()) {
-      result.push({ name: e.name, path: rel, type: 'folder', children: buildTree(root, rel, ignoreSet, depth + 1) });
+      result.push({ name: e.name, path: rel, type: 'folder', children: buildTree(root, rel, depth + 1) });
     } else {
       // R24/R26: Sidecars (Vortragsskript, Karteikarten) sind Maschinen-Dateien –
       // nicht im Baum zeigen. Auch die .nexustmp-Crash-Leichen der atomaren Writes.
@@ -237,7 +237,7 @@ function buildTree(root, relBase, ignoreSet, depth = 0) {
 function mixStr(state, key, s) {
   for (let i = 0; i < s.length; i++) { state[key] ^= s.charCodeAt(i); state[key] = Math.imul(state[key], 0x01000193) >>> 0; }
 }
-function treeSignature(root, ignoreSet, depth = 0, rel = '', state = { h: 0x811c9dc5 >>> 0, n: 0, lh: 0x811c9dc5 >>> 0 }) {
+function treeSignature(root, depth = 0, rel = '', state = { h: 0x811c9dc5 >>> 0, n: 0, lh: 0x811c9dc5 >>> 0 }) {
   if (depth > 8) return state;
   let entries;
   try { entries = readdirSync(rel === '' ? root : join(root, rel), { withFileTypes: true }); }
@@ -252,7 +252,7 @@ function treeSignature(root, ignoreSet, depth = 0, rel = '', state = { h: 0x811c
     if (!e.isDirectory() && (r === FAECHER_REL || r.startsWith(LERN_LOGDIR + '/'))) mixLern(state, root, r);
     state.n++;
     mixStr(state, 'h', r);
-    if (e.isDirectory()) treeSignature(root, ignoreSet, depth + 1, r, state);
+    if (e.isDirectory()) treeSignature(root, depth + 1, r, state);
   }
   return state;
 }
@@ -261,8 +261,8 @@ function mixLern(state, root, rel) {
   try { st = statSync(join(root, rel)); } catch { return; }
   mixStr(state, 'lh', rel + ':' + st.size + ':' + Math.floor(st.mtimeMs));
 }
-function treeSigString(root, ignoreSet) {
-  const s = treeSignature(root, ignoreSet);
+function treeSigString(root) {
+  const s = treeSignature(root);
   return { tree: s.n + ':' + s.h, lern: String(s.lh) };
 }
 
@@ -363,8 +363,7 @@ app.post('/api/settings/vaultsRoot', (req, res) => {
 app.get('/api/tree', (req, res) => {
   try {
     const { vault } = getVault(req.query.vault);
-    const ignoreSet = new Set(cfg.ignore ?? []);
-    const tree = buildTree(vault.path, '', ignoreSet);
+    const tree = buildTree(vault.path, '');
     res.json(tree);
   } catch (e) { res.status(404).json({ error: e.message }); }
 });
@@ -940,12 +939,25 @@ app.get('/api/file', (req, res) => {
     const ext = extname(full).toLowerCase();
     res.type(mimeForExt(ext));
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(basename(full))}"`);
-    // R27a: Vault-HTML/SVG darf nie auf der App-Origin laufen. Die Vorschau in
-    // index.html laedt HTML per fetch() in ein sandboxed <iframe srcdoc> (eigene,
-    // opake Origin) – dort greift dieser Header nicht. Er sichert den ANDEREN Weg:
-    // wird die Datei direkt als Dokument geoeffnet (Link, <iframe src>, <object>),
-    // sperrt CSP `sandbox` Skripte, localStorage und Cookies der App-Origin.
-    // PDF/Bilder unveraendert (PDF.js und <img> brauchen keine Sandbox).
+    // R27d (Review-Befund 2): Die Vorschau in index.html laedt HTML seit R27d als EIGENES
+    // Dokument (<iframe src=…&preview=1>) statt per srcdoc – ein srcdoc-Dokument erbt die
+    // App-CSP (script-src 'self' + Hashes) und blockierte damit jedes Skript der Vault-Seite.
+    // Hier gilt nur dieser Header: CSP `sandbox` (opake Origin – keine Cookies/kein
+    // localStorage der App) plus allow-scripts/popups/forms/modals wie das fruehere
+    // sandbox-Attribut. Theme-Farben kommen als geprueft-harmlose Query-Werte.
+    if ((ext === '.html' || ext === '.htm') && req.query.preview === '1') {
+      const col = (x, f) => (typeof x === 'string' && /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]{3,40}\))$/i.test(x)) ? x : f;
+      const bg = col(req.query.bg, '#0d1017'), tx = col(req.query.tx, '#dbe2ee'), dm = col(req.query.dm, '#7b8497');
+      const style = `<style>::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:${bg}}::-webkit-scrollbar-thumb{background:${dm};border-radius:3px}::-webkit-scrollbar-thumb:hover{background:${tx}}body{background:${bg};color:${tx}}</style>`;
+      const raw = readFileSync(full, 'utf8');
+      res.setHeader('Content-Security-Policy', 'sandbox allow-scripts allow-popups allow-forms allow-modals');
+      res.setHeader('Cache-Control', 'no-store');
+      res.type('text/html; charset=utf-8');
+      return res.send(raw.includes('</head>') ? raw.replace('</head>', style + '</head>') : raw + style);
+    }
+    // R27a: Vault-HTML/SVG darf nie auf der App-Origin laufen. Ohne preview=1 (Link,
+    // <object>, direkter Aufruf) sperrt CSP `sandbox` Skripte, localStorage und Cookies
+    // der App-Origin. PDF/Bilder unveraendert (PDF.js und <img> brauchen keine Sandbox).
     if (ext === '.html' || ext === '.htm' || ext === '.svg') res.setHeader('Content-Security-Policy', 'sandbox');
     res.sendFile(full, err => { if (err && !res.headersSent) res.status(err.statusCode || 500).end(); });
   } catch (e) { if (!res.headersSent) res.status(500).send(e.message); }
@@ -1137,18 +1149,17 @@ function broadcastEvent(obj) {
 
 // Pro Vault: alle 2 s die Signatur pruefen (nur wenn ueberhaupt ein UI-Tab offen ist,
 // sonst gibt es nichts zu aktualisieren -> kein Idle-CPU). Aenderung -> tree-changed.
-const _ignoreSet = new Set(cfg.ignore ?? []);
 const _treeSig = {};
 for (const v of cfg.vaults) {
   if (!indexers[v.name]) continue;
-  try { _treeSig[v.name] = treeSigString(v.path, _ignoreSet); } catch { _treeSig[v.name] = { tree: '', lern: '' }; }
+  try { _treeSig[v.name] = treeSigString(v.path); } catch { _treeSig[v.name] = { tree: '', lern: '' }; }
 }
 setInterval(() => {
   if (sseClients.size === 0) return;
   for (const v of cfg.vaults) {
     if (!indexers[v.name]) continue;
     let sig;
-    try { sig = treeSigString(v.path, _ignoreSet); } catch { continue; }
+    try { sig = treeSigString(v.path); } catch { continue; }
     const vorher = _treeSig[v.name] ?? { tree: '', lern: '' };
     _treeSig[v.name] = sig;
     if (sig.tree !== vorher.tree) broadcastEvent({ type: 'tree-changed', vault: v.name });

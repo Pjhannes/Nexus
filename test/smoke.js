@@ -279,6 +279,20 @@ assert('R27b: Papierkorb bleibt aus dem Index (reindex)', tools.reindex().ok && 
 const lt = tools.listTrash();
 assert('R27b: listTrash nennt die Notiz genau einmal (Sidecar haengt dran)', lt.eintraege.filter(e => e.path.startsWith('Uni/Thermo-Umbenannt')).length === 1, JSON.stringify(lt));
 assert('R27b: _System ist geschuetzt', /Geschuetzt/.test(tools.delete({ path: '_System' }).error ?? ''));
+// R27d (Review 1): Schutz gilt unabhaengig von der Schreibweise (Windows/macOS-Dateisysteme sind case-insensitiv)
+assert('R27d: _system / _SYSTEM / .TRASH sind ebenfalls geschuetzt',
+  /Geschuetzt/.test(tools.delete({ path: '_system' }).error ?? '') && /Geschuetzt/.test(tools.delete({ path: '_SYSTEM/' }).error ?? '') && /Geschuetzt/.test(tools.delete({ path: '.TRASH' }).error ?? ''),
+  JSON.stringify([tools.delete({ path: '_system' }), tools.delete({ path: '.TRASH' })]));
+// R27d (Review 8): ganzer Ordner per Original-Pfad wiederherstellen (listTrash kennt nur Dateien)
+mkdirSync(join(vault, 'Uni', 'TrashOrdner'), { recursive: true });
+writeFileSync(join(vault, 'Uni', 'TrashOrdner', 'a.md'), '# a\n', 'utf8');
+writeFileSync(join(vault, 'Uni', 'TrashOrdner', 'b.md'), '# b\n', 'utf8');
+const dOrd = tools.delete({ path: 'Uni/TrashOrdner' });
+assert('R27d: Ordner in den Papierkorb', dOrd.ok === true && !existsSync(join(vault, 'Uni', 'TrashOrdner')), JSON.stringify(dOrd));
+const rOrd = tools.restore({ path: 'Uni/TrashOrdner' });
+assert('R27d: restore(Ordner) per Original-Pfad holt beide Dateien zurueck', rOrd.ok === true && existsSync(join(vault, 'Uni', 'TrashOrdner', 'a.md')) && existsSync(join(vault, 'Uni', 'TrashOrdner', 'b.md')), JSON.stringify(rOrd));
+assert('R27d: Ordner-Kopie nach Ordner-Restore aus dem Papierkorb weg', !existsSync(join(vault, rOrd.from)), rOrd.from);
+rmSync(join(vault, 'Uni', 'TrashOrdner'), { recursive: true, force: true });
 assert('R27b: permanent nur im Papierkorb', /Papierkorb/.test(tools.delete({ path: 'README.md', permanent: true }).error ?? '') && existsSync(join(vault, 'README.md')));
 // Notiz fuer nachfolgende Tests wiederherstellen (Originalinhalt nach patch-Tests)
 const vtRestore = tools.writeNote({ path: 'Uni/Thermodynamik.md', content: vtNoteRaw, create: true });
@@ -299,6 +313,19 @@ const kt1 = tools.writeKarten({
   ],
 });
 assert('R26: writeKarten ok=true', kt1.ok === true, JSON.stringify(kt1).slice(0, 220));
+// R27d (Review 4): lern_status zaehlt Kartensaetze aus cfg.ignore-Ordnern NICHT mit (wie das UI-Dashboard)
+{
+  mkdirSync(join(vault, 'Archiv'), { recursive: true });
+  writeFileSync(join(vault, 'Archiv', 'Alt.md'), '# Alt\n', 'utf8');
+  writeFileSync(join(vault, 'Archiv', 'Alt.karten.json'), readFileSync(join(vault, 'Uni', 'Thermodynamik.karten.json'), 'utf8').replace(/"notiz":\s*"[^"]*"/, '"notiz": "Archiv/Alt.md"'), 'utf8');
+  const idxIgn = buildIndexer(vault, dbPath.replace(/\.db$/i, '') + '-ign.db', ['Archiv']); idxIgn.reindex();
+  const toolsIgn = makeTools(idxIgn, vault);
+  const mit = tools.lernStatus(), ohne = toolsIgn.lernStatus();
+  assert('R27d: lernStatus ohne Ignore sieht die Archiv-Karten', !mit.error && JSON.stringify(mit).includes('Archiv/Alt.md'), JSON.stringify(mit).slice(0, 200));
+  assert('R27d: lernStatus mit cfg.ignore=[Archiv] sieht sie nicht', !ohne.error && !JSON.stringify(ohne).includes('Archiv/Alt.md'), JSON.stringify(ohne).slice(0, 200));
+  idxIgn.close?.();
+  rmSync(join(vault, 'Archiv'), { recursive: true, force: true });
+}
 assert('R26: Sidecar-Pfad korrekt', kt1.path === 'Uni/Thermodynamik.karten.json', kt1.path);
 const ktFull = join(vault, 'Uni', 'Thermodynamik.karten.json');
 assert('R26: Sidecar existiert auf Platte', existsSync(ktFull));

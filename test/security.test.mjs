@@ -247,6 +247,12 @@ try {
   ok('.html -> CSP sandbox', fh.status === 200 && fh.headers['content-security-policy'] === 'sandbox', fh.headers);
   const fs_ = await f('Uni/Grafik.svg');
   ok('.svg -> CSP sandbox', fs_.status === 200 && fs_.headers['content-security-policy'] === 'sandbox', fs_.headers);
+  // R27d (Review 2): Vorschau-Dokument mit eigener Policy + injizierten, geprueften Theme-Farben
+  const pv = await get(`/api/file?vault=${V}&path=${encodeURIComponent('Uni/Seite.html')}&preview=1&bg=%23112233&tx=rgb(1,2,3)&dm=javascript:alert(1)`);
+  ok('.html preview=1 -> CSP sandbox allow-scripts …', pv.status === 200 && pv.headers['content-security-policy'] === 'sandbox allow-scripts allow-popups allow-forms allow-modals', pv.headers);
+  ok('.html preview=1 -> Theme-Style injiziert, ungueltige Farbe ersetzt', pv.text.includes('background:#112233') && pv.text.includes('color:rgb(1,2,3)') && !pv.text.includes('javascript:') && pv.text.includes('#7b8497'), pv.text.slice(0, 300));
+  ok('.html preview=1 -> Originalinhalt bleibt (Skript unangetastet)', pv.text.includes('<script>localStorage.getItem("x")</script>'));
+  ok('.svg mit preview=1 -> weiterhin nur sandbox', (await get(`/api/file?vault=${V}&path=${encodeURIComponent('Uni/Grafik.svg')}&preview=1`)).headers['content-security-policy'] === 'sandbox');
   const fp = await f('Uni/Bild.png');
   ok('.png -> keine CSP, image/png', fp.status === 200 && !fp.headers['content-security-policy'] && /image\/png/.test(fp.headers['content-type']), fp.headers);
   ok('.md -> keine CSP', !(await f('Uni/Notiz.md')).headers['content-security-policy']);

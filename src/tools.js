@@ -56,18 +56,19 @@ export { vortragNorm };
 export const SIDECAR_SUFFIXES = ['.vortrag.json', '.karten.json'];
 
 // R27a: Crash-Leichen der atomaren Writes (<datei>.nexustmp) beim Start entfernen.
-// Gleiche Ignore-Regeln wie der Dateibaum (Punkt-Ordner + cfg.ignore), max. Tiefe 8.
+// Gleiche Ignore-Regel wie alle Walker (paths.makeIgnore: Defaults + cfg.ignore +
+// Dotfiles; R27d-Review 5 – vorher eigene Liste ohne node_modules/.stversions), max. Tiefe 8.
 // Gibt die Anzahl entfernter Dateien zurueck; Fehler einzelner Dateien werden
 // verschluckt (z. B. Windows-Lock) – der naechste Start raeumt sie dann.
 export function cleanupNexusTmp(root, ignore = []) {
-  const ignoreSet = new Set(ignore);
+  const isIgnored = makeIgnore(ignore);
   let n = 0;
   const walk = (dir, depth) => {
     if (depth > 8) return;
     let entries;
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
-      if (ignoreSet.has(e.name) || e.name.startsWith('.')) continue;
+      if (isIgnored(e.name)) continue;
       const full = join(dir, e.name);
       if (e.isDirectory()) { walk(full, depth + 1); continue; }
       if (e.name.endsWith('.nexustmp')) { try { rmSync(full, { force: true }); n++; } catch {} }
@@ -502,7 +503,9 @@ export function makeTools(indexer, vaultPath) {
   // Lesender Lernstand fuer Claude: dieselbe Rechnung wie das Dashboard der App,
   // nur als kompaktes JSON – bewusst ohne Kartentexte (Prinzip: Information pro Token).
   function lernStatus({ fach, tage } = {}) {
-    const sidecars = scanKartenSidecars(vaultPath);
+    // R27d (Review 4): dieselbe Ignore-Regel wie das UI-Dashboard (cfg.ignore ueber indexer.isIgnored),
+    // sonst zaehlt Claude Karten aus ignorierten Ordnern, die die App nicht zeigt.
+    const sidecars = scanKartenSidecars(vaultPath, undefined, vcIgnored);
     const faecher  = readFaecher(vaultPath);        // liefert die Liste direkt
     const reviews  = readReviews(vaultPath);
     const heute    = heuteISO();
@@ -649,8 +652,10 @@ export function makeTools(indexer, vaultPath) {
   // Scanner und Vault-Check ausgeblendet (paths.makeIgnore).
   const relOf = (full) => relative(resolve(vaultPath), full).split(sep).join('/');
   const trashRoot = () => join(resolve(vaultPath), TRASH_DIR);
-  const inTrash = (rel) => rel === TRASH_DIR || rel.startsWith(TRASH_DIR + '/');
-  const PROTECTED = new Set(['_System', TRASH_DIR]);
+  // R27d (Review 1): Vergleiche case-insensitiv – auf Windows/macOS ist "_system" derselbe
+  // Ordner wie "_System"; vorher liess sich der Schutz ueber die Schreibweise umgehen.
+  const inTrash = (rel) => { const l = rel.toLowerCase(); return l === TRASH_DIR || l.startsWith(TRASH_DIR + '/'); };
+  const PROTECTED = new Set(['_system', TRASH_DIR.toLowerCase()]);
 
   function trashStamp(d = new Date()) {
     const p = (n) => String(n).padStart(2, '0');
@@ -673,7 +678,7 @@ export function makeTools(indexer, vaultPath) {
     const full = safeFull(path);
     if (!full || full === resolve(vaultPath)) return { error: 'Ungueltiger Pfad' };
     const rel = relOf(full);
-    if (PROTECTED.has(rel)) return { error: `Geschuetzt, kann nicht geloescht werden: ${rel}` };
+    if (PROTECTED.has(rel.toLowerCase())) return { error: `Geschuetzt, kann nicht geloescht werden: ${rel}` };
     if (!existsSync(full)) return { error: 'Nicht gefunden: ' + path };
     const sidecars = /\.md$/i.test(full)
       ? SIDECAR_SUFFIXES.map(suf => full.replace(/\.md$/i, suf)).filter(sc => existsSync(sc))
@@ -744,8 +749,15 @@ export function makeTools(indexer, vaultPath) {
     } else {
       rel = norm;
       const hit = listTrash({ limit: 100000 }).eintraege.find(e => e.path === rel);
-      if (!hit) return { error: 'Nicht gefunden im Papierkorb: ' + path };
-      stamp = hit.trashPath.split('/')[1];
+      if (hit) stamp = hit.trashPath.split('/')[1];
+      else {
+        // R27d (Review 8): Ordner – listTrash kennt nur Dateien; juengsten Stempel nehmen,
+        // in dem rel ein Verzeichnis ist (ganzer Ordner kommt in einem Zug zurueck).
+        let stamps = [];
+        try { stamps = readdirSync(trashRoot(), { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name).sort().reverse(); } catch {}
+        stamp = stamps.find(st => { try { return statSync(join(trashRoot(), st, rel)).isDirectory(); } catch { return false; } });
+        if (!stamp) return { error: 'Nicht gefunden im Papierkorb: ' + path };
+      }
     }
     const src = safeFull(`${TRASH_DIR}/${stamp}/${rel}`);
     const dst = safeFull(rel);
