@@ -280,6 +280,38 @@ ok('neueKartenId ist eindeutig + hat das k-Praefix', (() => {
   return s.size === 500 && [...s].every(i => /^k[0-9a-f]{10}$/.test(i));
 })());
 
+console.log('\n── A5b. validateKarten: gruppe (R26f) ──');
+const kG = { ...kBi, regionen: [
+  { label: 'isotherm', x: .1, y: .1, w: .2, h: .1, gruppe: 'Kurven' },
+  { label: 'adiabat', x: .1, y: .4, w: .2, h: .1, gruppe: 'Kurven' }] };
+ok('gueltige gruppe an zwei Regionen', V([kG]).length === 0, V([kG]).join(';'));
+ok('gruppe leer ist erlaubt (= keine Gruppe)', V([{ ...kBi, regionen: [
+  { label: 'isotherm', x: .1, y: .1, w: .2, h: .1, gruppe: '' }, { label: 'adiabat', x: .1, y: .4, w: .2, h: .1 }] }]).length === 0);
+const g1 = V([{ ...kBi, regionen: [
+  { label: 'isotherm', x: .1, y: .1, w: .2, h: .1, gruppe: 'Kurven' }, { label: 'adiabat', x: .1, y: .4, w: .2, h: .1 }] }]);
+ok('Gruppe mit nur einer Region -> Fehler nennt Karte und Gruppe', g1.length === 1 && g1[0].includes('Karte 1') && g1[0].includes('"Kurven"'), g1.join(';'));
+const g2 = V([{ ...kBi, regionen: [
+  { label: 'isotherm', x: .1, y: .1, w: .2, h: .1, gruppe: 'x'.repeat(41) }, { label: 'adiabat', x: .1, y: .4, w: .2, h: .1, gruppe: 'x'.repeat(41) }] }]);
+ok('gruppe zu lang (41) -> Fehler', g2.length === 1 && g2[0].includes('zu lang'), g2.join(';'));
+ok('gruppe mit 40 Zeichen ist erlaubt', V([{ ...kBi, regionen: [
+  { label: 'isotherm', x: .1, y: .1, w: .2, h: .1, gruppe: 'x'.repeat(40) }, { label: 'adiabat', x: .1, y: .4, w: .2, h: .1, gruppe: 'x'.repeat(40) }] }]).length === 0);
+const g3 = V([{ ...kBi, regionen: [
+  { label: 'isotherm', x: .1, y: .1, w: .2, h: .1, gruppe: 7 }, { label: 'adiabat', x: .1, y: .4, w: .2, h: .1, gruppe: 7 }] }]);
+ok('gruppe kein String -> Fehler', g3.length === 1 && g3[0].includes('Text'), g3.join(';'));
+
+console.log('\n── C2. mergeKartenIds/regionSauber erhalten gruppe (R26f) ──');
+ok('regionSauber reicht gruppe getrimmt durch', regionSauber({ label: 'isotherm', x: .1, y: .1, w: .2, h: .1, gruppe: ' Kurven ' }, kBi.labels).gruppe === 'Kurven');
+ok('regionSauber: leere gruppe faellt weg', !('gruppe' in regionSauber({ label: 'isotherm', x: .1, y: .1, w: .2, h: .1, gruppe: '  ' }, kBi.labels)));
+ok('regionSauber: ohne gruppe keine gruppe (Altkarten unveraendert)', !('gruppe' in regionSauber({ label: 'isotherm', x: .1, y: .1, w: .2, h: .1 }, kBi.labels)));
+ok('regionSauber: gruppe auch beim Kreis-Format', regionSauber({ label: 'isotherm', x: .5, y: .5, r: .1, gruppe: 'K' }, kBi.labels).gruppe === 'K');
+const mG = mergeKartenIds([kG], [], { idFn });
+ok('mergeKartenIds: mitgelieferte Regionen behalten gruppe', mG.karten[0].regionen.every(r => r.gruppe === 'Kurven'), JSON.stringify(mG.karten[0].regionen));
+const mGerbt = mergeKartenIds([{ ...kBi }], mG.karten, { idFn });
+ok('mergeKartenIds: geerbte Regionen (Regeneration ohne Regionen) behalten gruppe',
+  mGerbt.karten[0].id === mG.karten[0].id && mGerbt.karten[0].regionen.length === 2 && mGerbt.karten[0].regionen.every(r => r.gruppe === 'Kurven'),
+  JSON.stringify(mGerbt.karten[0].regionen));
+ok('Karte mit gruppe ist spielbar', karteSpielbar(mG.karten[0]));
+
 console.log('\n── D1. Faecher ──');
 const faecher = [
   { id: 'nhm', name: 'NHM', ordner: ['Uni/6. Semester/NHM'], pruefung: '2026-08-21', zielKorrekt: 3, neueProTag: 2 },
@@ -521,7 +553,7 @@ console.log('\n── E. Paritaet UI (lernen-kern.js) ──');
 // Der Test importiert die Datei unveraendert als Modul und haengt nur die Exporte an.
 const kern = readFileSync(new URL('../public/lernen-kern.js', import.meta.url), 'utf8');
 const mod = await import('data:text/javascript,' + encodeURIComponent(kern
-  + '\nexport {lnTrefferRegion, lnMcWertung, lnBildWertung, lnRegionRect, lnTippNorm, lnTippWertung};'));
+  + '\nexport {lnTrefferRegion, lnMcWertung, lnBildWertung, lnRegionRect, lnTippNorm, lnTippWertung, lnGruppenSymbole, lnGruppeVon};'));
 // Beide Oberflaechen muessen den Kern wirklich laden – sonst driftet die Wertung auseinander.
 for (const [datei, name] of [['../public/index.html', 'index.html'], ['../public/lernen.html', 'lernen.html']]) {
   const seite = readFileSync(new URL(datei, import.meta.url), 'utf8');
@@ -563,6 +595,131 @@ ok('lnTippWertung: Kleinschreibung zaehlt als richtig, Fehler wird benannt',
   t2.korrekt === false && t2.falsch.length === 1 && t2.falsch[0] === 'B');
 ok('lnTippWertung: leeres Feld ist falsch', mod.lnTippWertung(['A', ''], regionen).korrekt === false);
 ok('lnTippWertung: fehlende Eingaben komplett falsch', mod.lnTippWertung([], regionen).falsch.length === 2);
+
+console.log('\n── E2. R26f: vertauschbare Felder (gruppe) ──');
+// Karte wie LPT k9e0dd1227b: 4 Energieverluste als Gruppe (Stichpunktliste), 4 feste Kaesten.
+const GL = ['Elektronenstrahl', 'Absorption + Eindringtiefe', 'Wärmeleitung', 'Werkstück'];
+const GV = ['Wärmestrahlung', 'Sekundärelektronen', 'Röntgenstrahlung', 'Rückgestreute Elektronen'];
+const regG = [
+  ...GL.map((l, i) => ({ label: l, x: 0.05, y: 0.05 + i * 0.2, w: 0.2, h: 0.1 })),
+  ...GV.map((l, i) => ({ label: l, x: 0.6, y: 0.05 + i * 0.2, w: 0.3, h: 0.1, gruppe: 'Energieverluste' })),
+];
+const zuOk = Object.fromEntries([...GL, ...GV].map(l => [l, l]));
+const wG0 = mod.lnBildWertung(zuOk, regG);
+ok('gruppe: exakte Zuordnung richtig, richtig[] durchgehend true', wG0.korrekt === true && wG0.richtig.length === 8 && wG0.richtig.every(Boolean));
+// Alle 24 Permutationen der vier Energieverluste sind richtig.
+const perms = (a) => a.length <= 1 ? [a] : a.flatMap((x, i) => perms([...a.slice(0, i), ...a.slice(i + 1)]).map(p => [x, ...p]));
+ok('gruppe: jede Permutation der vier Energieverluste ist richtig (24/24)', perms(GV).every(p => {
+  const zu = { ...zuOk }; GV.forEach((l, i) => { zu[l] = p[i]; });
+  const w = mod.lnBildWertung(zu, regG);
+  return w.korrekt === true && w.falsch.length === 0 && w.richtig.every(Boolean);
+}));
+const zuFest = { ...zuOk, Elektronenstrahl: 'Werkstück', Werkstück: 'Elektronenstrahl' };
+const wGf = mod.lnBildWertung(zuFest, regG);
+ok('gruppe: Tausch zweier fester Kaesten ist falsch – falsch nennt genau beide',
+  wGf.korrekt === false && wGf.falsch.length === 2 && wGf.falsch.includes('Elektronenstrahl') && wGf.falsch.includes('Werkstück'), JSON.stringify(wGf.falsch));
+ok('gruppe: richtig[] passt zu falsch (feste Kaesten 0 und 3 false, Rest true)',
+  wGf.richtig[0] === false && wGf.richtig[3] === false && wGf.richtig.filter(Boolean).length === 6);
+const zuMix = { ...zuOk, Werkstück: 'Wärmestrahlung', Wärmestrahlung: 'Werkstück' };
+const wGm = mod.lnBildWertung(zuMix, regG);
+ok('gruppe: Tausch Gruppe <-> fester Kasten ist falsch (beide)',
+  wGm.korrekt === false && wGm.falsch.length === 2 && wGm.richtig[3] === false && wGm.richtig[4] === false, JSON.stringify(wGm.falsch));
+// Zwei Gruppen auf einer Karte mischen nicht.
+const regZwei = [
+  { label: 'A1', x: 0, y: 0, w: .1, h: .1, gruppe: 'eins' }, { label: 'A2', x: 0, y: .2, w: .1, h: .1, gruppe: 'eins' },
+  { label: 'B1', x: .5, y: 0, w: .1, h: .1, gruppe: 'zwei' }, { label: 'B2', x: .5, y: .2, w: .1, h: .1, gruppe: 'zwei' },
+];
+ok('zwei Gruppen: innerhalb tauschen richtig', mod.lnBildWertung({ A1: 'A2', A2: 'A1', B1: 'B2', B2: 'B1' }, regZwei).korrekt === true);
+const wZ = mod.lnBildWertung({ A1: 'B1', B1: 'A1', A2: 'A2', B2: 'B2' }, regZwei);
+ok('zwei Gruppen: ueber die Grenze tauschen falsch, genau die zwei Kaesten', wZ.korrekt === false && wZ.falsch.length === 2 && wZ.richtig.join() === 'false,true,false,true', JSON.stringify(wZ));
+ok('gruppe leer bzw. nur Leerzeichen = fester Kasten', (() => {
+  const reg = [{ label: 'A', x: 0, y: 0, w: .1, h: .1, gruppe: '' }, { label: 'B', x: 0, y: .2, w: .1, h: .1, gruppe: '   ' }];
+  return mod.lnBildWertung({ A: 'B', B: 'A' }, reg).korrekt === false && mod.lnBildWertung({ A: 'A', B: 'B' }, reg).korrekt === true;
+})());
+ok('gruppe mit Leerzeichen drumherum zaehlt als dieselbe Gruppe', (() => {
+  const reg = [{ label: 'A', x: 0, y: 0, w: .1, h: .1, gruppe: ' g ' }, { label: 'B', x: 0, y: .2, w: .1, h: .1, gruppe: 'g' }];
+  return mod.lnBildWertung({ A: 'B', B: 'A' }, reg).korrekt === true;
+})());
+ok('gruppe: nicht zugeordneter Gruppen-Kasten bleibt falsch', (() => {
+  const zu = { ...zuOk }; delete zu['Röntgenstrahlung'];
+  const w = mod.lnBildWertung(zu, regG);
+  return w.korrekt === false && w.falsch.length === 1 && w.falsch[0] === 'Röntgenstrahlung';
+})());
+// Tipp-Modus
+const tippOk = [...GL, ...GV];
+ok('tippen + gruppe: permutiert und mit Gross/Klein richtig', (() => {
+  const e = [...GL, 'röntgenstrahlung', 'RÜCKGESTREUTE ELEKTRONEN', 'wärmestrahlung', 'sekundärelektronen'];
+  const w = mod.lnTippWertung(e, regG);
+  return w.korrekt === true && w.richtig.every(Boolean);
+})());
+const tDoppelt = mod.lnTippWertung([...GL, 'Wärmestrahlung', 'Wärmestrahlung', 'Röntgenstrahlung', 'Rückgestreute Elektronen'], regG);
+ok('tippen + gruppe: doppelt getippter Begriff zaehlt einmal – der exakte Treffer gewinnt',
+  tDoppelt.korrekt === false && tDoppelt.richtig[4] === true && tDoppelt.richtig[5] === false && tDoppelt.falsch.join() === 'Sekundärelektronen', JSON.stringify(tDoppelt));
+const tDoppelt2 = mod.lnTippWertung([...GL, 'Sekundärelektronen', 'Sekundärelektronen', 'Röntgenstrahlung', 'Rückgestreute Elektronen'], regG);
+ok('tippen + gruppe: exakter Treffer gewinnt auch, wenn er als zweiter kommt',
+  tDoppelt2.richtig[5] === true && tDoppelt2.richtig[4] === false, JSON.stringify(tDoppelt2.richtig));
+ok('tippen + gruppe: leere Eingabe im Gruppen-Kasten ist falsch',
+  mod.lnTippWertung([...GL, '', 'Sekundärelektronen', 'Röntgenstrahlung', 'Rückgestreute Elektronen'], regG).falsch.join() === 'Wärmestrahlung');
+ok('tippen + gruppe: falscher Begriff im Gruppen-Kasten nennt den Soll-Begriff dieses Kastens',
+  mod.lnTippWertung([...GL, 'Wärmestrahlung', 'Quatsch', 'Röntgenstrahlung', 'Rückgestreute Elektronen'], regG).falsch.join() === 'Sekundärelektronen');
+ok('tippen ohne gruppe: richtig[] wird mitgeliefert', (() => {
+  const w = mod.lnTippWertung(['A', 'x'], regionen);
+  return Array.isArray(w.richtig) && w.richtig[0] === true && w.richtig[1] === false;
+})());
+ok('zuordnen ohne gruppe: richtig[] wird mitgeliefert', (() => {
+  const w = mod.lnBildWertung({ A: 'B', B: 'B' }, regionen);
+  return w.richtig.join() === 'false,true';
+})());
+ok('lnGruppenSymbole: je Gruppe ein Symbol in Reihenfolge des ersten Auftretens', (() => {
+  const m = mod.lnGruppenSymbole(regZwei);
+  return m.size === 2 && m.get('eins') !== m.get('zwei') && mod.lnGruppenSymbole(regionen).size === 0;
+})());
+
+console.log('\n── E3. Rueckwaertskompatibilitaet: Karten ohne gruppe werten exakt wie bisher ──');
+// Die alte Wertung (Stand vor R26f) hier eingefroren.
+function altBild(zuordnung, regionen) {
+  const falsch = [];
+  for (const r of (regionen || [])) { if ((zuordnung || {})[r.label] !== r.label) falsch.push(r.label); }
+  return { korrekt: falsch.length === 0, falsch };
+}
+function altTipp(eingaben, regionen) {
+  const falsch = [];
+  (regionen || []).forEach((r, i) => {
+    const soll = mod.lnTippNorm(r && r.label);
+    if (!soll || mod.lnTippNorm((eingaben || [])[i]) !== soll) falsch.push(r && r.label);
+  });
+  return { korrekt: falsch.length === 0, falsch };
+}
+// Deterministischer Zufall (LCG), damit ein Fehlschlag reproduzierbar ist.
+let seed = 26061;
+const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+let gleich = 0, faelle = 0;
+for (let n = 0; n < 300; n++) {
+  const anz = 1 + Math.floor(rnd() * 8);
+  const labels = Array.from({ length: anz }, (_, i) => 'L' + i);
+  const reg = labels.map((l, i) => ({ label: l, x: 0, y: i / 10, w: .1, h: .05 }));
+  const pool = [...labels, 'fremd', ''];
+  const zu = {};
+  for (const l of labels) { const w = rnd(); if (w < 0.55) zu[l] = l; else if (w < 0.9) zu[l] = pool[Math.floor(rnd() * pool.length)]; }
+  const ein = labels.map(l => { const w = rnd(); return w < 0.5 ? l : (w < 0.7 ? l.toUpperCase() : pool[Math.floor(rnd() * pool.length)]); });
+  const a1 = altBild(zu, reg), n1 = mod.lnBildWertung(zu, reg);
+  const a2 = altTipp(ein, reg), n2 = mod.lnTippWertung(ein, reg);
+  faelle += 2;
+  if (a1.korrekt === n1.korrekt && a1.falsch.join('|') === n1.falsch.join('|')) gleich++;
+  if (a2.korrekt === n2.korrekt && a2.falsch.join('|') === n2.falsch.join('|')) gleich++;
+}
+ok(`ohne gruppe: ${faelle} Zufallsfaelle liefern dasselbe korrekt/falsch wie die alte Wertung`, gleich === faelle, `${gleich}/${faelle}`);
+
+console.log('\n── E4. Paritaet: Player faerben nur noch aus richtig[] ──');
+for (const [datei, name] of [['../public/index.html', 'index.html'], ['../public/lernen.html', 'lernen.html']]) {
+  const seite = readFileSync(new URL(datei, import.meta.url), 'utf8');
+  ok(name + ' enthaelt den Eigenvergleich der Zuordnung nicht mehr', !seite.includes('_ln.zuordnung[r.label]===r.label'));
+  ok(name + ' enthaelt den Eigenvergleich der Tipp-Eingabe nicht mehr', !seite.includes('lnTippNorm(eingaben[i])===lnTippNorm(r.label)'));
+  ok(name + ' faerbt aus w.richtig[i]', seite.split('w.richtig[i]').length >= 3);
+  ok(name + ' kennzeichnet Gruppen-Kaesten per Attribut (data-gsym)', seite.includes('data-gsym'));
+  ok(name + ' nimmt die Wiedervorlage bei „Wusste ich doch“ zurueck', seite.includes('function lnNachrueckenZurueck') && seite.includes('lnNachrueckenZurueck(e)'));
+  ok(name + ' zeigt die Stufe der aktuellen Karte im Kopf', seite.includes('function lnStufeHtml') && seite.includes('lnp-leiter'));
+}
 
 console.log('\n── A9. loesungsbild (Folienausschnitt nach dem Antworten) ──');
 const FB = 'Uni/Dateien/carnot-pv.png';

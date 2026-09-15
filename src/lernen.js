@@ -61,6 +61,7 @@ const MAX_LABEL       = 80;
 const MIN_RADIUS      = 0.02;   // altes Kreis-Format, weiterhin lesbar
 const MAX_RADIUS      = 0.4;
 const MIN_SEITE       = 0.01;   // kleinste Kantenlaenge eines Rechtecks (Anteil)
+const MAX_GRUPPE      = 40;     // R26f: Gruppenname einer Region (vertauschbare Kaesten)
 
 // Wie eine Bild-Karte abgefragt wird: Begriff aus der Liste zuordnen oder eintippen.
 export const BILD_MODI = ['zuordnen', 'tippen'];
@@ -287,6 +288,7 @@ export function validateKarten(karten, noteContent, opts = {}) {
       if (!Array.isArray(k.regionen)) { errors.push(`${nr}: "regionen" muss eine Liste sein`); return; }
       const labelSet = new Set(k.labels.map(l => vortragNorm(l)));
       const seenReg = new Set();
+      const gruppen = new Map(); // Gruppenname -> Anzahl Regionen
       for (let j = 0; j < k.regionen.length; j++) {
         const r = k.regionen[j];
         const rn = `${nr}: Region ${j + 1}`;
@@ -298,6 +300,16 @@ export function validateKarten(karten, noteContent, opts = {}) {
         }
         if (seenReg.has(nl)) { errors.push(`${rn}: label "${r.label}" hat schon eine Region`); return; }
         seenReg.add(nl);
+        // R26f: optionale Gruppe – Kaesten derselben Gruppe sind beim Abfragen vertauschbar.
+        if (r.gruppe !== undefined && r.gruppe !== null) {
+          if (typeof r.gruppe !== 'string') { errors.push(`${rn}: "gruppe" muss ein Text sein`); return; }
+          const g = r.gruppe.trim();
+          if (g.length > MAX_GRUPPE) {
+            errors.push(`${rn}: "gruppe" zu lang (${g.length} Zeichen, max ${MAX_GRUPPE})`);
+            return;
+          }
+          if (g) gruppen.set(g, (gruppen.get(g) || 0) + 1);
+        }
         for (const feld of ['x', 'y']) {
           if (typeof r[feld] !== 'number' || !(r[feld] >= 0 && r[feld] <= 1)) {
             errors.push(`${rn}: "${feld}" muss eine Zahl zwischen 0 und 1 sein (0 = links/oben, 1 = rechts/unten)`);
@@ -321,6 +333,10 @@ export function validateKarten(karten, noteContent, opts = {}) {
           errors.push(`${rn}: braucht "w" und "h" (Rechteck) – oder "r" zwischen ${MIN_RADIUS} und ${MAX_RADIUS} (altes Kreis-Format)`);
           return;
         }
+      }
+      // Eine Gruppe mit nur einem Kasten waere ein fester Kasten – fast sicher ein Tippfehler.
+      for (const [g, n] of gruppen) {
+        if (n < 2) { errors.push(`${nr}: Gruppe "${g}" hat nur eine Region – eine Gruppe braucht mindestens 2 (gleicher Name bei allen vertauschbaren Kaesten)`); return; }
       }
     }
   });
@@ -379,14 +395,18 @@ function saubereKarte(k) {
 export function regionSauber(r, labels) {
   const label = (labels || []).find(l => vortragNorm(l) === vortragNorm(r?.label));
   if (!label) return null;
+  // R26f: gruppe (getrimmt, nicht leer) reist mit – sonst wuerde jedes Speichern
+  // (MCP write_karten UND Editor laufen beide hier durch) die Markierung still loeschen.
+  const gruppe = typeof r.gruppe === 'string' && r.gruppe.trim() ? { gruppe: r.gruppe.trim() } : {};
   if (typeof r.w === 'number' && typeof r.h === 'number') {
-    return { label, x: klemm(r.x), y: klemm(r.y), w: klemm(r.w), h: klemm(r.h) };
+    return { label, x: klemm(r.x), y: klemm(r.y), w: klemm(r.w), h: klemm(r.h), ...gruppe };
   }
   const rad = typeof r.r === 'number' ? r.r : 0.07;
   return {
     label,
     x: klemm(r.x - rad), y: klemm(r.y - rad),
     w: klemm(rad * 2),   h: klemm(rad * 2),
+    ...gruppe,
   };
 }
 function klemm(n) { return Math.min(1, Math.max(0, typeof n === 'number' ? n : 0)); }

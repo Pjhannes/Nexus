@@ -112,6 +112,8 @@ const NEXUS_INSTRUCTIONS = [
   'traegt karten_gliedern sie nach, ohne den Lernstand anzufassen. Fuer Bild-Karten ZUERST read_bild aufrufen:',
   'das zeigt die Grafik und nennt ihre Pixelmasse, daraus die Rechtecke (x/y/w/h, 0..1) selbst',
   'bestimmen und ueber die gedruckte Beschriftung legen – die App verdeckt sie beim Abfragen.',
+  'Bilden Kaesten eine reine Aufzaehlung ohne Positionsbezug (Stichpunktliste), gib ihnen dieselbe',
+  '"gruppe" – dann ist jede Reihenfolge richtig; Bauteil-Beschriftungen und Legenden bleiben ohne gruppe.',
   'Ein erneutes write_karten ueberschreibt das Kartenset, erhaelt aber IDs und damit den Lernstand.',
   '',
   'PFLICHT zu Beginn jeder Session: zuerst die Arbeitsregeln des Nutzers lesen und befolgen –',
@@ -416,6 +418,8 @@ tool('write_karten', {
         y: z.number().describe('Obere Kante, 0..1 (Anteil der Bildhoehe)'),
         w: z.number().describe('Breite, 0..1 (Anteil der Bildbreite)'),
         h: z.number().describe('Hoehe, 0..1 (Anteil der Bildhoehe)'),
+        gruppe: z.string().max(40).optional()
+             .describe('Optional: Kaesten mit gleichem Gruppennamen sind beim Abfragen untereinander VERTAUSCHBAR (jeder Begriff nur einmal). Setzen bei reinen Aufzaehlungen ohne Positionsbezug – Stichpunktliste, gleichrangige Begriffe untereinander. NICHT setzen bei Bauteil-Beschriftungen einer Skizze, Ziffern-Legenden oder Prozessketten, dort ist die Position der Lerninhalt. Eine Gruppe braucht mindestens 2 Regionen; weglassen = feste Stelle'),
       })).optional()
              .describe('bild: Rechtecke auf der Grafik. Ruf zuerst read_bild auf – damit siehst du die Grafik und bekommst ihre Pixelmasse; Pixelkoordinate durch Breite bzw. Hoehe geteilt ergibt x/y/w/h. Lege die Rechtecke ueber die Beschriftung, die dort gedruckt steht, damit sie beim Abfragen verdeckt wird. Ohne Regionen ist die Karte nicht spielbar, bis der Nutzer sie im Karten-Editor aufzieht'),
     })).min(1).describe('Alle Karten der Notiz (ersetzt das bisherige Set)'),

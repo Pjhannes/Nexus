@@ -183,6 +183,15 @@ input[type=checkbox]{width:22px;height:22px;flex:0 0 auto;margin:0;accent-color:
 .lnp-top .lnp-fort i.bad{background:var(--lern-bad)}
 .lnp-top .lnp-fort i.jetzt{background:var(--accent)}
 .lnp-zahl{font-size:12px;color:var(--dim);white-space:nowrap}
+/* Stufe der aktuellen Karte (R26f): Text + Leiter, ein Feld je Stufe, gefuellt bis zur Stufe */
+.lnp-stufe{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);white-space:nowrap;
+  border:1px solid var(--border);border-radius:99px;padding:3px 9px}
+.lnp-stufe .lnp-leiter{display:inline-flex;align-items:flex-end;gap:2px;height:12px}
+.lnp-stufe .lnp-leiter i{display:block;width:7px;border-radius:2px;background:var(--border)}
+.lnp-stufe .lnp-leiter i.voll{background:var(--accent)}
+.lnp-stufe.durch{border-color:var(--lern-ok);color:var(--lern-ok)}
+.lnp-stufe.durch .lnp-leiter i.voll{background:var(--lern-ok)}
+@media (max-width:400px){.lnp-stufe .lnp-stufe-t{display:none}}   /* schmal: nur die Leiter */
 .lnp-x{background:none;border:none;color:var(--dim);font-size:24px;cursor:pointer;padding:0 6px;line-height:1;min-width:44px;min-height:44px}
 .lnp-uebung{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--lern-neu);
   border:1px solid var(--lern-neu);border-radius:99px;padding:2px 8px;white-space:nowrap}
@@ -241,10 +250,18 @@ input[type=checkbox]{width:22px;height:22px;flex:0 0 auto;margin:0;accent-color:
 .lnp-bildwrap.abdeckend .lnp-mark.belegt{background:var(--bg)}
 .lnp-bildwrap.abdeckend .lnp-mark.auf{background:transparent}
 .lnp-mark .lnp-mtext{font-size:12px;font-weight:600;word-break:break-word}
+/* R26f: vertauschbare Kaesten einer Gruppe – gestrichelter Rand + Gruppensymbol in der Ecke.
+   Das Symbol haengt als ::before am Marker (per data-gsym), weil innerHTML beim Zuordnen
+   und Aufdecken neu gesetzt wird. */
+.lnp-mark.gruppe,.lnp-tippnr.gruppe{border-style:dashed}
+.lnp-mark.gruppe::before,.lnp-tippnr.gruppe::before{content:attr(data-gsym);position:absolute;top:0;left:2px;
+  font-size:8px;line-height:1.2;opacity:.85;pointer-events:none}
+.lnp-gruppenhinweis{font-size:12px;color:var(--dim);margin-top:6px;line-height:1.5}
+.lnp-gruppenhinweis .lnp-gsym{font-size:10px;margin-right:2px}
 .lnp-zoom{margin:8px 0 4px}
 .lnp-tipp{display:flex;flex-direction:column;gap:9px;margin-top:14px}
 .lnp-tippzeile{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
-.lnp-tippnr{width:30px;height:30px;flex:0 0 auto;border:1px solid var(--border);border-radius:8px;
+.lnp-tippnr{position:relative;width:30px;height:30px;flex:0 0 auto;border:1px solid var(--border);border-radius:8px;
   display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--dim)}
 .lnp-tippzeile input{flex:1;min-width:0;padding:13px 13px;border:1px solid var(--border);border-radius:10px;
   background:var(--panel);color:var(--text);font-size:16px;outline:none;min-height:48px}
@@ -743,12 +760,36 @@ function lnSegmente(){
     return '<i'+(cls?' class="'+cls+'"':'')+'></i>';
   }).join('');
 }
+function lnStufenTage(){return (_lnDash&&_lnDash.stufenTage)||LN_LEITER_FALLBACK;}
+// Rechts oben: auf welcher Stufe steht die AKTUELLE Karte? Text plus Leiter – ein Feld je
+// Stufe, aufsteigend hoch, gefuellt bis zur erreichten Stufe. Die Stufe kommt mit der
+// Sitzung vom Server und wird nach jeder Antwort/Korrektur aus dessen Zustand nachgezogen.
+function lnStufeHtml(){
+  const e=_ln.queue[_ln.idx];if(!e)return '';
+  const tage=lnStufenTage(),n=tage.length;
+  const stufe=Math.max(0,Number(e.stufe)||0);
+  const durch=stufe>n;
+  const txt=durch?'Durch':(stufe?('Stufe '+stufe+'/'+n):'Neu');
+  let leiter='';
+  for(let i=1;i<=n;i++)leiter+='<i'+((durch||i<=stufe)?' class="voll"':'')+' style="height:'+(4+Math.round(i*8/n))+'px"></i>';
+  const tip=durch?'Alle Stufen geschafft – wird nicht mehr eingeplant'
+    :(stufe?('Stufe '+stufe+' von '+n+' – Abstand '+tage[stufe-1]+' Tag(e)'+(e.due?(', fällig seit '+e.due):''))
+      :'Neue Karte – noch nie beantwortet');
+  return '<span class="lnp-stufe'+(durch?' durch':'')+'" title="'+aq(escHtml(tip))+'"><span class="lnp-stufe-t">'+txt+'</span><span class="lnp-leiter">'+leiter+'</span></span>';
+}
+// Server-Zustand nach Antwort/Korrektur in den Sitzungseintrag uebernehmen – eine
+// nachgerueckte Kopie ist dasselbe Objekt und zeigt dann die aktuelle Stufe.
+function lnZustandUebernehmen(e,r){
+  if(!e||!r||!r.zustand)return;
+  e.stufe=r.zustand.stufe||0;e.due=r.zustand.due||null;e.neu=false;
+}
 function lnKopf(){
   const gesamt=_ln.queue.length,pos=Math.min(_ln.idx+1,gesamt);
   return '<div class="lnp-top">'
     +'<span class="lnp-zahl lnp-pos">'+pos+'/'+gesamt+'</span>'
     +'<div class="lnp-fort">'+lnSegmente()+'</div>'
     +'<span class="lnp-zahl lnp-bilanz">&#10003; '+_ln.richtig+' &middot; &#10007; '+_ln.falsch+'</span>'
+    +lnStufeHtml()
     +(_ln.uebung?'<span class="lnp-uebung">&#128260;</span>':'')
     +'<button class="lnp-x" data-lnp="stop">&#10005;</button></div>';
 }
@@ -761,6 +802,8 @@ function lnTopAktualisieren(){
   if(pos)pos.textContent=Math.min(_ln.idx+1,_ln.queue.length)+'/'+_ln.queue.length;
   const bil=ov.querySelector('.lnp-bilanz');
   if(bil)bil.innerHTML='&#10003; '+_ln.richtig+' &middot; &#10007; '+_ln.falsch;
+  const st=ov.querySelector('.lnp-stufe');
+  if(st){const h=lnStufeHtml();if(h)st.outerHTML=h;else st.remove();}
 }
 function lnRenderKarte(){
   const ov=el('lern-overlay');if(!ov)return;
@@ -798,17 +841,23 @@ function lnRenderKarte(){
     const tippen=(k.modus==='tippen');
     b+='<div class="lnp-bildbox" id="lnp-bildbox"><div class="lnp-bildwrap'+(k.abdecken!==false?' abdeckend':'')+'" id="lnp-bild"'
       +(tippen?'':' data-lnp="bildklick"')+'><img src="'+aq(fileUrl(k.bild))+'" alt="">';
+    // R26f: Kaesten einer Gruppe (vertauschbar) tragen Klasse + Symbol als Attribut –
+    // NICHT im Inhalt, der wird beim Zuordnen und Aufdecken neu gesetzt.
+    const gsym=lnGruppenSymbole(k.regionen||[]);
+    const gAttr=r=>{const g=lnGruppeVon(r);return g?' gruppe" data-gsym="'+aq(escHtml(gsym.get(g)||'')):'';};
     (k.regionen||[]).forEach((r,i)=>{
       const q=lnRegionRect(r);if(!q)return;
-      b+='<div class="lnp-mark" data-i="'+i+'" style="left:'+(q.x*100)+'%;top:'+(q.y*100)+'%;width:'+(q.w*100)+'%;height:'+(q.h*100)+'%">'+(i+1)+'</div>';
+      b+='<div class="lnp-mark'+gAttr(r)+'" data-i="'+i+'" style="left:'+(q.x*100)+'%;top:'+(q.y*100)+'%;width:'+(q.w*100)+'%;height:'+(q.h*100)+'%">'+(i+1)+'</div>';
     });
     b+='</div></div>';
+    if(gsym.size)b+='<div class="lnp-gruppenhinweis">'+[...gsym.values()].map(s=>'<span class="lnp-gsym">'+escHtml(s)+'</span>').join('')
+      +' Markierte Felder: Reihenfolge egal'+(gsym.size>1?' &ndash; je Symbol eine Gruppe':'')+'</div>';
     // Kleine Felder sind am Handy sonst kaum zu treffen: das Bild laesst sich
     // vergroessern und der Kasten seitlich scrollen. Prozent-Marker skalieren mit.
     b+='<div class="lnp-zoom"><button class="ln-btn klein" data-lnp="zoom">&#128269; Bild gr&ouml;&szlig;er</button></div>';
     if(tippen){
       b+='<div class="lnp-tipp" id="lnp-tipp">'
-        +(k.regionen||[]).map((r,i)=>'<div class="lnp-tippzeile" data-i="'+i+'"><span class="lnp-tippnr">'+(i+1)+'</span>'
+        +(k.regionen||[]).map((r,i)=>'<div class="lnp-tippzeile" data-i="'+i+'"><span class="lnp-tippnr'+gAttr(r)+'">'+(i+1)+'</span>'
           +'<input type="text" data-lnp="tipp" data-i="'+i+'" placeholder="Feld '+(i+1)+'&hellip;" autocomplete="off" '
           +'autocapitalize="off" spellcheck="false" enterkeyhint="'+(i===(k.regionen||[]).length-1?'done':'next')+'"></div>').join('')
         +'</div>'
@@ -981,7 +1030,7 @@ function lnBildPruefen(){
     detail={eingaben,falsch:w.falsch};
     regionen.forEach((r,i)=>{
       const zeile=document.querySelector('#lnp-tipp .lnp-tippzeile[data-i="'+i+'"]');if(!zeile)return;
-      const richtig=lnTippNorm(eingaben[i])===lnTippNorm(r.label);
+      const richtig=!!w.richtig[i];   // NUR aus der Kern-Wertung (Gruppen!), kein Eigenvergleich
       zeile.classList.add(richtig?'ok':'bad');
       const inp=zeile.querySelector('input');if(inp)inp.disabled=true;
       if(!richtig){
@@ -999,20 +1048,54 @@ function lnBildPruefen(){
   document.querySelectorAll('#lnp-bild .lnp-mark').forEach((m,i)=>{
     const r=regionen[i];if(!r)return;
     m.classList.remove('belegt','aktiv');
-    const richtig=k.modus==='tippen'
-      ? !w.falsch.includes(r.label)
-      : _ln.zuordnung[r.label]===r.label;
+    const richtig=!!w.richtig[i];   // NUR aus der Kern-Wertung (Gruppen!), kein Eigenvergleich
     m.classList.add(richtig?'richtig':'falsch','auf');
     m.innerHTML=String(i+1);
   });
   lnAntwort(w.korrekt,detail);
 }
+// Falsch beantwortet -> ans ENDE der Abfrage, bis sie einmal sitzt. Der Deckel
+// verhindert nur die Endlosschleife bei einer Karte, die partout nicht will.
+function lnNachruecken(e){
+  const bisher=_ln.requeued.get(e.karte.id)||0;
+  if(bisher<LN_MAX_REQUEUE){_ln.requeued.set(e.karte.id,bisher+1);_ln.queue.push(e);return true;}
+  toast('Diese Karte kommt jetzt nicht mehr – sie steht morgen wieder an','ok');
+  return false;
+}
+// Gegenstueck fuer „Doch gewusst“: die zuletzt nachgerueckte, noch nicht gespielte
+// Kopie wieder herausnehmen – sonst kaeme die Karte trotzdem nochmal und fiele beim
+// zweiten Mal auf Stufe 1 (kein Erstversuch mehr in dieser Sitzung).
+function lnNachrueckenZurueck(e){
+  const j=_ln.queue.lastIndexOf(e);
+  if(j<=_ln.idx||_ln.ergebnisse[j]!==undefined)return false;
+  _ln.queue.splice(j,1);
+  if(_ln.ergebnisse.length>j)_ln.ergebnisse.splice(j,1);
+  const bisher=_ln.requeued.get(e.karte.id)||0;
+  if(bisher>0)_ln.requeued.set(e.karte.id,bisher-1);
+  return true;
+}
+// Was der Server ueber den Plan der Karte sagt – eigener Block, damit lnKorrigieren ihn
+// nach dem Umbuchen austauschen kann (sonst stuende dort der Termin der stornierten Antwort).
+function lnPlanHtml(korrekt,r,nochmal){
+  if(_ln.uebung)return '<div class="lnp-quelle">&#128260; &Uuml;bung &ndash; am Wiederholungsplan &auml;ndert sich nichts.</div>';
+  const naechste=r&&r.zustand&&r.zustand.due;
+  const stufe=r&&r.zustand?r.zustand.stufe:null;
+  const n=lnStufenTage().length;
+  let h='';
+  if(naechste)h+='<div class="lnp-quelle">N&auml;chste Wiederholung: '+escHtml(naechste)+(stufe?(' &middot; Stufe '+stufe+' von '+n):'')+'</div>';
+  if(!korrekt)h+='<div class="lnp-quelle">'+(nochmal?'Kommt am Ende dieser Abfrage nochmal.':'Steht wieder auf der untersten Stufe und kommt morgen erneut.')+'</div>';
+  else if(stufe&&stufe>n)h+='<div class="lnp-quelle">Durch &ndash; diese Karte wird nicht mehr eingeplant.</div>';
+  return h;
+}
 async function lnAntwort(korrekt,detail){
   if(_ln.phase==='fertig')return;
   _ln.phase='fertig';
-  const e=_ln.queue[_ln.idx],k=e.karte;
+  const idx=_ln.idx,e=_ln.queue[idx],k=e.karte;
   if(korrekt)_ln.richtig++;else _ln.falsch++;
-  _ln.ergebnisse[_ln.idx]=korrekt;
+  _ln.ergebnisse[idx]=korrekt;
+  // Wiedervorlage sofort, nicht erst nach der Server-Antwort – ein schnelles „Weiter“
+  // darf sie nicht verlieren.
+  const nochmal=korrekt?false:lnNachruecken(e);
   lnTopAktualisieren();
   let r=null;
   if(!_ln.uebung){
@@ -1024,14 +1107,16 @@ async function lnAntwort(korrekt,detail){
     // diese Karte kommt wieder. Ein Nachreichen gibt es bewusst nicht.
     if(r&&r.error)toast('Antwort nicht gespeichert: '+r.error,'err');
   }
+  lnZustandUebernehmen(e,r);
+  // Waehrend der Anfrage schon weitergetippt? Dann gehoert die Rueckmeldung nicht mehr
+  // in die jetzt gezeigte Karte.
+  if(!_ln.aktiv||_ln.idx!==idx)return;
+  lnTopAktualisieren();
   const karte=document.querySelector('#lern-overlay .lnp-karte');
   if(karte){
     const alt=karte.querySelector('.lnp-unten');if(alt)alt.remove();
     document.querySelectorAll('#lern-overlay .lnp-opt,#lern-overlay .lnp-lbl').forEach(node=>node.disabled=true);
     const ta=el('lnp-ta');if(ta)ta.disabled=true;
-    const naechste=r&&r.zustand&&r.zustand.due;
-    const stufe=r&&r.zustand?r.zustand.stufe:null;
-    const stufenTage=(_lnDash&&_lnDash.stufenTage)||LN_LEITER_FALLBACK;
     const fb=document.createElement('div');
     fb.className='lnp-fb '+(korrekt?'ln-ok':'ln-bad');
     fb.innerHTML='<div class="lnp-fb-t">'+(korrekt?'&#10003; Richtig':'&#10007; Falsch')+'</div>'
@@ -1039,12 +1124,7 @@ async function lnAntwort(korrekt,detail){
       +(k.erklaerung?('<div style="margin-top:6px">'+escHtml(k.erklaerung)+'</div>'):'')
       +(k.typ==='freitext'?'':lnLoesungsbildHtml(k))
       +(k.quelle?('<div class="lnp-quelle">&bdquo;'+escHtml(k.quelle)+'&ldquo;</div>'):'')
-      +(_ln.uebung
-          ?'<div class="lnp-quelle">&#128260; &Uuml;bung &ndash; am Wiederholungsplan &auml;ndert sich nichts.</div>'
-          :((naechste?('<div class="lnp-quelle">N&auml;chste Wiederholung: '+escHtml(naechste)
-              +(stufe?(' &middot; Stufe '+stufe+' von '+stufenTage.length):'')+'</div>'):'')
-            +((!korrekt)?'<div class="lnp-quelle">Kommt am Ende dieser Abfrage nochmal.</div>'
-              :(stufe&&stufe>stufenTage.length?'<div class="lnp-quelle">Durch &ndash; diese Karte wird nicht mehr eingeplant.</div>':''))));
+      +'<div class="lnp-plan">'+lnPlanHtml(korrekt,r,nochmal)+'</div>';
     karte.appendChild(fb);
     _ln.letzte=(!_ln.uebung&&r&&r.t)?{t:r.t,kartenId:k.id,korrekt}:null;
     const unten=document.createElement('div');
@@ -1075,38 +1155,44 @@ async function lnAntwort(korrekt,detail){
       },0);
     }catch{}
   }
-  // Falsch beantwortet -> ans ENDE der Abfrage, bis sie einmal sitzt.
-  if(!korrekt){
-    const bisher=_ln.requeued.get(k.id)||0;
-    if(bisher<LN_MAX_REQUEUE){_ln.requeued.set(k.id,bisher+1);_ln.queue.push(e);}
-    else toast('Diese Karte kommt jetzt nicht mehr – sie steht morgen wieder an','ok');
-  }
 }
 // Verklickt? Die Antwort wird nicht geloescht (der Log ist append-only), sondern
-// storniert und in der Gegenrichtung neu gebucht – Zaehler und Balken ziehen mit.
+// storniert und in der Gegenrichtung neu gebucht – Zaehler, Balken, Wiedervorlage,
+// Stufenanzeige und Plan-Text ziehen mit. Serverseitig zaehlt die neu gebuchte Antwort
+// als Erstversuch der Sitzung (die stornierte faellt aus dem Log-Fold heraus), die
+// Stufe stimmt also – solange die Karte nicht trotzdem nochmal drankommt (s. lnNachrueckenZurueck).
 async function lnKorrigieren(){
   const l=_ln.letzte;if(!l)return;
-  _ln.letzte=null;
+  const idx=_ln.idx,e=_ln.queue[idx];
+  if(!e||e.karte.id!==l.kartenId)return;
+  _ln.letzte=null;                 // gegen Doppeltipp; bei Fehler unten wieder gesetzt
   const neu=!l.korrekt;
   let r;
   try{
     r=await lnPost('/api/lernen/undo',{vault:activeVault,kartenId:l.kartenId,t:l.t});
     if(r&&!r.error){
-      const e=_ln.queue[_ln.idx];
-      r=await lnPost('/api/lernen/antwort',{vault:activeVault,notiz:e&&e.notiz,kartenId:l.kartenId,
+      r=await lnPost('/api/lernen/antwort',{vault:activeVault,notiz:e.notiz,kartenId:l.kartenId,
         korrekt:neu,session:_ln.session,detail:{korrigiert:true}});
     }
   }catch(err){r={error:err.message};}
-  if(!r||r.error){toast('Korrektur fehlgeschlagen: '+((r&&r.error)||''),'err');return;}
+  if(!r||r.error){_ln.letzte=l;toast('Korrektur fehlgeschlagen: '+((r&&r.error)||''),'err');return;}
   if(l.korrekt){_ln.richtig--;_ln.falsch++;}else{_ln.falsch--;_ln.richtig++;}
-  _ln.ergebnisse[_ln.idx]=neu;
+  _ln.ergebnisse[idx]=neu;
   _ln.letzte={t:r.t,kartenId:l.kartenId,korrekt:neu};
+  // Wiedervorlage mitziehen: auf richtig umgebucht -> nachgerueckte Kopie raus;
+  // auf falsch umgebucht -> nachruecken wie bei einer falschen Antwort.
+  let nochmal=false;
+  if(neu)lnNachrueckenZurueck(e);else nochmal=lnNachruecken(e);
+  lnZustandUebernehmen(e,r);
   lnTopAktualisieren();
+  if(!_ln.aktiv||_ln.idx!==idx)return;
   const fb=document.querySelector('#lern-overlay .lnp-fb');
   if(fb){
     fb.className='lnp-fb '+(neu?'ln-ok':'ln-bad');
     const t=fb.querySelector('.lnp-fb-t');
     if(t)t.innerHTML=(neu?'&#10003; Richtig':'&#10007; Falsch')+' <span style="font-weight:400;font-size:12px">(korrigiert)</span>';
+    const plan=fb.querySelector('.lnp-plan');
+    if(plan)plan.innerHTML=lnPlanHtml(neu,r,nochmal);
   }
   const btn=document.querySelector('#lern-overlay [data-lnp="korrigieren"]');
   if(btn)btn.innerHTML=neu?'&#10007; Doch nicht':'&#10003; Doch gewusst';

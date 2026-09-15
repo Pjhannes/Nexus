@@ -270,6 +270,51 @@ try {
   const undoMist = await post('/api/lernen/undo', { vault: V, kartenId: kId, t: 'kein-datum' });
   ok('Storno mit unbrauchbarem Zeitstempel wird abgelehnt', undoMist.status === 400, String(undoMist.status));
 
+  // ── „Wusste ich doch“ (R26f-Check): falsch -> Storno -> richtig in DERSELBEN Sitzung
+  // muss als Erstversuch zaehlen, also eine Stufe hoch statt zurueck auf 1.
+  // Netto bleiben 3 Antworten im Log (r1, r2, bad1) – f1 und ok1 werden storniert.
+  const NETTO_KORREKTUR = 3;
+  const sess = 's-korrektur-' + Date.now();
+  const zVorK = (await get(`/api/karten?vault=${V}&path=${encodeURIComponent('Uni/NHM/VL 01.md')}`)).karten.find(k => k.id === kId)?.zustand;
+  const stufeVor = zVorK?.stufe ?? 0;
+  const f1 = await post('/api/lernen/antwort', { vault: V, kartenId: kId, korrekt: false, notiz: 'Uni/NHM/VL 01.md', session: sess });
+  ok('Korrektur-Fluss: falsche Antwort setzt die Stufe auf 0', f1.json.zustand.stufe === 0, JSON.stringify(f1.json.zustand));
+  const uK = await post('/api/lernen/undo', { vault: V, kartenId: kId, t: f1.json.t });
+  ok('Korrektur-Fluss: Storno stellt die Stufe von vorher wieder her', uK.json.zustand?.stufe === stufeVor || (!uK.json.zustand && stufeVor === 0),
+    `vorher ${stufeVor}, nach Storno ${JSON.stringify(uK.json.zustand)}`);
+  const r1 = await post('/api/lernen/antwort', { vault: V, kartenId: kId, korrekt: true, notiz: 'Uni/NHM/VL 01.md', session: sess, detail: { korrigiert: true } });
+  ok('Korrektur-Fluss: „Wusste ich doch“ zaehlt als Erstversuch -> eine Stufe hoeher als vorher',
+    r1.json.zustand.stufe === stufeVor + 1 && r1.json.zustand.lapses === (zVorK?.lapses ?? 0), JSON.stringify({ vorher: zVorK, nachher: r1.json.zustand }));
+  ok('Korrektur-Fluss: due liegt in der Zukunft', typeof r1.json.zustand.due === 'string' && r1.json.zustand.due > heute, r1.json.zustand.due);
+  // Gegenprobe: kaeme die Karte in derselben Sitzung trotzdem nochmal (alte Wiedervorlage),
+  // fiele sie auf Stufe 1 zurueck – genau das raeumt der Client seit R26f auf.
+  const r2 = await post('/api/lernen/antwort', { vault: V, kartenId: kId, korrekt: true, notiz: 'Uni/NHM/VL 01.md', session: sess });
+  ok('Gegenprobe: zweite richtige Antwort derselben Sitzung ist kein Erstversuch mehr (Stufe bleibt, steigt nicht weiter)',
+    r2.json.zustand.stufe === stufeVor + 1, JSON.stringify(r2.json.zustand));
+  // Und umgekehrt: richtig -> Storno -> falsch bucht sauber auf Stufe 0 um.
+  const sess2 = 's-korrektur2-' + Date.now();
+  const ok1 = await post('/api/lernen/antwort', { vault: V, kartenId: kId, korrekt: true, notiz: 'Uni/NHM/VL 01.md', session: sess2 });
+  await post('/api/lernen/undo', { vault: V, kartenId: kId, t: ok1.json.t });
+  const bad1 = await post('/api/lernen/antwort', { vault: V, kartenId: kId, korrekt: false, notiz: 'Uni/NHM/VL 01.md', session: sess2, detail: { korrigiert: true } });
+  ok('Korrektur-Fluss rueckwaerts: „Doch nicht gewusst“ -> Stufe 0, heute faellig, ein Fehlversuch mehr',
+    bad1.json.zustand.stufe === 0 && bad1.json.zustand.due === heute && bad1.json.zustand.lapses === (zVorK?.lapses ?? 0) + 1, JSON.stringify(bad1.json.zustand));
+  // Bild-Karte mit gruppe geht durch den Editor-Speicherpfad und kommt unveraendert zurueck.
+  const saveG = await post('/api/karten/save', { vault: V, path: vl2, titel: 'VL 02', karten: [
+    { typ: 'bild', frage: 'Beschrifte die Grafik.', bild: 'Uni/Bilder/karte.png', labels: ['A', 'B', 'C'], regionen: [
+      { label: 'A', x: .1, y: .1, w: .2, h: .1 },
+      { label: 'B', x: .1, y: .4, w: .2, h: .1, gruppe: 'Liste' },
+      { label: 'C', x: .1, y: .7, w: .2, h: .1, gruppe: ' Liste ' }] },
+  ] });
+  ok('Editor-Speichern nimmt gruppe an', saveG.json.ok === true, JSON.stringify(saveG.json));
+  const zurueck = (await get(`/api/karten?vault=${V}&path=${encodeURIComponent(vl2)}`)).karten[0];
+  ok('gruppe kommt getrimmt aus dem Sidecar zurueck, feste Region ohne gruppe',
+    zurueck.regionen[1].gruppe === 'Liste' && zurueck.regionen[2].gruppe === 'Liste' && !('gruppe' in zurueck.regionen[0]), JSON.stringify(zurueck.regionen));
+  const saveG1 = await post('/api/karten/save', { vault: V, path: vl2, titel: 'VL 02', karten: [
+    { typ: 'bild', frage: 'Beschrifte die Grafik.', bild: 'Uni/Bilder/karte.png', labels: ['A', 'B'], regionen: [
+      { label: 'A', x: .1, y: .1, w: .2, h: .1, gruppe: 'Solo' }, { label: 'B', x: .1, y: .4, w: .2, h: .1 }] },
+  ] });
+  ok('Gruppe mit nur einer Region wird beim Speichern abgelehnt', !!saveG1.json.error && /Solo/.test(saveG1.json.error), JSON.stringify(saveG1.json));
+
   // ── Anki-Export ──
   const anki = await getRaw(`/api/lernen/anki?vault=${V}`);
   ok('Anki-Export liefert eine Textdatei zum Download', anki.status === 200 &&
@@ -281,7 +326,7 @@ try {
   // ── Statistik ──
   const stat = await get(`/api/lernen/statistik?vault=${V}&tage=30`);
   ok('Statistik liefert einen 30-Tage-Verlauf', Array.isArray(stat.verlauf) && stat.verlauf.length === 30);
-  ok('Statistik zaehlt die stornierte Antwort nicht mit', stat.gesamt.antworten === 2, JSON.stringify(stat.gesamt));
+  ok('Statistik zaehlt stornierte Antworten nicht mit', stat.gesamt.antworten === 2 + NETTO_KORREKTUR, JSON.stringify(stat.gesamt));
 
   const mv = await post('/api/rename', { vault: V, oldPath: 'Uni/NHM/VL 01.md', newPath: 'Uni/NHM/VL 01 – neu.md' });
   ok('Umbenennen ok', mv.json.ok === true, JSON.stringify(mv.json));
@@ -289,7 +334,7 @@ try {
     !existsSync(join(vaultDir, 'Uni', 'NHM', 'VL 01.karten.json')));
   const u3 = await get(`/api/lernen/uebersicht?vault=${V}`);
   ok('Uebersicht folgt dem neuen Pfad', u3.notizen.some(n => n.notiz === 'Uni/NHM/VL 01 – neu.md'), JSON.stringify(u3.notizen.map(n => n.notiz)));
-  ok('Lernstand haengt an der ID, nicht am Pfad', u3.gesamt.antworten === 2, JSON.stringify(u3.gesamt));
+  ok('Lernstand haengt an der ID, nicht am Pfad', u3.gesamt.antworten === 2 + NETTO_KORREKTUR, JSON.stringify(u3.gesamt));
 
   const del = await post('/api/delete', { vault: V, path: 'Uni/NHM/VL 01 – neu.md' });
   ok('Loeschen ok', del.json.ok === true);
