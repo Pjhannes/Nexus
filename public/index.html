@@ -975,6 +975,12 @@ body[data-studio="cream"] #outline-panel .ol-row:hover,body[data-light] #outline
 .lnp-top .lnp-fort i.ok{background:var(--lern-ok)}
 .lnp-top .lnp-fort i.bad{background:var(--lern-bad)}
 .lnp-top .lnp-fort i.jetzt{background:var(--accent)}
+.lnp-top .lnp-fort i.hier{box-shadow:0 0 0 2px var(--accent)}
+.lnp-nav{background:none;border:1px solid var(--border);border-radius:6px;color:var(--dim);font-size:15px;line-height:1;padding:3px 9px;cursor:pointer}
+.lnp-nav:hover:not(:disabled){color:var(--text);border-color:var(--accent)}
+.lnp-nav:disabled{opacity:.35;cursor:default}
+.lnp-schon{font-size:12.5px;border-radius:8px;padding:7px 11px;margin-bottom:12px;border:1px solid var(--border);color:var(--dim)}
+.lnp-schon b{color:var(--text)}
 .lnp-zahl{font-size:12.5px;color:var(--dim);white-space:nowrap}
 /* Stufe der aktuellen Karte (R26f): Text + Leiter, ein Feld je Stufe, gefuellt bis zur Stufe */
 .lnp-stufe{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);white-space:nowrap;border:1px solid var(--border);border-radius:99px;padding:3px 11px}
@@ -6503,7 +6509,7 @@ async function lnStart(filter){
   }
   _ln.aktiv=true;_ln.queue=q.karten.slice();_ln.idx=0;_ln.richtig=0;_ln.falsch=0;
   _ln.requeued=new Map();_ln.session='s-'+Date.now();_ln.filter=filter;_ln.uebung=uebung;
-  _ln.ergebnisse=[];_ln.tipp=[];_ln.letzte=null;
+  _ln.ergebnisse=[];_ln.antworten=[];_ln.tipp=[];_ln.letzte=null;
   const ov=document.getElementById('lern-overlay');
   ov.classList.add('show');
   lnRenderKarte();
@@ -6520,8 +6526,10 @@ function lnStop(){
 function lnSegmente(){
   return _ln.queue.map((_,i)=>{
     const e=_ln.ergebnisse[i];
+    // Zurueckgeblaettert steht man auf einer schon gefaerbten Karte – "hier" rahmt sie ein.
     const cls=e===true?'ok':e===false?'bad':(i===_ln.idx?'jetzt':'');
-    return '<i'+(cls?' class="'+cls+'"':'')+'></i>';
+    const alle=(cls+((i===_ln.idx&&cls!=='jetzt')?' hier':'')).trim();
+    return '<i'+(alle?' class="'+alle+'"':'')+'></i>';
   }).join('');
 }
 function lnStufenTage(){return (_lnDash&&_lnDash.stufenTage)||[1,3,5,7];}
@@ -6550,6 +6558,8 @@ function lnZustandUebernehmen(e,r){
 function lnKopf(){
   const gesamt=_ln.queue.length,pos=Math.min(_ln.idx+1,gesamt);
   return '<div class="lnp-top">'
+    +'<button class="lnp-nav" data-lnp="zurueck" title="Vorherige Karte (&larr;)"'+(_ln.idx>0?'':' disabled')+'>&lsaquo;</button>'
+    +'<button class="lnp-nav" data-lnp="vor" title="N&auml;chste Karte (&rarr;)"'+(lnKannVor()?'':' disabled')+'>&rsaquo;</button>'
     +'<span class="lnp-zahl lnp-pos">Karte '+pos+' / '+gesamt+'</span>'
     +'<div class="lnp-fort">'+lnSegmente()+'</div>'
     +'<span class="lnp-zahl lnp-bilanz">&#10003; '+_ln.richtig+' &middot; &#10007; '+_ln.falsch+'</span>'
@@ -6568,13 +6578,29 @@ function lnTopAktualisieren(){
   if(bil)bil.innerHTML='&#10003; '+_ln.richtig+' &middot; &#10007; '+_ln.falsch;
   const st=ov.querySelector('.lnp-stufe');
   if(st){const h=lnStufeHtml();if(h)st.outerHTML=h;else st.remove();}
+  const zb=ov.querySelector('[data-lnp="zurueck"]');if(zb)zb.disabled=_ln.idx<=0;
+  const vb=ov.querySelector('[data-lnp="vor"]');if(vb)vb.disabled=!lnKannVor();
 }
+// Blaettern: zurueck geht immer, vor nur ueber schon beantwortete Karten – die vorderste
+// offene Karte laesst sich nicht ueberspringen. Eine zurueckgeblaetterte Karte steht wieder
+// in der Frage-Phase; wer dort neu antwortet, bucht die alte Antwort um (s. lnAntwort).
+function lnKannVor(){return _ln.idx<_ln.queue.length&&_ln.ergebnisse[_ln.idx]!==undefined;}
+function lnZurueck(){
+  const ziel=Math.min(_ln.idx,_ln.queue.length)-1;   // vom Ende-Bildschirm auf die letzte Karte
+  if(ziel<0)return;
+  _ln.idx=ziel;lnRenderKarte();
+}
+function lnVor(){if(lnKannVor())lnWeiter();}
 function lnRenderKarte(){
   const ov=document.getElementById('lern-overlay');if(!ov)return;
   if(_ln.idx>=_ln.queue.length){lnRenderEnde();return;}
   const e=_ln.queue[_ln.idx],k=e.karte;
+  const alt=_ln.antworten[_ln.idx]||null;   // zurueckgeblaettert: die fruehere Antwort dieser Position
   _ln.phase='frage';_ln.gewaehlt=[];_ln.zuordnung={};_ln.markAktiv=null;_ln.bildAr=1;_ln.start=Date.now();
+  _ln.letzte=null;_ln.eigenText='';_ln.renderNr=(_ln.renderNr||0)+1;
   let b='<div class="lnp-body"><div class="lnp-karte">';
+  if(alt)b+='<div class="lnp-schon">Schon beantwortet: <b>'+(alt.korrekt?'&#10003; richtig':'&#10007; falsch')+'</b>'
+    +' &middot; neu antworten &auml;ndert die Wertung &middot; &larr; / &rarr; bl&auml;ttern</div>';
   b+='<div class="lnp-herkunft">&#128196; '+escHtml(e.titel||lnNotizName(e.notiz))
     +(e.neu?' <span class="ln-badge neu">neu</span>':'')+'</div>';
   b+='<div class="lnp-frage">'+escHtml(k.frage)+'</div>';
@@ -6586,7 +6612,7 @@ function lnRenderKarte(){
       +'<button class="lnp-opt" data-lnp="nein"><span class="lnp-key">N</span>Stimmt nicht</button></div>';
   }else if(k.typ==='mc'){
     const mehr=(k.korrekt||[]).length>1;
-    _ln.mcReihe=lnMische(k.optionen.map((_,i)=>i));
+    _ln.mcReihe=(alt&&alt.mcReihe)||lnMische(k.optionen.map((_,i)=>i));   // beim Blaettern dieselbe Reihenfolge
     b+='<div class="lnp-opts">';
     _ln.mcReihe.forEach((orig,pos)=>{
       b+='<button class="lnp-opt" data-lnp="opt" data-i="'+orig+'"><span class="lnp-key">'+(pos+1)+'</span>'+escHtml(k.optionen[orig])+'</button>';
@@ -6631,10 +6657,35 @@ function lnRenderKarte(){
   }
   b+='</div></div>';
   ov.innerHTML=lnKopf()+b;
-  if(k.typ==='bild'&&k.modus!=='tippen'){_ln.labelReihe=lnMische(k.labels||[]);lnRenderBildLabels();}
+  if(alt)lnAlteAntwortZeigen(k,alt);
+  if(k.typ==='bild'&&k.modus!=='tippen'){_ln.labelReihe=(alt&&alt.labelReihe)||lnMische(k.labels||[]);lnRenderBildLabels();}
   lnWirePlayer();
+  // Zurueckgeblaettert bleibt der Fokus draussen: im vorbelegten Feld gehoeren die
+  // Pfeiltasten dem Cursor, man kaeme mit ihnen nicht mehr von der Karte weg.
+  if(alt)return;
   const ta=document.getElementById('lnp-ta');if(ta)ta.focus();
   const ti=document.querySelector('#lnp-tipp input');if(ti)ti.focus();
+}
+// Fruehere Antwort einer zurueckgeblaetterten Karte wieder eintragen – als Ausgangspunkt
+// zum Aendern. Gewertet ist damit nichts: erst eine neue Antwort bucht um.
+function lnAlteAntwortZeigen(k,alt){
+  const d=alt.detail||{};
+  const ov=document.getElementById('lern-overlay');
+  if(k.typ==='janein'&&typeof d.gewaehlt==='boolean'){
+    const el=ov.querySelector('[data-lnp="'+(d.gewaehlt?'ja':'nein')+'"]');if(el)el.classList.add('gewaehlt');
+  }else if(k.typ==='mc'&&Array.isArray(d.gewaehlt)){
+    // Mehrfachauswahl: Auswahl uebernehmen (umschaltbar). Einfachauswahl: nur markieren,
+    // der naechste Klick wertet ohnehin sofort.
+    if((k.korrekt||[]).length>1)_ln.gewaehlt=d.gewaehlt.slice();
+    d.gewaehlt.forEach(i=>{const el=ov.querySelector('.lnp-opt[data-i="'+i+'"]');if(el)el.classList.add('gewaehlt');});
+  }else if(k.typ==='freitext'){
+    const ta=document.getElementById('lnp-ta');if(ta&&alt.text)ta.value=alt.text;
+  }else if(k.typ==='bild'){
+    if(k.modus==='tippen')(d.eingaben||[]).forEach((s,i)=>{
+      const el=ov.querySelector('#lnp-tipp input[data-i="'+i+'"]');if(el)el.value=s||'';
+    });
+    else if(alt.zuordnung)_ln.zuordnung={...alt.zuordnung};
+  }
 }
 function lnRenderBildLabels(){
   const box=document.getElementById('lnp-labels');if(!box)return;
@@ -6687,6 +6738,10 @@ function lnWirePlayer(){
   ov.querySelectorAll('[data-lnp]').forEach(el=>{
     const a=el.dataset.lnp;
     if(a==='lbl')return;   // eigene Verdrahtung in lnRenderBildLabels
+    // onclick: die Kopfleiste ueberlebt mehrere lnWirePlayer-Laeufe – doppelt verdrahtet
+    // spraenge ein Klick gleich zwei Karten weit.
+    if(a==='zurueck'){el.onclick=()=>lnZurueck();return;}
+    if(a==='vor'){el.onclick=()=>lnVor();return;}
     if(a==='tipp'){
       // Der globale Tastatur-Handler steigt bei Eingabefeldern aus – Enter muss hier haengen.
       el.addEventListener('keydown',ev=>{
@@ -6729,6 +6784,10 @@ function lnBildKlick(ev){
 function lnJaNein(wahl){
   if(_ln.phase!=='frage')return;
   const k=_ln.queue[_ln.idx].karte;
+  // Wahl sichtbar machen – beim Zurueckblaettern ist sonst nicht zu sehen, was man getippt hatte.
+  document.querySelectorAll('#lern-overlay .lnp-opt').forEach(el=>el.classList.remove('gewaehlt'));
+  const el=document.querySelector('#lern-overlay [data-lnp="'+(wahl?'ja':'nein')+'"]');
+  if(el)el.classList.add('gewaehlt');
   lnAntwort(wahl===(k.antwort===true),{gewaehlt:wahl});
 }
 function lnOptKlick(i,el){
@@ -6831,6 +6890,7 @@ function lnNachrueckenZurueck(e){
   if(j<=_ln.idx||_ln.ergebnisse[j]!==undefined)return false;
   _ln.queue.splice(j,1);
   if(_ln.ergebnisse.length>j)_ln.ergebnisse.splice(j,1);
+  if(_ln.antworten.length>j)_ln.antworten.splice(j,1);
   const bisher=_ln.requeued.get(e.karte.id)||0;
   if(bisher>0)_ln.requeued.set(e.karte.id,bisher-1);
   return true;
@@ -6851,25 +6911,50 @@ function lnPlanHtml(korrekt,r,nochmal){
 async function lnAntwort(korrekt,detail){
   if(_ln.phase==='fertig')return;
   _ln.phase='fertig';
-  const idx=_ln.idx,e=_ln.queue[idx],k=e.karte;
+  const idx=_ln.idx,e=_ln.queue[idx],k=e.karte,start=_ln.start,nr=_ln.renderNr;
+  // Zurueckgeblaettert und neu geantwortet: die alte Antwort dieser Position wird
+  // storniert und die neue gebucht – gleiche Mechanik wie lnKorrigieren.
+  const alt=_ln.antworten[idx]||null;
+  if(alt){if(alt.korrekt)_ln.richtig--;else _ln.falsch--;}
   if(korrekt)_ln.richtig++;else _ln.falsch++;
   _ln.ergebnisse[idx]=korrekt;
   // Wiedervorlage sofort, nicht erst nach der Server-Antwort – ein schnelles Enter
   // („Weiter“) darf sie nicht verlieren.
-  const nochmal=korrekt?false:lnNachruecken(e);
+  let nochmal=false;
+  if(!alt)nochmal=korrekt?false:lnNachruecken(e);
+  else if(alt.korrekt!==korrekt){if(korrekt)lnNachrueckenZurueck(e);else nochmal=lnNachruecken(e);}
+  else if(!korrekt){const j=_ln.queue.lastIndexOf(e);nochmal=j>idx&&_ln.ergebnisse[j]===undefined;}
+  const rec={korrekt,detail,t:null,p:null,mcReihe:_ln.mcReihe,labelReihe:_ln.labelReihe,
+             zuordnung:{..._ln.zuordnung},text:k.typ==='freitext'?(_ln.eigenText||''):''};
+  _ln.antworten[idx]=rec;
   lnTopAktualisieren();
   let r=null;
   if(!_ln.uebung){
-    try{
-      r=await lnPost('/api/lernen/antwort',{vault:activeVault,notiz:e.notiz,kartenId:k.id,korrekt,
-        dauerMs:Date.now()-_ln.start,session:_ln.session,detail});
-    }catch(err){r={error:err.message};}
+    // rec.p: wer blaettert und sofort nochmal antwortet, waehrend diese Buchung noch laeuft,
+    // wartet sie ab – ohne ihren Zeitstempel liesse sie sich nicht stornieren.
+    rec.p=(async()=>{
+      try{
+        if(alt){
+          if(alt.p)await alt.p;
+          if(alt.t){
+            const u=await lnPost('/api/lernen/undo',{vault:activeVault,kartenId:k.id,t:alt.t});
+            if(!u||u.error){rec.t=alt.t;return {error:(u&&u.error)||'Storno fehlgeschlagen'};}
+          }
+        }
+        const a=await lnPost('/api/lernen/antwort',{vault:activeVault,notiz:e.notiz,kartenId:k.id,korrekt,
+          dauerMs:Date.now()-start,session:_ln.session,detail:alt?{...(detail||{}),korrigiert:true}:detail});
+        if(a&&a.t)rec.t=a.t;
+        return a;
+      }catch(err){return {error:err.message};}
+    })();
+    r=await rec.p;rec.p=null;
     if(r&&r.error)toast('Antwort nicht gespeichert: '+r.error,'err');
   }
   lnZustandUebernehmen(e,r);
-  // Waehrend der Anfrage schon weitergeklickt? Dann gehoert die Rueckmeldung nicht mehr
-  // in die jetzt gezeigte Karte.
-  if(!_ln.aktiv||_ln.idx!==idx)return;
+  // Waehrend der Anfrage schon weitergeklickt oder geblaettert? Dann gehoert die
+  // Rueckmeldung nicht mehr in die jetzt gezeigte Karte (renderNr: auch nicht in dieselbe
+  // Position, wenn sie inzwischen neu aufgebaut wurde).
+  if(!_ln.aktiv||_ln.idx!==idx||_ln.renderNr!==nr){if(_ln.aktiv)lnTopAktualisieren();return;}
   lnTopAktualisieren();
   const karte=document.querySelector('#lern-overlay .lnp-karte');
   if(karte){
@@ -6891,7 +6976,7 @@ async function lnAntwort(korrekt,detail){
     unten.innerHTML='<button class="ln-btn primary" data-lnp="weiter">Weiter</button>'
       +(_ln.letzte?'<button class="ln-btn" data-lnp="korrigieren" title="Antwort umwerten – der Lernstand wird mitkorrigiert">'
         +(korrekt?'&#10007; Doch nicht gewusst':'&#10003; Wusste ich doch')+'</button>':'')
-      +'<span class="lnp-hint">Enter</span>';
+      +'<span class="lnp-hint">Enter &middot; &larr; / &rarr; bl&auml;ttern</span>';
     karte.appendChild(unten);
     lnWirePlayer();
   }
@@ -6919,6 +7004,8 @@ async function lnKorrigieren(){
   if(l.korrekt){_ln.richtig--;_ln.falsch++;}else{_ln.falsch--;_ln.richtig++;}
   _ln.ergebnisse[idx]=neu;
   _ln.letzte={t:r.t,kartenId:l.kartenId,korrekt:neu};
+  // Blaetter-Gedaechtnis mitziehen – sonst stornierte ein spaeteres Neu-Antworten die falsche Zeile.
+  const rec=_ln.antworten[idx];if(rec){rec.t=r.t;rec.korrekt=neu;}
   // Wiedervorlage mitziehen: auf richtig umgebucht -> nachgerueckte Kopie raus;
   // auf falsch umgebucht -> nachruecken wie bei einer falschen Antwort.
   let nochmal=false;
@@ -6961,11 +7048,14 @@ async function lnEnde(){
     const q=await api('/api/lernen/session?'+pr.toString());
     rest=(q&&typeof q.gesamt==='number')?q.gesamt:0;
   }catch(e){rest=0;}
+  // Waehrend der Nachfrage beendet oder zurueckgeblaettert? Dann die Karte nicht ueberschreiben.
+  if(!_ln.aktiv||_ln.idx<_ln.queue.length)return;
   _ln.rest=rest;
   lnRenderEnde();
 }
 function lnRenderEnde(){
   const ov=document.getElementById('lern-overlay');if(!ov)return;
+  _ln.phase='ende';   // Enter darf hier nicht mehr "Weiter" ausloesen – der Index liefe sonst davon
   const ges=_ln.richtig+_ln.falsch;
   const quote=ges?Math.round((_ln.richtig/ges)*100):0;
   ov.innerHTML=lnKopf()+'<div class="lnp-body"><div class="lnp-karte lnp-ende">'
@@ -6986,7 +7076,17 @@ document.addEventListener('keydown',e=>{
   if(!_ln.aktiv)return;
   if(document.querySelector('.overlay.show'))return;
   const t=e.target&&e.target.tagName;
-  if(t==='TEXTAREA'||t==='INPUT')return;
+  const imFeld=t==='TEXTAREA'||t==='INPUT';
+  // Pfeiltasten blaettern durch die Sitzung. In einem Feld mit Text gehoeren sie dem
+  // Cursor; im leeren Feld gibt es nichts zu bewegen, da darf geblaettert werden.
+  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
+    if(e.altKey||e.ctrlKey||e.metaKey||e.shiftKey)return;
+    if(imFeld&&e.target.value)return;
+    e.preventDefault();
+    if(e.key==='ArrowLeft')lnZurueck();else lnVor();
+    return;
+  }
+  if(imFeld)return;
   const k=_ln.queue[_ln.idx]&&_ln.queue[_ln.idx].karte;
   if(_ln.phase==='fertig'){
     if(e.key==='Enter'||e.key===' '){e.preventDefault();lnWeiter();}
