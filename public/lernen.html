@@ -566,7 +566,9 @@ function lnSitzungWahl(opt){
     themen:(Array.isArray(n.themen)&&n.themen.length)?n.themen
       :[{thema:'',karten:n.karten,spielbar:n.karten-(n.bildOffen||0),
          faellig:n.faellig||0,neu:n.neu||0,gelernt:n.fertig||0}],
-  }));
+  }))
+    // Natuerliche Reihenfolge nach Namen: "K2" vor "K10", nicht nach Kartenzahl.
+    .sort((a,b)=>a.name.localeCompare(b.name,'de',{numeric:true,sensitivity:'base'}));
   const schluessel=(notiz,thema)=>notiz+'::'+(thema||'');
   const gewaehlt=new Set();
   liste.forEach(n=>n.themen.forEach(t=>gewaehlt.add(schluessel(n.notiz,t.thema))));
