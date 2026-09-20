@@ -1471,6 +1471,15 @@ async function openExternalFile(path){
   try{
     const r=await fetch('/api/open-external',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vault:activeVault,path})});
     const j=await r.json().catch(()=>({}));
+    // Web-Betrieb (NEXUS_WEB=1): der Server sperrt die Route mit 403 – dort gibt es keinen
+    // Desktop, auf dem sich etwas oeffnen liesse. Stattdessen die Datei herunterladen.
+    if(r.status===403){
+      const a=document.createElement('a');
+      a.href=fileUrl(path);a.download=path.split('/').pop();
+      document.body.appendChild(a);a.click();a.remove();
+      toast('Im Web wird die Datei heruntergeladen','ok');
+      return;
+    }
     if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status));
     toast('Geoeffnet in '+(app==='dem Standardprogramm'?'Standardprogramm':app),'ok');
     logActivity('#7ec8e3','open_external → <b>'+esc(path.split('/').pop())+'</b>');
