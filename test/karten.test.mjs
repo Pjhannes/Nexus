@@ -14,6 +14,7 @@ import {
   ohneStornierte, ankiExport, regionSauber,
   LERN_STUFEN, istFertig, kalenderVorschau,
   kartenSidecarPath, notizAusSidecarPath, logDateiFuer, KARTEN_TYPEN,
+  pausierteNotizen, lernAktion, themenJeNotiz,
 } from '../src/lernen.js';
 
 let pass = 0, fail = 0;
@@ -754,6 +755,120 @@ const lbAlt = mergeKartenIds([kFt], []).karten[0];
 const lbNeu = mergeKartenIds([{ ...kFt, loesungsbild: LB }], [lbAlt]);
 ok('Bild nachtragen behaelt die Karten-ID (Lernstand bleibt)',
   lbNeu.karten[0].id === lbAlt.id && lbNeu.uebernommen === 1, JSON.stringify(lbNeu));
+
+// ── Teil F (R28): Pausieren / Fortsetzen / Zuruecksetzen ─────────────────────
+console.log('\nTeil F: Pause, Fortsetzen, Reset');
+{
+  // Pauls Beispiel: So 20.09. gelernt + pausiert, Mi 23.09. fortgesetzt.
+  const SO = '2026-09-20', MI = '2026-09-23';
+  const T = (tag, hh) => tag + 'T' + hh + ':00:00.000Z';
+  const ant = (karte, tag, hh, korrekt = true, session = 's-' + tag) => ({ t: T(tag, hh), tag, karte, korrekt, session });
+  const scH = { notiz: 'Uni/Handhabung.md', karten: [
+    { id: 'h1', typ: 'janein', frage: 'a', antwort: true }, { id: 'h2', typ: 'janein', frage: 'b', antwort: true },
+    { id: 'h3', typ: 'janein', frage: 'c', antwort: true } ] };
+  const scM = { notiz: 'Uni/Montage.md', karten: [{ id: 'm1', typ: 'janein', frage: 'd', antwort: true }] };
+  const sidecars = [scH, scM];
+  // h1 -> Stufe 1 (faellig Mo 21.), h2 -> Stufe 2 (am 17. + 18. richtig, faellig Mo 21.), h3 nie gefragt
+  const basis = [
+    ant('h2', '2026-09-17', '08'), ant('h2', '2026-09-18', '08'),
+    ant('h1', SO, '08'), ant('m1', SO, '09'),
+  ];
+  const vorPause = foldReviews(basis);
+  ok('Ausgangslage: h1 Stufe 1 faellig 21.09., h2 Stufe 2 faellig 21.09.',
+    vorPause.get('h1').stufe === 1 && vorPause.get('h1').due === '2026-09-21' &&
+    vorPause.get('h2').stufe === 2 && vorPause.get('h2').due === '2026-09-21', JSON.stringify([...vorPause]));
+
+  const plan = lernAktion({ sidecars, zustaende: vorPause, aktion: 'pause', notiz: scH.notiz });
+  ok('lernAktion pause: ein Ereignis mit ALLEN Karten-IDs des Lernsets',
+    plan.sets === 1 && plan.karten === 3 && plan.ereignisse[0].typ === 'pause', JSON.stringify(plan));
+  const pause = { t: T(SO, '10'), tag: SO, typ: 'pause', notiz: scH.notiz, karten: plan.ereignisse[0].karten };
+
+  const inPause = foldReviews([...basis, pause]);
+  ok('pausiert: Stufe und Termin bleiben stehen', inPause.get('h2').stufe === 2 && inPause.get('h2').due === '2026-09-21' && inPause.get('h2').pausiert === SO);
+  ok('pausiert: auch die nie gefragte Karte ist markiert', inPause.get('h3')?.pausiert === SO && !inPause.get('h3').due);
+  ok('pausiert: istFaellig ist false, auch weit nach dem Termin', istFaellig(inPause.get('h1'), '2026-10-30') === false);
+  ok('pausierteNotizen kennt nur das pausierte Lernset',
+    pausierteNotizen(sidecars, inPause).get(scH.notiz) === SO && !pausierteNotizen(sidecars, inPause).has(scM.notiz));
+
+  const ueP = lernUebersicht({ sidecars, zustaende: inPause, faecher: [], heute: MI });
+  const nH = ueP.notizen.find(n => n.notiz === scH.notiz);
+  ok('Uebersicht: pausiertes Set hat 0 faellig / 0 neu, 3 pausiert', nH.faellig === 0 && nH.neu === 0 && nH.pausiert === 3 && nH.pausiertSeit === SO, JSON.stringify(nH));
+  ok('Uebersicht: Stufenverteilung bleibt sichtbar (eingefroren)', nH.stufen[1] === 1 && nH.stufen[2] === 1 && nH.stufen[0] === 1, JSON.stringify(nH.stufen));
+  ok('Uebersicht: pausiertes Set steht nicht unter "heute faellig"', !ueP.faellige.some(n => n.notiz === scH.notiz) && ueP.faellige.some(n => n.notiz === scM.notiz));
+  ok('Uebersicht: Fach "Ohne Fach" ist nur teilweise pausiert', ueP.faecher[0].pausierteSets === 1 && ueP.faecher[0].pausiertGanz === false, JSON.stringify(ueP.faecher[0]));
+  ok('Kalender zaehlt pausierte Karten nicht', kalenderVorschau({ sidecars, zustaende: inPause, heute: MI, tage: 5 }).reduce((s, t) => s + t.faellig + t.neu + t.ueberfaellig, 0) === 1);
+  const qP = sessionQueue({ sidecars, zustaende: inPause, heute: MI, filter: {} });
+  ok('Sitzung: pausierte Karten bleiben draussen', qP.karten.every(e => e.notiz !== scH.notiz) && qP.uebersprungenPausiert === 3, JSON.stringify(qP.karten.map(e => e.karte.id)));
+  ok('Ueben geht trotz Pause', sessionQueue({ sidecars, zustaende: inPause, heute: MI, filter: { notiz: scH.notiz }, uebung: true }).karten.length === 3);
+  const thP = themenJeNotiz(scH, { zustaende: inPause, heute: MI, pausiert: true });
+  ok('Themen-Zahlen: pausiert statt faellig/neu', thP[0].pausiert === 3 && thP[0].faellig === 0 && thP[0].neu === 0, JSON.stringify(thP));
+
+  const planW = lernAktion({ sidecars, zustaende: inPause, aktion: 'weiter', notiz: scH.notiz });
+  ok('lernAktion weiter: kennt den Pausenbeginn', planW.sets === 1 && planW.ereignisse[0].seit === SO, JSON.stringify(planW));
+  ok('lernAktion weiter auf nicht pausiertem Set: nichts zu tun', lernAktion({ sidecars, zustaende: inPause, aktion: 'weiter', notiz: scM.notiz }).sets === 0);
+  ok('lernAktion pause auf bereits pausiertem Set: nichts zu tun', lernAktion({ sidecars, zustaende: inPause, aktion: 'pause', notiz: scH.notiz }).sets === 0);
+  const weiter = { t: T(MI, '10'), tag: MI, typ: 'weiter', notiz: scH.notiz, karten: planW.ereignisse[0].karten };
+
+  const nach = foldReviews([...basis, pause, weiter]);
+  ok('fortgesetzt am Mi: Stufe-1-Karte kommt am Do (21.09. + 3 Tage)', nach.get('h1').due === '2026-09-24' && nach.get('h1').stufe === 1, JSON.stringify(nach.get('h1')));
+  ok('fortgesetzt: alle Termine wandern um genau die Pausendauer', nach.get('h2').due === '2026-09-24' && nach.get('h2').stufe === 2);
+  ok('fortgesetzt: Pausen-Marker ist weg, nie gefragte Karte wieder ohne Zustand', !nach.get('h1').pausiert && !nach.has('h3'));
+  ok('fortgesetzt: anderes Lernset unberuehrt', nach.get('m1').due === vorPause.get('m1').due);
+  ok('fortgesetzt: am Mi selbst ist nichts faellig (wie am Pausentag)', sessionQueue({ sidecars: [scH], zustaende: nach, heute: MI, filter: {}, nurFaellig: true }).gesamt === 0);
+
+  // Stufe 2 am Pausentag erreicht: +3 Tage Intervall, +3 Tage Pause -> Sa 26.09.
+  const b2 = [ant('h2', '2026-09-19', '08'), ant('h2', SO, '08')];
+  const nach2 = foldReviews([...b2, pause, weiter]);
+  ok('Pauls Beispiel: Stufe 2 von heute kommt am Samstag', nach2.get('h2').due === '2026-09-26', JSON.stringify(nach2.get('h2')));
+
+  ok('Pause + Fortsetzen am selben Tag aendert nichts',
+    foldReviews([...basis, pause, { ...weiter, t: T(SO, '11'), tag: SO }]).get('h1').due === '2026-09-21');
+  ok('doppeltes Pausieren zaehlt ab der ERSTEN Pause',
+    foldReviews([...basis, pause, { ...pause, t: T('2026-09-22', '10'), tag: '2026-09-22' }, weiter]).get('h1').due === '2026-09-24');
+
+  // Pruefungs-Kappung beim Fortsetzen
+  const mitPruefung = foldReviews([...basis, pause, weiter], () => ({ pruefung: '2026-09-24' }));
+  ok('fortgesetzt: Termin rutscht nicht auf/hinter die Pruefung', mitPruefung.get('h1').due < '2026-09-24' || mitPruefung.get('h1').due === tagPlus(MI, 1), JSON.stringify(mitPruefung.get('h1')));
+
+  // Antwort waehrend der Pause (anderes Geraet): Frist laeuft ab der Antwort
+  const dazw = foldReviews([...basis, pause, ant('h1', '2026-09-22', '08'), weiter]);
+  ok('Antwort waehrend der Pause: eingefroren ab der Antwort (22. -> Stufe 2, +3, +1 Tag Restpause)',
+    dazw.get('h1').stufe === 2 && dazw.get('h1').due === '2026-09-26', JSON.stringify(dazw.get('h1')));
+
+  // Aeltere Staende: Ereigniszeilen haben kein Feld "karte"
+  ok('Ereigniszeilen tragen kein Feld "karte" (alte Versionen ueberspringen sie)', !('karte' in pause));
+
+  // ── Reset ──
+  const planR = lernAktion({ sidecars, zustaende: vorPause, aktion: 'reset', notiz: scH.notiz });
+  ok('lernAktion reset: nur Karten mit Lernstand', planR.karten === 2 && !planR.ereignisse[0].karten.includes('h3'), JSON.stringify(planR));
+  ok('lernAktion reset ohne Lernstand: nichts zu tun', lernAktion({ sidecars: [{ notiz: 'x.md', karten: [{ id: 'x1' }] }], zustaende: new Map(), aktion: 'reset', notiz: 'x.md' }).sets === 0);
+  const reset = { t: T(SO, '12'), tag: SO, typ: 'reset', notiz: scH.notiz, karten: planR.ereignisse[0].karten };
+  const nachR = foldReviews([...basis, reset]);
+  ok('reset: Karten sind wieder neu, anderes Set bleibt', !nachR.has('h1') && !nachR.has('h2') && nachR.get('m1').stufe === 1);
+  const ueR = lernUebersicht({ sidecars, zustaende: nachR, faecher: [], heute: SO }).notizen.find(n => n.notiz === scH.notiz);
+  ok('reset: Uebersicht zeigt 3 neue Karten, keine Antworten', ueR.neu === 3 && ueR.antworten === 0 && ueR.stufen[0] === 3, JSON.stringify(ueR));
+  const nachRA = foldReviews([...basis, reset, { ...ant('h1', SO, '13'), session: 's-' + SO }]);
+  ok('reset: Antwort danach (gleiche Sitzung, gleicher Tag) zaehlt wieder als Erstversuch', nachRA.get('h1').stufe === 1 && nachRA.get('h1').antworten === 1, JSON.stringify(nachRA.get('h1')));
+  const resetInPause = foldReviews([...basis, pause, { ...reset, karten: ['h1', 'h2'] }]);
+  ok('reset waehrend der Pause: Lernstand weg, Pause bleibt', resetInPause.get('h1').pausiert === SO && resetInPause.get('h1').stufe === 0 && !resetInPause.get('h1').due);
+  ok('Statistik: reset laesst den Antwort-Verlauf stehen, Verteilung ist wieder "neu"', (() => {
+    const s = lernStatistik({ sidecars: [scH], zustaende: nachR, reviews: [...basis, reset], heute: SO, tage: 7 });
+    return s.gesamt.antworten === 3 && s.verteilung.neu === 3 && s.verteilung.amLernen === 0;
+  })());
+  ok('Statistik: pausierte Karten werden ausgewiesen',
+    lernStatistik({ sidecars, zustaende: inPause, reviews: [...basis, pause], heute: MI, tage: 7 }).verteilung.pausiert === 3);
+
+  // ── Fach ──
+  const faecher = [{ id: 'f1', name: 'Technik', ordner: ['Uni'] }];
+  const planF = lernAktion({ sidecars, zustaende: vorPause, faecher, aktion: 'pause', fach: 'f1' });
+  ok('lernAktion pause fuer ein Fach: je Lernset ein Ereignis', planF.sets === 2 && planF.karten === 4);
+  const fachPause = foldReviews([...basis, ...planF.ereignisse.map((e, i) => ({ t: T(SO, '1' + i), tag: SO, typ: e.typ, notiz: e.notiz, karten: e.karten }))]);
+  const ueF = lernUebersicht({ sidecars, zustaende: fachPause, faecher, heute: MI });
+  ok('Fach komplett pausiert', ueF.faecher[0].pausiertGanz === true && ueF.faecher[0].pausiertSeit === SO && ueF.gesamt.faellig + ueF.gesamt.neu === 0, JSON.stringify(ueF.faecher[0]));
+  ok('lernAktion: unbekanntes Fach -> Fehler', !!lernAktion({ sidecars, zustaende: vorPause, faecher, aktion: 'pause', fach: 'gibtsnicht' }).error);
+  ok('lernAktion: unbekannte Aktion -> Fehler', !!lernAktion({ sidecars, zustaende: vorPause, aktion: 'loeschen', notiz: scH.notiz }).error);
+  ok('lernAktion: ohne Ziel -> Fehler', !!lernAktion({ sidecars, zustaende: vorPause, aktion: 'pause' }).error);
+}
 
 console.log(`\n${pass} bestanden, ${fail} fehlgeschlagen`);
 process.exit(fail ? 1 : 0);

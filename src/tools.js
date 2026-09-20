@@ -541,6 +541,8 @@ export function makeTools(indexer, vaultPath) {
         stufenBisDurch: LERN_STUFEN.length, offeneStufen: f.fehlend,
         proTagNoetig: f.proTagNoetig, aufKurs: f.aufKurs, quote: f.quote,
         ...(f.bildOffen ? { bildOhneRegionen: f.bildOffen } : {}),
+        // R28: pausierte Lernsets sind eingefroren – weder faellig noch neu.
+        ...(f.pausierteSets ? { pausiert: f.pausiertGanz ? 'ganz' : f.pausierteSets + ' von ' + f.notizen + ' Lernsets', pausierteKarten: f.pausiert } : {}),
       }));
     const faellige = ueber.faellige.filter(n => gewaehlt === undefined || n.fach === gewaehlt);
     return {
@@ -549,6 +551,9 @@ export function makeTools(indexer, vaultPath) {
       heuteFaellig: faellige.reduce((s, n) => s + n.faellig + n.neu, 0),
       notizenFaellig: faellige
         .map(n => ({ notiz: n.notiz, fach: n.fachName || null, faellig: n.faellig, neu: n.neu })),
+      notizenPausiert: ueber.notizen
+        .filter(n => n.pausiertSeit && (gewaehlt === undefined || n.fach === gewaehlt))
+        .map(n => ({ notiz: n.notiz, seit: n.pausiertSeit, karten: n.pausiert })),
       verteilung: stat.verteilung,
       quote: stat.gesamt.quote,
       serie: stat.gesamt.serie,

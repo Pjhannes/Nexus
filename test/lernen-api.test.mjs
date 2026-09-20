@@ -336,6 +336,46 @@ try {
   ok('Uebersicht folgt dem neuen Pfad', u3.notizen.some(n => n.notiz === 'Uni/NHM/VL 01 – neu.md'), JSON.stringify(u3.notizen.map(n => n.notiz)));
   ok('Lernstand haengt an der ID, nicht am Pfad', u3.gesamt.antworten === 2 + NETTO_KORREKTUR, JSON.stringify(u3.gesamt));
 
+  // ── R28: Pausieren / Fortsetzen / Zuruecksetzen ──
+  const NOTIZ1 = 'Uni/NHM/VL 01 – neu.md';
+  const vorP = await get(`/api/lernen/uebersicht?vault=${V}`);
+  const n1Vor = vorP.notizen.find(n => n.notiz === NOTIZ1);
+  const pa = await post('/api/lernen/aktion', { vault: V, aktion: 'pause', notiz: NOTIZ1 });
+  ok('Pause: ok, ein Lernset', pa.status === 200 && pa.json.sets === 1 && pa.json.karten === n1Vor.karten, JSON.stringify(pa.json));
+  const inP = await get(`/api/lernen/uebersicht?vault=${V}`);
+  const n1P = inP.notizen.find(n => n.notiz === NOTIZ1);
+  ok('Pause: Set ist eingefroren (nichts faellig/neu, pausiertSeit = heute)',
+    n1P.pausiertSeit === heute && n1P.faellig === 0 && n1P.neu === 0 && n1P.pausiert > 0, JSON.stringify(n1P));
+  ok('Pause: Stufenverteilung unveraendert', JSON.stringify(n1P.stufen) === JSON.stringify(n1Vor.stufen));
+  const sP = await get(`/api/lernen/session?vault=${V}&note=${encodeURIComponent(NOTIZ1)}&limit=0&ohneTageslimit=1`);
+  ok('Pause: Sitzung fuer das Set ist leer', sP.karten.length === 0 && sP.uebersprungenPausiert > 0, JSON.stringify(sP).slice(0, 300));
+  const sPU = await get(`/api/lernen/session?vault=${V}&note=${encodeURIComponent(NOTIZ1)}&uebung=1&limit=0`);
+  ok('Pause: Ueben geht weiter', sPU.karten.length > 0);
+  const pa2 = await post('/api/lernen/aktion', { vault: V, aktion: 'pause', notiz: NOTIZ1 });
+  ok('Pause doppelt: nichts zu tun, kein Fehler', pa2.status === 200 && pa2.json.sets === 0);
+  const we = await post('/api/lernen/aktion', { vault: V, aktion: 'weiter', notiz: NOTIZ1 });
+  ok('Fortsetzen: ok, 0 Tage verschoben', we.status === 200 && we.json.sets === 1 && we.json.tage === 0, JSON.stringify(we.json));
+  const nachW = (await get(`/api/lernen/uebersicht?vault=${V}`)).notizen.find(n => n.notiz === NOTIZ1);
+  ok('Fortsetzen: Stand wie vor der Pause', nachW.pausiertSeit === null && nachW.faellig === n1Vor.faellig && nachW.neu === n1Vor.neu, JSON.stringify(nachW));
+
+  const re = await post('/api/lernen/aktion', { vault: V, aktion: 'reset', notiz: NOTIZ1 });
+  ok('Reset: ok', re.status === 200 && re.json.sets === 1 && re.json.karten > 0, JSON.stringify(re.json));
+  const nachR = (await get(`/api/lernen/uebersicht?vault=${V}`)).notizen.find(n => n.notiz === NOTIZ1);
+  ok('Reset: alle spielbaren Karten wieder neu', nachR.antworten === 0 && nachR.faellig === 0 && nachR.fertig === 0 &&
+    nachR.neu === nachR.karten - nachR.bildOffen, JSON.stringify(nachR));
+  const statR = await get(`/api/lernen/statistik?vault=${V}&tage=30`);
+  ok('Reset: Antwort-Verlauf der Statistik bleibt', statR.gesamt.antworten === 2 + NETTO_KORREKTUR, JSON.stringify(statR.gesamt));
+  const logText = readdirSync(join(vaultDir, '_System', 'Lernen', 'log')).map(f => readFileSync(join(vaultDir, '_System', 'Lernen', 'log', f), 'utf8')).join('');
+  ok('Log: Ereigniszeilen ohne Feld "karte" (append-only)', ['pause', 'weiter', 'reset'].every(t =>
+    logText.split('\n').some(z => z.includes('"typ":"' + t + '"') && !('karte' in JSON.parse(z)))));
+  const bad = await post('/api/lernen/aktion', { vault: V, aktion: 'pause', notiz: 'gibts/nicht.md' });
+  ok('Aktion auf unbekannte Notiz -> 400', bad.status === 400 && !!bad.json.error);
+  const bad2 = await post('/api/lernen/aktion', { vault: V, aktion: 'kaputt', notiz: NOTIZ1 });
+  ok('Unbekannte Aktion -> 400', bad2.status === 400);
+  const fp = await post('/api/lernen/aktion', { vault: V, aktion: 'pause', fach: '__ohne__' });
+  ok('Fach "Ohne Fach" pausieren: Antwort wohlgeformt', (fp.status === 200 && fp.json.ok) || fp.status === 400, JSON.stringify(fp.json));
+  if (fp.status === 200) await post('/api/lernen/aktion', { vault: V, aktion: 'weiter', fach: '__ohne__' });
+
   const del = await post('/api/delete', { vault: V, path: 'Uni/NHM/VL 01 – neu.md' });
   ok('Loeschen ok', del.json.ok === true);
   ok('Karten-Sidecar mit geloescht', !existsSync(join(vaultDir, 'Uni', 'NHM', 'VL 01 – neu.karten.json')));

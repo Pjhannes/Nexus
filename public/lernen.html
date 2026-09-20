@@ -22,14 +22,14 @@
   --app-bg:#161514;--app-font:Inter,"Segoe UI",system-ui,sans-serif;
   --accent-14:color-mix(in srgb,var(--accent) 16%,transparent);
   --accent-20:color-mix(in srgb,var(--accent) 21%,transparent);
-  --lern-ok:#4caf82;--lern-bad:#e2726e;--lern-warn:#e0b070;--lern-neu:#7ec8e3;
+  --lern-ok:#4caf82;--lern-bad:#e2726e;--lern-warn:#e0b070;--lern-neu:#7ec8e3;--lern-pause:#a9b4d0;
 }
 /* Creme: das einzige helle Theme der App. Die Signalfarben lagen hier bei 1.7-2.8
    Kontrast und waren unlesbar – deshalb eigene, dunklere Werte (wie am Desktop). */
 :root[data-studio="cream"]{
   --bg:#e6dccb;--panel:#faf6ee;--panel2:#f0e8d8;--border:#d6cbb5;
   --text:#3c352a;--dim:#8a7f6c;--accent:#c8893a;--app-bg:#e6dccb;
-  --lern-ok:#176b47;--lern-bad:#9d2f2b;--lern-warn:#7a4f0c;--lern-neu:#175a77;
+  --lern-ok:#176b47;--lern-bad:#9d2f2b;--lern-warn:#7a4f0c;--lern-neu:#175a77;--lern-pause:#4d5a7c;
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
@@ -67,6 +67,13 @@ button,input,textarea{font-family:inherit}
 .ln-badge.neu{border-color:var(--lern-neu);color:var(--lern-neu)}
 .ln-badge.warn{border-color:var(--lern-warn);color:var(--lern-warn)}
 .ln-badge.ok{border-color:var(--lern-ok);color:var(--lern-ok)}
+/* R28: pausiert = eingefroren, bewusst ruhig */
+.ln-badge.pause{border-color:var(--lern-pause);color:var(--lern-pause);border-style:dashed}
+.ln-row.pausiert,.ln-kachel.pausiert{border-style:dashed}
+.ln-kachel.pausiert{border-top-style:solid;border-top-color:var(--lern-pause)}
+.ln-row.pausiert .ln-titel,.ln-kachel.pausiert h3{color:var(--dim)}
+.ln-kachel.pausiert .ln-bar i{background:var(--lern-pause)}
+.ln-pausenote{font-size:12.5px;color:var(--dim);line-height:1.55;margin:-2px 0 10px}
 .ln-zeile{display:flex;gap:6px;flex-wrap:wrap}
 /* Knoepfe: am Handy ist 48px die Untergrenze, damit man sie sicher trifft. */
 .ln-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:11px;
@@ -402,6 +409,7 @@ function lnZahlenBadges(t,mitGesamt){
     +(t.faellig?'<span class="ln-badge faellig">'+t.faellig+' f&auml;llig</span>':'')
     +(t.neu?'<span class="ln-badge neu">'+t.neu+' neu</span>':'')
     +(t.gelernt?'<span class="ln-badge ok">'+t.gelernt+' gelernt</span>':'')
+    +(t.pausiert?'<span class="ln-badge pause">&#9208; '+t.pausiert+' pausiert</span>':'')
     +(mitGesamt?'':'<span class="ln-badge">'+(t.karten||0)+'</span>');
 }
 function lnStatusHtml(d){
@@ -460,6 +468,7 @@ function lnRenderDashboard(d){
                                   :'heute nichts mehr offen &#127881;')+'</div>'
     +'<div class="ln-zeile" style="margin-top:11px">'
       +'<span class="ln-badge">'+d.gesamt.karten+' Karten</span>'
+      +(d.gesamt.pausiert?'<span class="ln-badge pause">&#9208; '+d.gesamt.pausiert+' pausiert</span>':'')
       +(d.gesamt.quote!==null?'<span class="ln-badge">'+d.gesamt.quote+'% richtig</span>':'')
     +'</div></div>';
 
@@ -476,7 +485,8 @@ function lnRenderDashboard(d){
     const anteil=f.karten?Math.round((f.fertig/f.karten)*100):0;
     const off=f.faellig+f.neu;
     const fid=f.id===null?'__ohne__':f.id;
-    h+='<div class="ln-kachel" style="--ln-c:'+aq(escHtml(farbe))+'">'
+    const fPause=!!f.pausiertGanz;
+    h+='<div class="ln-kachel'+(fPause?' pausiert':'')+'" style="--ln-c:'+aq(escHtml(farbe))+'">'
       +'<h3>'+escHtml(f.name)+'</h3>'
       +'<div class="ln-pruef">'+(f.pruefung
           ?('Pr&uuml;fung <b>'+escHtml(f.pruefung)+'</b> &middot; '+(f.resttage>0?('noch <b>'+f.resttage+'</b> Tage'):(f.resttage===0?'<b>heute</b>':'vorbei')))
@@ -486,14 +496,21 @@ function lnRenderDashboard(d){
       +(f.proTagNoetig!==null&&f.proTagNoetig!==undefined
         ?(' &middot; '+(f.aufKurs?'auf Kurs':'<b style="color:var(--lern-warn)">R&uuml;ckstand</b>')+', '+f.proTagNoetig+'/Tag n&ouml;tig'):'')+'</div>'
       +'<div class="ln-zeile" style="margin-top:9px">'
-        +(f.faellig?'<span class="ln-badge faellig">'+f.faellig+' f&auml;llig</span>':'')
-        +(f.neu?'<span class="ln-badge neu">'+f.neu+' neu</span>':'')
-        +(off?'':'<span class="ln-badge">nichts offen</span>')
+        +(fPause
+          ?'<span class="ln-badge pause">&#9208; pausiert seit '+lnDatumKurz(f.pausiertSeit)+'</span>'
+           +'<span class="ln-badge">'+f.pausiert+' Karten eingefroren</span>'
+          :((f.faellig?'<span class="ln-badge faellig">'+f.faellig+' f&auml;llig</span>':'')
+           +(f.neu?'<span class="ln-badge neu">'+f.neu+' neu</span>':'')
+           +(f.pausierteSets?'<span class="ln-badge pause">&#9208; '+f.pausierteSets+' von '+f.notizen+' Lernsets pausiert</span>':'')
+           +(off||f.pausierteSets?'':'<span class="ln-badge">nichts offen</span>')))
       +'</div>'
       +'<div class="ln-akt">'
-        +'<button class="ln-btn klein" data-ln="fach-wahl" data-fach="'+aq(escHtml(fid))+'">Lernen &hellip;</button>'
+        +(fPause
+          ?'<button class="ln-btn klein primary" data-ln="weiter-fach" data-fach="'+aq(escHtml(fid))+'">&#9654; Fortsetzen</button>'
+          :'<button class="ln-btn klein" data-ln="fach-wahl" data-fach="'+aq(escHtml(fid))+'">Lernen &hellip;</button>')
         +'<button class="ln-btn klein" data-ln="ueben-fach" data-fach="'+aq(escHtml(fid))+'">&#128260; &Uuml;ben</button>'
         +'<button class="ln-btn klein" data-ln="statistik" data-fach="'+aq(escHtml(fid))+'">&#128202;</button>'
+        +(fPause?'':'<button class="ln-btn klein" data-ln="pause-fach" data-fach="'+aq(escHtml(fid))+'" title="Fach pausieren" aria-label="Fach pausieren">&#9208;</button>')
       +'</div></div>';
   }
 
@@ -513,7 +530,24 @@ function lnRenderDashboard(d){
           +(n.neu?'<span class="ln-badge neu">'+n.neu+' neu</span>':'')
           +(Array.isArray(n.themen)&&n.themen.length>1?'<span class="ln-badge">'+n.themen.length+' Themen</span>':'')
         +'</div></div>'
+        +'<button class="ln-btn klein" data-ln="pause-notiz" data-notiz="'+aq(escHtml(n.notiz))+'" title="Lernset pausieren" aria-label="Lernset pausieren">&#9208;</button>'
         +'<span style="color:var(--dim);font-size:20px">&#9654;</span></div>';
+    }
+  }
+
+  // R28: pausierte Lernsets – hier setzt man sie fort.
+  const pausierte=(d.notizen||[]).filter(n=>n.pausiertSeit);
+  if(pausierte.length){
+    h+='<div class="ln-sec">&#9208; Pausiert</div>'
+      +'<div class="ln-pausenote">Eingefroren: nichts wird f&auml;llig. Beim Fortsetzen verschieben sich alle Termine um die Dauer der Pause.</div>';
+    for(const n of pausierte){
+      h+='<div class="ln-row pausiert"><div style="flex:1;min-width:0">'
+        +'<div class="ln-titel">'+escHtml(n.titel||lnNotizName(n.notiz))+'</div>'
+        +'<div class="ln-mini">'
+          +(n.fachName?'<span class="ln-badge">'+escHtml(n.fachName)+'</span>':'')
+          +'<span class="ln-badge pause">&#9208; seit '+lnDatumKurz(n.pausiertSeit)+' &middot; '+n.pausiert+' Karten</span>'
+        +'</div></div>'
+        +'<button class="ln-btn klein primary" data-ln="weiter-notiz" data-notiz="'+aq(escHtml(n.notiz))+'">&#9654; Fortsetzen</button></div>';
     }
   }
 
@@ -540,8 +574,28 @@ function lnWireDash(area){
       else if(a==='ueben-fach')lnSitzungWahl({fach:node.dataset.fach,uebung:true});
       else if(a==='notiz-wahl')lnSitzungWahl({notiz:node.dataset.notiz});
       else if(a==='statistik')lnZeigeStatistik(node.dataset.fach);
+      else if(a==='pause-notiz')lnAktion('pause',{notiz:node.dataset.notiz});
+      else if(a==='weiter-notiz')lnAktion('weiter',{notiz:node.dataset.notiz});
+      else if(a==='pause-fach')lnAktion('pause',{fach:node.dataset.fach});
+      else if(a==='weiter-fach')lnAktion('weiter',{fach:node.dataset.fach});
     });
   });
+}
+
+// R28: Pausieren / Fortsetzen. Zuruecksetzen gibt es bewusst nur am Rechner.
+function lnDatumKurz(iso){
+  if(!iso)return '';
+  const d=new Date(iso+'T12:00:00');
+  return d.getDate()+'.'+(d.getMonth()+1)+'.';
+}
+async function lnAktion(aktion,ziel){
+  let r;
+  try{r=await lnPost('/api/lernen/aktion',{vault:activeVault,aktion,...ziel});}catch(e){r={error:e.message};}
+  if(!r||r.error){toast((r&&r.error)||'Aktion fehlgeschlagen','err');return;}
+  if(!r.sets)toast('Nichts zu tun');
+  else if(aktion==='pause')toast('Pausiert – '+r.karten+' Karten eingefroren','ok');
+  else toast('Läuft weiter'+(r.tage?(' – Termine um '+r.tage+' Tag'+(r.tage===1?'':'e')+' verschoben'):''),'ok');
+  lnLadeDashboard();
 }
 
 // ── Sitzungswahl ─────────────────────────────────────────────────────────────
@@ -565,7 +619,7 @@ function lnSitzungWahl(opt){
     karten:n.karten,
     themen:(Array.isArray(n.themen)&&n.themen.length)?n.themen
       :[{thema:'',karten:n.karten,spielbar:n.karten-(n.bildOffen||0),
-         faellig:n.faellig||0,neu:n.neu||0,gelernt:n.fertig||0}],
+         faellig:n.faellig||0,neu:n.neu||0,gelernt:n.fertig||0,pausiert:n.pausiert||0}],
   }))
     // Natuerliche Reihenfolge nach Namen: "K2" vor "K10", nicht nach Kartenzahl.
     .sort((a,b)=>a.name.localeCompare(b.name,'de',{numeric:true,sensitivity:'base'}));

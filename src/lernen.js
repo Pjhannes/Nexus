@@ -616,6 +616,58 @@ export function ohneStornierte(eintraege) {
   return sortiert.filter(e => e && !istText(e.storniert) && !storniert.has(e.karte + '|' + e.t));
 }
 
+/**
+ * R28: Ereignisse im Review-Log – Pausieren, Fortsetzen, Zuruecksetzen.
+ *
+ * Bewusst KEINE eigene Zustandsdatei: der Log bleibt die einzige Quelle der Wahrheit
+ * (append-only, Syncthing-freundlich), und die Karten-IDs ueberleben ein move() der
+ * Notiz. Eine Ereigniszeile traegt `typ` + `karten` (ID-Liste) und gerade KEIN Feld
+ * `karte` – aeltere Nexus-Staende ueberspringen sie dadurch, statt sie als falsche
+ * Antwort zu werten.
+ *
+ *   pause   friert die Karten ein: nichts wird faellig, nichts kommt in die Sitzung.
+ *   weiter  taut sie auf und schiebt jeden Termin um die Pausendauer nach hinten –
+ *           nach dem Fortsetzen ist der Plan also "wie am Tag der Pause".
+ *   reset   wirft die Karten zurueck auf "neu" (Stufe 0, nie gefragt).
+ */
+export const LERN_EREIGNISSE = ['pause', 'weiter', 'reset'];
+
+export function istEreignis(e) {
+  return !!e && LERN_EREIGNISSE.includes(e.typ) && Array.isArray(e.karten);
+}
+
+function ereignisAnwenden(e, tag, zustaende, ctxFor, epoche) {
+  for (const id of e.karten) {
+    if (typeof id !== 'string' || !id) continue;
+    const z = zustaende.get(id) || null;
+    if (e.typ === 'pause') {
+      // Auch nie gefragte Karten bekommen einen (leeren) Zustand – nur so ist das
+      // Lernset als pausiert erkennbar, wenn noch keine Karte beantwortet wurde.
+      if (!z?.pausiert) zustaende.set(id, { ...LERN_START, ...(z || {}), pausiert: tag });
+    } else if (e.typ === 'weiter') {
+      if (!z?.pausiert) continue;
+      const { pausiert, ...rest } = z;
+      if (!rest.antworten) { zustaende.delete(id); continue; }   // war nur der Pausen-Marker
+      if (rest.due && !istFertig(rest)) {
+        rest.due = tagPlus(rest.due, Math.max(0, tageZwischen(pausiert, tag)));
+        // Pruefungs-Kappung wie in lernPlanen: der verschobene Termin darf nicht auf
+        // oder hinter die Pruefung rutschen.
+        const pruefung = ctxFor(id)?.pruefung;
+        if (istTag(pruefung) && pruefung > tag && rest.due >= pruefung) {
+          const vortag = tagPlus(pruefung, -1), morgen = tagPlus(tag, 1);
+          rest.due = vortag > morgen ? vortag : morgen;
+        }
+      }
+      zustaende.set(id, rest);
+    } else {
+      // reset: die Pause ist davon unabhaengig und bleibt bestehen.
+      if (z?.pausiert) zustaende.set(id, { ...LERN_START, pausiert: z.pausiert });
+      else zustaende.delete(id);
+      epoche.set(id, (epoche.get(id) || 0) + 1);
+    }
+  }
+}
+
 export function foldReviews(eintraege, ctxFn) {
   const ctxFor = typeof ctxFn === 'function' ? ctxFn : () => ({});
   const zustaende = new Map();
@@ -624,23 +676,49 @@ export function foldReviews(eintraege, ctxFn) {
   // koennte ein Reload oder ein manipulierter Aufruf Stufen erschleichen.
   // Antworten ohne Sitzungskennung (z.B. per API) gelten je Karte und Tag als Erstversuch.
   const gesehen = new Set();
+  // Nach einem Reset zaehlt die naechste Antwort wieder als Erstversuch, auch wenn
+  // sie am selben Tag / in derselben Sitzung faellt.
+  const epoche = new Map();
   for (const e of ohneStornierte(eintraege)) {
-    if (!e || typeof e.karte !== 'string' || !e.karte) continue;
+    if (!e) continue;
     // "tag" ist der lokale Kalendertag der Antwort (siehe heuteISO); alte Zeilen ohne
     // das Feld fallen auf den UTC-Tag des Zeitstempels zurueck.
     const tag = istTag(e.tag) ? e.tag : (typeof e.t === 'string' ? e.t.slice(0, 10) : '');
     if (!istTag(tag)) continue;
-    const runde = (e.session ? 's:' + e.session : 'd:' + tag) + '|' + e.karte;
+    if (istEreignis(e)) { ereignisAnwenden(e, tag, zustaende, ctxFor, epoche); continue; }
+    if (typeof e.karte !== 'string' || !e.karte) continue;
+    const runde = (e.session ? 's:' + e.session : 'd:' + tag) + '|' + e.karte + '#' + (epoche.get(e.karte) || 0);
     const ersterVersuch = !gesehen.has(runde);
     gesehen.add(runde);
     const vorher = zustaende.get(e.karte) || null;
-    zustaende.set(e.karte, lernPlanen(vorher, e.korrekt === true, tag, { ...ctxFor(e.karte), ersterVersuch }));
+    const neu = lernPlanen(vorher, e.korrekt === true, tag, { ...ctxFor(e.karte), ersterVersuch });
+    // Antwort trotz Pause (anderes Geraet, aelterer Stand): die Frist laeuft ab dieser
+    // Antwort – also friert die Karte ab HIER ein, sonst zaehlte die Pause doppelt.
+    if (vorher?.pausiert) neu.pausiert = tag > vorher.pausiert ? tag : vorher.pausiert;
+    zustaende.set(e.karte, neu);
   }
   return zustaende;
 }
 
+/**
+ * Welche Lernsets sind pausiert? Ein Set gilt als pausiert, sobald EINE seiner Karten
+ * eingefroren ist – so bleiben auch Karten draussen, die erst waehrend der Pause
+ * dazugekommen sind. Rueckgabe: Map(notiz -> fruehester Pausentag).
+ */
+export function pausierteNotizen(sidecars = [], zustaende = new Map()) {
+  const out = new Map();
+  for (const sc of sidecars) {
+    for (const k of sc.karten || []) {
+      const seit = zustaende.get(k.id)?.pausiert;
+      if (seit && (!out.has(sc.notiz) || seit < out.get(sc.notiz))) out.set(sc.notiz, seit);
+    }
+  }
+  return out;
+}
+
 export function istFaellig(zustand, heute) {
   if (istFertig(zustand)) return false;           // durch: keine Wiederholung mehr
+  if (zustand?.pausiert) return false;            // eingefroren
   if (!zustand || !zustand.due) return true;      // nie beantwortet = neu = faellig
   return zustand.due <= heute;
 }
@@ -715,14 +793,14 @@ export function fachKontext(fach, standard = LERN_STANDARD) {
 
 function leerStat(extra = {}) {
   return {
-    karten: 0, faellig: 0, neu: 0, bildOffen: 0,
+    karten: 0, faellig: 0, neu: 0, bildOffen: 0, pausiert: 0,
     angefangen: 0, fertig: 0, richtig: 0, antworten: 0,
     stufen: Array.from({ length: LERN_STUFEN.length + 2 }, () => 0),
     ...extra,
   };
 }
 
-function zaehle(stat, k, z, ziel, heute) {
+function zaehle(stat, k, z, ziel, heute, pausiert = false) {
   stat.karten++;
   const spielbar = karteSpielbar(k);
   if (!spielbar) { stat.bildOffen++; return; }
@@ -730,6 +808,8 @@ function zaehle(stat, k, z, ziel, heute) {
   // Reihenfolge wichtig: eine durchgelernte Karte hat ebenfalls due=null, waere ohne
   // diese Abfrage also faelschlich "neu" und damit jeden Tag wieder faellig.
   if (fertig) stat.fertig++;
+  // Pausiert: die Karte steht weiter auf ihrer Stufe, ist aber weder faellig noch neu.
+  else if (pausiert) stat.pausiert++;
   else if (!z || !z.due) stat.neu++;
   else if (z.due <= heute) stat.faellig++;
   if (z) {
@@ -755,6 +835,7 @@ export function lernUebersicht({ sidecars = [], zustaende = new Map(), faecher =
   const proFach = new Map();
   const notizen = [];
   const gesamt = leerStat();
+  const pausen = pausierteNotizen(sidecars, zustaende);
 
   for (const f of faecher) {
     const ctx = fachKontext(f, standard);
@@ -763,11 +844,11 @@ export function lernUebersicht({ sidecars = [], zustaende = new Map(), faecher =
       pruefung: ctx.pruefung,
       resttage: ctx.pruefung ? tageZwischen(heute, ctx.pruefung) : null,
       zielKorrekt: ctx.zielKorrekt, neueProTag: ctx.neueProTag,
-      notizen: 0, ...leerStat(), fehlend: 0,
+      notizen: 0, ...leerStat(), fehlend: 0, pausierteSets: 0, pausiertSeit: null,
     });
   }
   const ohneFach = { id: null, name: 'Ohne Fach', farbe: null, pruefung: null, resttage: null,
-    zielKorrekt: standard.zielKorrekt, neueProTag: standard.neueProTag, notizen: 0, ...leerStat(), fehlend: 0 };
+    zielKorrekt: standard.zielKorrekt, neueProTag: standard.neueProTag, notizen: 0, ...leerStat(), fehlend: 0, pausierteSets: 0, pausiertSeit: null };
 
   for (const sc of sidecars) {
     const fach = fachFuerNotiz(sc.notiz, faecher);
@@ -775,17 +856,23 @@ export function lernUebersicht({ sidecars = [], zustaende = new Map(), faecher =
     const ziel = eintrag.zielKorrekt;
     const nStat = leerStat();
     let letztes = null;
+    const pausiertSeit = pausen.get(sc.notiz) || null;
+    const pausiert = !!pausiertSeit;
     for (const k of sc.karten || []) {
       const z = zustaende.get(k.id) || null;
-      zaehle(nStat, k, z, ziel, heute);
-      zaehle(eintrag, k, z, ziel, heute);
-      zaehle(gesamt, k, z, ziel, heute);
+      zaehle(nStat, k, z, ziel, heute, pausiert);
+      zaehle(eintrag, k, z, ziel, heute, pausiert);
+      zaehle(gesamt, k, z, ziel, heute, pausiert);
       // Restaufwand bis "durch": wie viele Stufen fehlen dieser Karte noch?
       if (karteSpielbar(k)) eintrag.fehlend += istFertig(z) ? 0 : (LERN_STUFEN.length - ((z && z.stufe) || 0));
       if (z?.letztes && (!letztes || z.letztes > letztes)) letztes = z.letztes;
     }
     eintrag.notizen++;
-    const themen = themenJeNotiz(sc, { zustaende, heute });
+    if (pausiert) {
+      eintrag.pausierteSets++;
+      if (!eintrag.pausiertSeit || pausiertSeit < eintrag.pausiertSeit) eintrag.pausiertSeit = pausiertSeit;
+    }
+    const themen = themenJeNotiz(sc, { zustaende, heute, pausiert });
     notizen.push({
       notiz: sc.notiz,
       titel: sc.titel || sc.notiz.split('/').pop().replace(/\.md$/i, ''),
@@ -796,6 +883,7 @@ export function lernUebersicht({ sidecars = [], zustaende = new Map(), faecher =
       fachName: fach ? fach.name : null,
       fachFarbe: fach ? (fach.farbe || null) : null,
       letztes,
+      pausiertSeit,
       ...nStat,
     });
   }
@@ -811,6 +899,8 @@ export function lernUebersicht({ sidecars = [], zustaende = new Map(), faecher =
       e.aufKurs = null;
     }
     e.quote = e.antworten > 0 ? Math.round((e.richtig / e.antworten) * 100) : null;
+    // Ein Fach ist pausiert, wenn ALLE seine Lernsets pausiert sind; sonst "teilweise".
+    e.pausiertGanz = e.notizen > 0 && e.pausierteSets === e.notizen;
     return e;
   };
 
@@ -843,7 +933,9 @@ export function kalenderVorschau({ sidecars = [], zustaende = new Map(), faecher
     reihe.push({ tag, faellig: 0, neu: 0, ueberfaellig: 0 });
   }
   const index = new Map(reihe.map((e, i) => [e.tag, i]));
+  const pausen = pausierteNotizen(sidecars, zustaende);
   for (const sc of sidecars) {
+    if (pausen.has(sc.notiz)) continue;            // eingefroren: steht an keinem Tag an
     const f = fachFuerNotiz(sc.notiz, faecher);
     const fachId = f ? f.id : null;
     if (fach !== undefined && fachId !== fach) continue;
@@ -961,11 +1053,11 @@ export function themenAusGliederung(noteContent, karten, { ebene = 2 } = {}) {
  * was sitzt schon. Ohne diese Angaben bleibt es bei der reinen Kartenzahl (so rufen
  * es aeltere Aufrufer auf).
  */
-export function themenJeNotiz(sidecar, { zustaende = null, heute = null } = {}) {
+export function themenJeNotiz(sidecar, { zustaende = null, heute = null, pausiert = false } = {}) {
   const map = new Map();
   for (const k of (sidecar && sidecar.karten) || []) {
     const t = istText(k.thema) ? k.thema.trim() : '';
-    const e = map.get(t) || { thema: t, karten: 0, spielbar: 0, faellig: 0, neu: 0, gelernt: 0 };
+    const e = map.get(t) || { thema: t, karten: 0, spielbar: 0, faellig: 0, neu: 0, gelernt: 0, pausiert: 0 };
     e.karten++;
     if (karteSpielbar(k)) {
       e.spielbar++;
@@ -973,6 +1065,7 @@ export function themenJeNotiz(sidecar, { zustaende = null, heute = null } = {}) 
         const z = zustaende.get(k.id) || null;
         // Gleiche Reihenfolge wie in zaehle(): "gelernt" hat ebenfalls kein due.
         if (istFertig(z)) e.gelernt++;
+        else if (pausiert) e.pausiert++;
         else if (!z || !z.due) e.neu++;
         else if (heute && z.due <= heute) e.faellig++;
       }
@@ -1013,6 +1106,10 @@ export function sessionQueue({ sidecars = [], zustaende = new Map(), faecher = [
   const nurNotizen = Array.isArray(filter.notizen) && filter.notizen.length
     ? new Set(filter.notizen) : null;
   const nurThemen = themenFilter(filter.themen);
+  // Pausierte Lernsets bleiben aus jeder Lern-Sitzung draussen; Ueben geht weiter,
+  // weil es den Lernstand ohnehin nicht anfasst.
+  const pausen = uebung ? new Map() : pausierteNotizen(sidecars, zustaende);
+  let uebersprungenPausiert = 0;
 
   for (const sc of sidecars) {
     if (filter.notiz && sc.notiz !== filter.notiz) continue;
@@ -1032,6 +1129,7 @@ export function sessionQueue({ sidecars = [], zustaende = new Map(), faecher = [
       if (z && z.erstes === heute) neuHeute.set(fachId, (neuHeute.get(fachId) || 0) + 1);
       if (nurThemen && !nurThemen.passt(sc.notiz, k.thema)) continue;
       if (!karteSpielbar(k)) { uebersprungenBild++; continue; }
+      if (pausen.has(sc.notiz)) { uebersprungenPausiert++; continue; }
       const eintrag = { karte: k, notiz: sc.notiz, titel: sc.titel || null, fach: fachId, zustand: z, ctx };
       if (uebung) { alle.push(eintrag); continue; }
       if (istFertig(z)) continue;                    // durch: nicht mehr einplanen
@@ -1078,6 +1176,7 @@ export function sessionQueue({ sidecars = [], zustaende = new Map(), faecher = [
     neu: neuGefiltert.length,
     neuZurueckgehalten: neu.length - neuGefiltert.length,
     uebersprungenBild,
+    uebersprungenPausiert,
   };
 }
 
@@ -1115,7 +1214,8 @@ export function lernStatistik({ sidecars = [], zustaende = new Map(), reviews = 
   }
 
   // Verteilung + Problemkarten
-  let neu = 0, amLernen = 0, sitzt = 0, bildOffen = 0;
+  let neu = 0, amLernen = 0, sitzt = 0, bildOffen = 0, pausiert = 0;
+  const pausen = pausierteNotizen(sidecars, zustaende);
   const stufen = Array.from({ length: LERN_STUFEN.length + 2 }, () => 0);
   const problem = [];
   for (const [id, info] of karten) {
@@ -1126,6 +1226,7 @@ export function lernStatistik({ sidecars = [], zustaende = new Map(), reviews = 
     if (fertig) sitzt++;
     else if (!z || !z.antworten) neu++;
     else amLernen++;
+    if (!fertig && pausen.has(info.notiz)) pausiert++;
     if (z && (z.lapses || 0) > 0) {
       problem.push({
         id, frage: info.karte.frage, typ: info.karte.typ, notiz: info.notiz,
@@ -1152,7 +1253,7 @@ export function lernStatistik({ sidecars = [], zustaende = new Map(), reviews = 
   return {
     heute, tage, fach: fach === undefined ? 'alle' : fach,
     karten: karten.size,
-    verteilung: { neu, amLernen, sitzt, bildOffen },
+    verteilung: { neu, amLernen, sitzt, bildOffen, pausiert },
     stufen, stufenTage: [...LERN_STUFEN],
     gesamt: {
       antworten: gesamtAntworten, richtig: gesamtRichtig,
@@ -1291,6 +1392,53 @@ export function storniereReview(vaultPath, { karte, t }) {
 }
 
 /**
+ * R28: Aus einer Nutzer-Aktion (pausieren / fortsetzen / zuruecksetzen) die Ereignisse
+ * bestimmen, die in den Log gehoeren – pure, damit testbar. Ziel ist EIN Lernset
+ * (`notiz`) oder ein ganzes Fach (`fach`: ID, null = "Ohne Fach"). Je betroffenem
+ * Lernset entsteht ein Ereignis; Sets, bei denen nichts zu tun ist, fallen heraus.
+ */
+export function lernAktion({ sidecars = [], zustaende = new Map(), faecher = [], aktion, notiz, fach }) {
+  if (!LERN_EREIGNISSE.includes(aktion)) return { error: 'unbekannte Aktion: ' + aktion };
+  if (!notiz && fach === undefined) return { error: 'notiz oder fach angeben' };
+  const pausen = pausierteNotizen(sidecars, zustaende);
+  const ereignisse = [];
+  let treffer = 0;
+  for (const sc of sidecars) {
+    if (notiz ? sc.notiz !== notiz : ((fachFuerNotiz(sc.notiz, faecher)?.id ?? null) !== fach)) continue;
+    treffer++;
+    const alle = (sc.karten || []).map(k => k.id);
+    const seit = pausen.get(sc.notiz) || null;
+    let karten = [];
+    if (aktion === 'pause' && !seit) karten = alle;
+    else if (aktion === 'weiter' && seit) karten = alle;
+    // Zuruecksetzen braucht nur Karten, die schon einen Lernstand haben.
+    else if (aktion === 'reset') karten = alle.filter(id => (zustaende.get(id)?.antworten || 0) > 0);
+    if (karten.length) ereignisse.push({ typ: aktion, notiz: sc.notiz, karten, seit });
+  }
+  if (!treffer) return { error: notiz ? 'Keine Karteikarten zu dieser Notiz' : 'Keine Lernsets in diesem Fach' };
+  return { ereignisse, sets: ereignisse.length, karten: ereignisse.reduce((s, e) => s + e.karten.length, 0) };
+}
+
+export function appendEreignis(vaultPath, { typ, karten, notiz }, jetzt = new Date()) {
+  if (!LERN_EREIGNISSE.includes(typ)) return { error: 'unbekannter Ereignis-Typ: ' + typ };
+  const ids = (Array.isArray(karten) ? karten : []).filter(id => typeof id === 'string' && id);
+  if (!ids.length) return { error: 'karten (IDs) fehlen' };
+  const t = jetzt.toISOString();
+  const zeile = JSON.stringify({
+    t, tag: heuteISO(jetzt), typ,
+    ...(notiz ? { notiz: String(notiz).replace(/\\/g, '/') } : {}),
+    karten: ids,
+  }) + '\n';
+  const full = safeJoin(vaultPath, logDateiFuer(t.slice(0, 10)));
+  if (!full) return { error: 'Pfad ausserhalb des Vaults' };
+  try {
+    mkdirSync(dirname(full), { recursive: true });
+    appendFileSync(full, zeile, 'utf8');
+  } catch (e) { return { error: e.message }; }
+  return { ok: true, t };
+}
+
+/**
  * Karten als Anki-Deck exportieren (TSV, wie Ankis "Notizen im Textformat" erwartet).
  * Bild- und Mehrfachwahl-Karten werden dabei zwangslaeufig flach: Anki kennt weder
  * Bildregionen noch Selbstbewertung, darum wird die Loesung schlicht in die Rueckseite
@@ -1352,8 +1500,10 @@ export function readReviews(vaultPath) {
       if (!s) continue;
       let e;
       try { e = JSON.parse(s); } catch { continue; }   // halbe Zeile durch Sync-Abbruch: ueberspringen
-      if (!e || typeof e.karte !== 'string' || typeof e.t !== 'string') continue;
-      const key = e.t + '|' + e.karte;
+      if (!e || typeof e.t !== 'string') continue;
+      const ereignis = istEreignis(e);
+      if (!ereignis && typeof e.karte !== 'string') continue;
+      const key = ereignis ? e.t + '|' + e.typ + '|' + (e.notiz || e.karten[0] || '') : e.t + '|' + e.karte;
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(e);

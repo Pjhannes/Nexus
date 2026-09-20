@@ -19,6 +19,7 @@ import {
   lernUebersicht, sessionQueue, lernStatistik, storniereReview, ankiExport,
   fachFuerNotiz, fachKontext, kartenSidecarPath, heuteISO,
   LERN_STANDARD, LERN_LOGDIR, FAECHER_REL, karteSpielbar,
+  lernAktion, appendEreignis, tageZwischen,
 } from './lernen.js';
 // Phase 1: Piper-TTS + Claude-Connect laufen als REST statt Electron-IPC – dieselbe
 // Route funktioniert in-process unter Electron UND spaeter als eigenstaendiger
@@ -557,6 +558,31 @@ app.post('/api/lernen/undo', (req, res) => {
     const { zustaende } = lernKontext(vaultName);
     broadcastEvent({ type: 'lernen-changed', vault: vault.name });
     res.json({ ok: true, zustand: zustaende.get(kartenId) ?? null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// R28: Lernset oder Fach pausieren / fortsetzen / auf "neu" zuruecksetzen. Geschrieben
+// wird je betroffenem Lernset eine Ereigniszeile in den Review-Log (siehe lernen.js) –
+// der Lernstand bleibt damit vollstaendig aus dem Log ableitbar.
+app.post('/api/lernen/aktion', (req, res) => {
+  try {
+    const { vault: vaultName, aktion, notiz, fach } = req.body || {};
+    const { vault, sidecars, faecher, zustaende, heute } = lernKontext(vaultName);
+    const ziel = notiz
+      ? { notiz: String(notiz).replace(/\\/g, '/') }
+      : { fach: fach === undefined ? undefined : (fach === '__ohne__' || fach === null ? null : String(fach)) };
+    const plan = lernAktion({ sidecars, zustaende, faecher, aktion, ...ziel });
+    if (plan.error) return res.status(400).json(plan);
+    const jetzt = new Date();
+    for (const e of plan.ereignisse) {
+      const r = appendEreignis(vault.path, e, jetzt);
+      if (r.error) return res.status(500).json(r);
+    }
+    if (plan.ereignisse.length) broadcastEvent({ type: 'lernen-changed', vault: vault.name });
+    // Beim Fortsetzen: um wie viele Tage sind die Termine gewandert (laengste Pause)?
+    const tage = aktion === 'weiter'
+      ? plan.ereignisse.reduce((m, e) => Math.max(m, e.seit ? tageZwischen(e.seit, heute) : 0), 0) : 0;
+    res.json({ ok: true, aktion, sets: plan.sets, karten: plan.karten, tage });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
