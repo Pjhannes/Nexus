@@ -74,6 +74,34 @@ button,input,textarea{font-family:inherit}
 .ln-row.pausiert .ln-titel,.ln-kachel.pausiert h3{color:var(--dim)}
 .ln-kachel.pausiert .ln-bar i{background:var(--lern-pause)}
 .ln-pausenote{font-size:12.5px;color:var(--dim);line-height:1.55;margin:-2px 0 10px}
+/* Drei-Punkte-Knopf: volle 44px Trefferflaeche, optisch zurueckhaltend */
+.ln-menue{flex:0 0 auto;width:44px;height:44px;border-radius:11px;border:1px solid var(--border);background:var(--panel2);
+  color:var(--dim);font-size:20px;font-weight:700;line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ln-menue:active{border-color:var(--accent);color:var(--text)}
+.ln-kachel .ln-akt .ln-menue{min-height:44px}
+.ln-sec.ln-klapp{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;min-height:40px}
+.ln-sec.ln-klapp .pf{display:inline-block;font-size:10px;transition:transform .15s}
+.ln-sec.ln-klapp .pf.auf{transform:rotate(90deg)}
+/* Aktions-Sheet von unten – am Handy die natuerliche Form eines Menues */
+#ln-sheet{position:fixed;inset:0;z-index:60;display:none;align-items:flex-end;justify-content:center;
+  background:rgba(0,0,0,.55);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+#ln-sheet.show{display:flex}
+.lsh{width:100%;max-width:560px;background:var(--panel);border:1px solid var(--border);border-bottom:none;
+  border-radius:18px 18px 0 0;padding:10px 14px calc(16px + env(safe-area-inset-bottom));
+  animation:lshAuf .18s ease-out}
+@keyframes lshAuf{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+.lsh-griff{width:38px;height:4px;border-radius:99px;background:var(--border);margin:0 auto 12px}
+.lsh-titel{font-size:16px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lsh-sub{font-size:12.5px;color:var(--dim);line-height:1.5;margin:3px 0 13px}
+.lsh-btn{display:flex;align-items:center;gap:12px;width:100%;min-height:54px;padding:10px 14px;margin-bottom:8px;
+  border:1px solid var(--border);border-radius:13px;background:var(--panel2);color:var(--text);
+  font-size:15px;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.lsh-btn .ic{flex:0 0 26px;text-align:center;font-size:17px}
+.lsh-btn small{display:block;font-size:12px;color:var(--dim);margin-top:2px;line-height:1.35}
+.lsh-btn.primary{border-color:var(--accent)}
+.lsh-btn.gefahr{color:var(--lern-bad)}
+.lsh-btn.gefahr.scharf{border-color:var(--lern-bad);background:transparent;font-weight:700}
+.lsh-btn.zu{justify-content:center;background:none;color:var(--dim);min-height:48px;margin-bottom:0}
 .ln-zeile{display:flex;gap:6px;flex-wrap:wrap}
 /* Knoepfe: am Handy ist 48px die Untergrenze, damit man sie sicher trifft. */
 .ln-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:11px;
@@ -323,6 +351,9 @@ input[type=checkbox]{width:22px;height:22px;flex:0 0 auto;margin:0;accent-color:
 <!-- 4. Sitzung: eigenes Vollbild-Overlay, exakt wie am Desktop -->
 <div class="lern-ovl" id="lern-overlay"></div>
 
+<!-- 5. Aktions-Sheet (pausieren / fortsetzen / zuruecksetzen) -->
+<div id="ln-sheet"></div>
+
 <div id="toast"></div>
 
 <script>
@@ -510,7 +541,7 @@ function lnRenderDashboard(d){
           :'<button class="ln-btn klein" data-ln="fach-wahl" data-fach="'+aq(escHtml(fid))+'">Lernen &hellip;</button>')
         +'<button class="ln-btn klein" data-ln="ueben-fach" data-fach="'+aq(escHtml(fid))+'">&#128260; &Uuml;ben</button>'
         +'<button class="ln-btn klein" data-ln="statistik" data-fach="'+aq(escHtml(fid))+'">&#128202;</button>'
-        +(fPause?'':'<button class="ln-btn klein" data-ln="pause-fach" data-fach="'+aq(escHtml(fid))+'" title="Fach pausieren" aria-label="Fach pausieren">&#9208;</button>')
+        +'<button class="ln-menue" data-ln="menue-fach" data-fach="'+aq(escHtml(fid))+'" aria-label="Weitere Aktionen f&uuml;r dieses Fach">&#8943;</button>'
       +'</div></div>';
   }
 
@@ -519,20 +550,7 @@ function lnRenderDashboard(d){
   if(!faellige.length){
     h+='<div class="ln-hinweis">Alles erledigt. Die n&auml;chsten Wiederholungen stehen automatisch an, sobald sie f&auml;llig sind.</div>';
   }else{
-    for(const n of faellige){
-      h+='<div class="ln-row" data-ln="notiz-wahl" data-notiz="'+aq(escHtml(n.notiz))+'">'
-        +'<div style="flex:1;min-width:0">'
-        +'<div class="ln-titel">'+escHtml(n.titel||lnNotizName(n.notiz))+'</div>'
-        +'<div class="ln-pfad">'+escHtml(n.notiz)+'</div>'
-        +'<div class="ln-mini">'
-          +(n.fachName?'<span class="ln-badge">'+escHtml(n.fachName)+'</span>':'')
-          +(n.faellig?'<span class="ln-badge faellig">'+n.faellig+' f&auml;llig</span>':'')
-          +(n.neu?'<span class="ln-badge neu">'+n.neu+' neu</span>':'')
-          +(Array.isArray(n.themen)&&n.themen.length>1?'<span class="ln-badge">'+n.themen.length+' Themen</span>':'')
-        +'</div></div>'
-        +'<button class="ln-btn klein" data-ln="pause-notiz" data-notiz="'+aq(escHtml(n.notiz))+'" title="Lernset pausieren" aria-label="Lernset pausieren">&#9208;</button>'
-        +'<span style="color:var(--dim);font-size:20px">&#9654;</span></div>';
-    }
+    for(const n of faellige)h+=lnSetZeile(n,false);
   }
 
   // R28: pausierte Lernsets – hier setzt man sie fort.
@@ -540,16 +558,16 @@ function lnRenderDashboard(d){
   if(pausierte.length){
     h+='<div class="ln-sec">&#9208; Pausiert</div>'
       +'<div class="ln-pausenote">Eingefroren: nichts wird f&auml;llig. Beim Fortsetzen verschieben sich alle Termine um die Dauer der Pause.</div>';
-    for(const n of pausierte){
-      h+='<div class="ln-row pausiert"><div style="flex:1;min-width:0">'
-        +'<div class="ln-titel">'+escHtml(n.titel||lnNotizName(n.notiz))+'</div>'
-        +'<div class="ln-mini">'
-          +(n.fachName?'<span class="ln-badge">'+escHtml(n.fachName)+'</span>':'')
-          +'<span class="ln-badge pause">&#9208; seit '+lnDatumKurz(n.pausiertSeit)+' &middot; '+n.pausiert+' Karten</span>'
-        +'</div></div>'
-        +'<button class="ln-btn klein primary" data-ln="weiter-notiz" data-notiz="'+aq(escHtml(n.notiz))+'">&#9654; Fortsetzen</button></div>';
-    }
+    for(const n of pausierte)h+=lnSetZeile(n,false);
   }
+
+  // Alle Lernsets, eingeklappt: nur hier erreicht man am Handy ein Set, das heute NICHT
+  // faellig ist – etwa um es nach dem Lernen zu pausieren.
+  const nName=n=>n.titel||lnNotizName(n.notiz);
+  const katalog=[...(d.notizen||[])].sort((a,b)=>nName(a).localeCompare(nName(b),'de',{numeric:true,sensitivity:'base'}));
+  h+='<div class="ln-sec ln-klapp" data-ln="alle-auf"><span class="pf'+(_lnAlleAuf?' auf':'')+'">&#9654;</span> Alle Lernsets'
+    +'<span class="ln-badge">'+katalog.length+'</span></div>';
+  if(_lnAlleAuf)for(const n of katalog)h+=lnSetZeile(n,true);
 
   h+='<div class="ln-sec">Mehr</div>'
     +'<button class="ln-btn breit" data-ln="statistik">&#128202; Statistik &amp; Verlauf</button>'
@@ -574,19 +592,90 @@ function lnWireDash(area){
       else if(a==='ueben-fach')lnSitzungWahl({fach:node.dataset.fach,uebung:true});
       else if(a==='notiz-wahl')lnSitzungWahl({notiz:node.dataset.notiz});
       else if(a==='statistik')lnZeigeStatistik(node.dataset.fach);
-      else if(a==='pause-notiz')lnAktion('pause',{notiz:node.dataset.notiz});
       else if(a==='weiter-notiz')lnAktion('weiter',{notiz:node.dataset.notiz});
-      else if(a==='pause-fach')lnAktion('pause',{fach:node.dataset.fach});
       else if(a==='weiter-fach')lnAktion('weiter',{fach:node.dataset.fach});
+      else if(a==='menue-notiz')lnSheet({notiz:node.dataset.notiz});
+      else if(a==='menue-fach')lnSheet({fach:node.dataset.fach});
+      else if(a==='alle-auf'){_lnAlleAuf=!_lnAlleAuf;lnRenderDashboard(_lnDash);}
     });
   });
 }
 
-// R28: Pausieren / Fortsetzen. Zuruecksetzen gibt es bewusst nur am Rechner.
+// EINE Zeile je Lernset – fuer "Heute faellig", "Pausiert" und "Alle Lernsets".
+// Tippen auf die Zeile = lernen (bzw. fortsetzen, wenn pausiert); alles Weitere im Sheet.
+let _lnAlleAuf=false;
+function lnSetZeile(n,katalog){
+  const nz=aq(escHtml(n.notiz)),p=!!n.pausiertSeit,off=(n.faellig||0)+(n.neu||0);
+  return '<div class="ln-row'+(p?' pausiert':'')+'" data-ln="'+(p?'menue-notiz':'notiz-wahl')+'" data-notiz="'+nz+'">'
+    +'<div style="flex:1;min-width:0">'
+    +'<div class="ln-titel">'+escHtml(n.titel||lnNotizName(n.notiz))+'</div>'
+    +(katalog||p?'':'<div class="ln-pfad">'+escHtml(n.notiz)+'</div>')
+    +'<div class="ln-mini">'
+      +(n.fachName?'<span class="ln-badge">'+escHtml(n.fachName)+'</span>':'')
+      +(katalog?'<span class="ln-badge">'+n.karten+' Karten</span>':'')
+      +(p?'<span class="ln-badge pause">&#9208; seit '+lnDatumKurz(n.pausiertSeit)+'</span>'
+         :((!katalog&&n.faellig?'<span class="ln-badge faellig">'+n.faellig+' f&auml;llig</span>':'')
+          +(!katalog&&n.neu?'<span class="ln-badge neu">'+n.neu+' neu</span>':'')
+          +(katalog&&off?'<span class="ln-badge faellig">'+off+' offen</span>':'')
+          +(katalog&&!off&&n.fertig===n.karten&&n.karten?'<span class="ln-badge ok">gelernt</span>':'')))
+      +(!katalog&&Array.isArray(n.themen)&&n.themen.length>1?'<span class="ln-badge">'+n.themen.length+' Themen</span>':'')
+    +'</div></div>'
+    +(p?'<button class="ln-btn klein primary" data-ln="weiter-notiz" data-notiz="'+nz+'">&#9654; Fortsetzen</button>':'')
+    +'<button class="ln-menue" data-ln="menue-notiz" data-notiz="'+nz+'" aria-label="Weitere Aktionen f&uuml;r dieses Lernset">&#8943;</button>'
+    +'</div>';
+}
+
+// R28: Pausieren / Fortsetzen / Zuruecksetzen – ueber ein Aktions-Sheet von unten.
 function lnDatumKurz(iso){
   if(!iso)return '';
   const d=new Date(iso+'T12:00:00');
   return d.getDate()+'.'+(d.getMonth()+1)+'.';
+}
+// ziel = {notiz} | {fach}  (fach: ID oder '__ohne__')
+function lnZielInfo(ziel){
+  if(ziel.notiz){
+    const n=((_lnDash&&_lnDash.notizen)||[]).find(x=>x.notiz===ziel.notiz);
+    return {art:'Lernset',name:n?(n.titel||lnNotizName(n.notiz)):lnNotizName(ziel.notiz),e:n||null};
+  }
+  const f=((_lnDash&&_lnDash.faecher)||[]).find(x=>String(x.id===null?'__ohne__':x.id)===String(ziel.fach));
+  return {art:'Fach',name:f?f.name:String(ziel.fach),e:f||null};
+}
+function lnSheetZu(){const sh=el('ln-sheet');if(sh){sh.classList.remove('show');sh.innerHTML='';}}
+function lnSheet(ziel){
+  const info=lnZielInfo(ziel),e=info.e||{};
+  const pausiert=ziel.notiz?!!e.pausiertSeit:!!e.pausiertGanz;
+  const teils=!ziel.notiz&&!!e.pausierteSets&&!e.pausiertGanz;
+  const mitStand=(e.angefangen||0)+(e.fertig||0);
+  const seit=e.pausiertSeit?lnDatumKurz(e.pausiertSeit):'';
+  let h='<div class="lsh" role="dialog" aria-label="Aktionen"><div class="lsh-griff"></div>'
+    +'<div class="lsh-titel">'+escHtml(info.name)+'</div>'
+    +'<div class="lsh-sub">'+info.art+' &middot; '+(e.karten||0)+' Karten'
+      +(pausiert?(' &middot; pausiert seit '+seit):(teils?(' &middot; '+e.pausierteSets+' von '+e.notizen+' Lernsets pausiert'):''))+'</div>';
+  if(pausiert||teils)h+='<button class="lsh-btn primary" data-sh="weiter"><span class="ic">&#9654;</span><span>'
+    +(teils?'Pausierte Lernsets fortsetzen':'Fortsetzen')
+    +'<small>Alle Termine verschieben sich um die Dauer der Pause &ndash; der Plan ist wieder wie am Tag des Pausierens.</small></span></button>';
+  if(!pausiert)h+='<button class="lsh-btn" data-sh="pause"><span class="ic">&#9208;</span><span>'
+    +(teils?'Rest des Fachs pausieren':'Pausieren')
+    +'<small>Friert alles ein: nichts wird f&auml;llig, die Stufen bleiben stehen. &Uuml;ben geht weiter.</small></span></button>';
+  h+='<button class="lsh-btn gefahr" data-sh="reset"'+(mitStand?'':' disabled style="opacity:.45"')+'><span class="ic">&#8634;</span><span>'
+    +'Alle Karten auf &bdquo;neu&ldquo; zur&uuml;cksetzen'
+    +'<small>'+(mitStand?(mitStand+' Karte'+(mitStand===1?'':'n')+' mit Lernstand. Stufen und Termine gehen verloren, die Statistik bleibt.')
+                        :'Noch kein Lernstand vorhanden.')+'</small></span></button>'
+    +'<button class="lsh-btn zu" data-sh="zu">Abbrechen</button></div>';
+  const sh=el('ln-sheet');sh.innerHTML=h;sh.classList.add('show');
+  sh.onclick=ev=>{
+    if(ev.target===sh){lnSheetZu();return;}
+    const b=ev.target.closest('[data-sh]');if(!b||b.disabled)return;
+    const a=b.dataset.sh;
+    if(a==='zu'){lnSheetZu();return;}
+    if(a==='reset'&&!b.classList.contains('scharf')){
+      // Zweistufig statt Rueckfrage-Dialog: erst scharf schalten, dann ausloesen.
+      b.classList.add('scharf');
+      b.querySelector('span:last-child').innerHTML='Wirklich zur&uuml;cksetzen?<small>Nochmal tippen, um '+mitStand+' Karte'+(mitStand===1?'':'n')+' auf &bdquo;neu&ldquo; zu stellen.</small>';
+      return;
+    }
+    lnSheetZu();lnAktion(a,ziel);
+  };
 }
 async function lnAktion(aktion,ziel){
   let r;
@@ -594,6 +683,7 @@ async function lnAktion(aktion,ziel){
   if(!r||r.error){toast((r&&r.error)||'Aktion fehlgeschlagen','err');return;}
   if(!r.sets)toast('Nichts zu tun');
   else if(aktion==='pause')toast('Pausiert – '+r.karten+' Karten eingefroren','ok');
+  else if(aktion==='reset')toast('Zurückgesetzt – '+r.karten+' Karte'+(r.karten===1?'':'n')+' wieder neu','ok');
   else toast('Läuft weiter'+(r.tage?(' – Termine um '+r.tage+' Tag'+(r.tage===1?'':'e')+' verschoben'):''),'ok');
   lnLadeDashboard();
 }
@@ -612,6 +702,7 @@ function lnSitzungWahl(opt){
         ? alle.filter(n=>String(n.fach===null?'__ohne__':n.fach)===String(opt.fach))
         : alle);
   if(!roh.length){toast('Hier gibt es keine Karteikarten');return;}
+  if(opt.notiz&&!opt.uebung&&roh[0].pausiertSeit){lnSheet({notiz:opt.notiz});return;}
   const st={modus:opt.uebung?'ueben':'lernen',umfang:'faellig',menge:0};
   const liste=roh.map(n=>({
     notiz:n.notiz,
