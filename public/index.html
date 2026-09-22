@@ -6307,9 +6307,15 @@ function lnSitzungWahl(opt){
     return;
   }
   // Dialog-Zustand. menge 0 = alle (kein Deckel) – das ist die Voreinstellung.
-  const st={modus:opt.uebung?'ueben':'lernen',umfang:opt.umfang||'faellig',menge:0};
   // Jede Notiz auf ihre Themen herunterbrechen; ohne Gliederung eine einzige Gruppe.
-  const liste=roh.map(n=>({
+  // Pausierte Lernsets tauchen in der Auswahl nicht auf (Auftrag Paul 2026-09-22): sie
+  // sind eingefroren, liefern weder Faelliges noch Neues und wuerden die Liste nur mit
+  // "0 Karten"-Zeilen fuellen. Ausnahme: das Set wurde gezielt angeklickt (z. B. zum Ueben).
+  const pausierteSets=opt.notiz?[]:roh.filter(n=>n.pausiertSeit);
+  const aktiv=opt.notiz?roh:roh.filter(n=>!n.pausiertSeit);
+  if(!aktiv.length){toast(pausierteSets.length?'Alle Lernsets hier sind pausiert – in der Übersicht fortsetzen':'Hier gibt es keine Karteikarten');return;}
+  const st={modus:opt.uebung?'ueben':'lernen',umfang:opt.umfang||'faellig',menge:0};
+  const liste=aktiv.map(n=>({
     notiz:n.notiz,
     name:n.titel||lnNotizName(n.notiz),
     karten:n.karten,
@@ -6398,7 +6404,8 @@ function lnSitzungWahl(opt){
       +(gegliedert?'<button class="lnm-mini" data-lt="aufzu">Alle auf-/zuklappen</button>'
                   +'<span class="lnw-hint">Mit dem Pfeil ein Lernset aufklappen und einzelne Themen w&auml;hlen.</span>'
                   :'<span class="lnw-hint">Diese Karten tragen noch keine Themen &ndash; beim n&auml;chsten Erstellen kann Claude sie gliedern.</span>')+'</div>'
-      +'<div class="lnt-liste" id="lnt-liste">'+zeilen()+'</div></div>'
+      +'<div class="lnt-liste" id="lnt-liste">'+zeilen()+'</div>'
+      +(pausierteSets.length?'<div class="lnw-hint" style="margin:2px 0 8px">&#9208; '+pausierteSets.length+' pausierte'+(pausierteSets.length===1?'s Lernset':' Lernsets')+' ausgeblendet &ndash; fortsetzen in der &Uuml;bersicht.</div>':'')+'</div>'
     +'<div class="lnm-foot"><span class="lnm-sub" id="lnt-zahl"></span>'
       +'<button class="ln-btn" data-lt="abbruch">Abbrechen</button>'
       +'<button class="ln-btn primary" data-lt="los" id="lnt-los">Losgehen</button></div>');

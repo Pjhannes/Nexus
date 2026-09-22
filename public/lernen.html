@@ -703,8 +703,14 @@ function lnSitzungWahl(opt){
         : alle);
   if(!roh.length){toast('Hier gibt es keine Karteikarten');return;}
   if(opt.notiz&&!opt.uebung&&roh[0].pausiertSeit){lnSheet({notiz:opt.notiz});return;}
+  // Pausierte Lernsets tauchen in der Auswahl nicht auf (Auftrag Paul 2026-09-22): sie
+  // sind eingefroren, liefern weder Faelliges noch Neues und wuerden die Liste nur mit
+  // "0 Karten"-Zeilen fuellen. Ausnahme: das Set wurde gezielt angeklickt (z. B. zum Ueben).
+  const pausierteSets=opt.notiz?[]:roh.filter(n=>n.pausiertSeit);
+  const aktiv=opt.notiz?roh:roh.filter(n=>!n.pausiertSeit);
+  if(!aktiv.length){toast(pausierteSets.length?'Alle Lernsets hier sind pausiert – in der Übersicht fortsetzen':'Hier gibt es keine Karteikarten');return;}
   const st={modus:opt.uebung?'ueben':'lernen',umfang:'faellig',menge:0};
-  const liste=roh.map(n=>({
+  const liste=aktiv.map(n=>({
     notiz:n.notiz,
     name:n.titel||lnNotizName(n.notiz),
     karten:n.karten,
@@ -784,6 +790,7 @@ function lnSitzungWahl(opt){
       +(gegliedert?'<button class="ln-btn klein" data-lt="aufzu">Auf-/zuklappen</button>':'')+'</div>'
     +(gegliedert?'':'<div class="lnw-hint" style="margin-bottom:9px">Diese Karten tragen noch keine Themen.</div>')
     +'<div class="lnt-liste" id="lnt-liste">'+zeilenHtml()+'</div>'
+    +(pausierteSets.length?'<div class="lnw-hint" style="margin:2px 0 8px">&#9208; '+pausierteSets.length+' pausierte'+(pausierteSets.length===1?'s Lernset':' Lernsets')+' ausgeblendet &ndash; fortsetzen in der &Uuml;bersicht.</div>':'')
     +'<div class="lnw-fuss"><span class="lnw-zahl" id="lnt-zahl"></span>'
       +'<button class="ln-btn primary breit" data-lt="los" id="lnt-los">Losgehen</button></div>';
 
