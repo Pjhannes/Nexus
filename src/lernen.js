@@ -801,6 +801,10 @@ function leerStat(extra = {}) {
 }
 
 function zaehle(stat, k, z, ziel, heute, pausiert = false) {
+  // Pausiert = aus dem Bestand genommen. Solche Karten zaehlen NUR als "pausiert":
+  // nicht in `karten`, nicht in der Stufenverteilung, nicht in der Quote. Sonst steht
+  // in der Uebersicht ein Pensum, das der Nutzer gar nicht vor sich hat.
+  if (pausiert) { stat.pausiert++; return; }
   stat.karten++;
   const spielbar = karteSpielbar(k);
   if (!spielbar) { stat.bildOffen++; return; }
@@ -808,8 +812,6 @@ function zaehle(stat, k, z, ziel, heute, pausiert = false) {
   // Reihenfolge wichtig: eine durchgelernte Karte hat ebenfalls due=null, waere ohne
   // diese Abfrage also faelschlich "neu" und damit jeden Tag wieder faellig.
   if (fertig) stat.fertig++;
-  // Pausiert: die Karte steht weiter auf ihrer Stufe, ist aber weder faellig noch neu.
-  else if (pausiert) stat.pausiert++;
   else if (!z || !z.due) stat.neu++;
   else if (z.due <= heute) stat.faellig++;
   if (z) {
@@ -847,12 +849,15 @@ export function lernUebersicht({ sidecars = [], zustaende = new Map(), faecher =
       notizen: 0, ...leerStat(), fehlend: 0, pausierteSets: 0, pausiertSeit: null,
     });
   }
-  const ohneFach = { id: null, name: 'Ohne Fach', farbe: null, pruefung: null, resttage: null,
-    zielKorrekt: standard.zielKorrekt, neueProTag: standard.neueProTag, notizen: 0, ...leerStat(), fehlend: 0, pausierteSets: 0, pausiertSeit: null };
-
   for (const sc of sidecars) {
     const fach = fachFuerNotiz(sc.notiz, faecher);
-    const eintrag = fach ? proFach.get(fach.id) : ohneFach;
+    // Ohne Fach = keine eigene Kachel mehr. Das Lernset bleibt ueberall sonst normal
+    // dabei (Tagespensum, Kalender, "Alle Kartensaetze"); `imPlan` sagt der UI nur,
+    // dass es zu keinem Fach gehoert.
+    const imPlan = !!fach;
+    const eintrag = imPlan
+      ? proFach.get(fach.id)
+      : { zielKorrekt: standard.zielKorrekt, notizen: 0, ...leerStat(), fehlend: 0, pausierteSets: 0, pausiertSeit: null };
     const ziel = eintrag.zielKorrekt;
     const nStat = leerStat();
     let letztes = null;
@@ -864,7 +869,7 @@ export function lernUebersicht({ sidecars = [], zustaende = new Map(), faecher =
       zaehle(eintrag, k, z, ziel, heute, pausiert);
       zaehle(gesamt, k, z, ziel, heute, pausiert);
       // Restaufwand bis "durch": wie viele Stufen fehlen dieser Karte noch?
-      if (karteSpielbar(k)) eintrag.fehlend += istFertig(z) ? 0 : (LERN_STUFEN.length - ((z && z.stufe) || 0));
+      if (!pausiert && karteSpielbar(k)) eintrag.fehlend += istFertig(z) ? 0 : (LERN_STUFEN.length - ((z && z.stufe) || 0));
       if (z?.letztes && (!letztes || z.letztes > letztes)) letztes = z.letztes;
     }
     eintrag.notizen++;
@@ -880,6 +885,7 @@ export function lernUebersicht({ sidecars = [], zustaende = new Map(), faecher =
       // ist keine Gliederung und wuerde die Auswahl nur aufblaehen.
       ...(themen.length > 1 || (themen.length === 1 && themen[0].thema) ? { themen } : {}),
       fach: fach ? fach.id : null,
+      imPlan,
       fachName: fach ? fach.name : null,
       fachFarbe: fach ? (fach.farbe || null) : null,
       letztes,
@@ -905,7 +911,6 @@ export function lernUebersicht({ sidecars = [], zustaende = new Map(), faecher =
   };
 
   const faecherOut = [...proFach.values()].map(fertigFach);
-  if (ohneFach.karten > 0) faecherOut.push(fertigFach(ohneFach));
 
   notizen.sort((a, b) => (b.faellig + b.neu) - (a.faellig + a.neu) || a.notiz.localeCompare(b.notiz));
 

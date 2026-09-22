@@ -5991,7 +5991,7 @@ function lnRenderDashboard(d){
   h+='<div class="ln-heute"><div><div class="ln-zahl'+(offen?'':' leer')+'">'+offen+'</div>'
     +'<div class="ln-sub">'+(offen?('offen &middot; '+d.gesamt.faellig+' f&auml;llig, '+d.gesamt.neu+' noch nie gefragt')
                                   :'heute nichts mehr offen &#127881;')
-      +(d.gesamt.pausiert?(' &middot; '+d.gesamt.pausiert+' pausiert'):'')+'</div></div>'
+      +'</div></div>'
     +'<div class="ln-grow"></div>'
     +'<button class="ln-btn primary gross" data-ln="lernen-wahl" title="Fach, Lernset und Thema w&auml;hlen &ndash; und dann lernen">&#127891; Lernen &hellip;</button>'
     +'<button class="ln-btn gross" data-ln="alles"'+(offen?'':' disabled')+' title="Ohne Umweg loslegen: f&auml;llige Wiederholungen aus dem ganzen Vault plus neue Karten im Tagesrahmen des jeweiligen Fachs">Tagespensum</button>'
@@ -6007,25 +6007,13 @@ function lnRenderDashboard(d){
   }else{
     for(const n of faellige)hFaellig+=lnSetZeile(n,false);
   }
-  // R28: pausierte Lernsets haben einen festen Platz – hier setzt man sie fort.
-  const nName=n=>n.titel||lnNotizName(n.notiz);
-  const pausierte=(d.notizen||[]).filter(n=>n.pausiertSeit)
-    .sort((a,b)=>nName(a).localeCompare(nName(b),'de',{numeric:true,sensitivity:'base'}));
-  if(pausierte.length){
-    hFaellig+='<div class="ln-sec">&#9208; Pausiert<span class="ln-badge" style="margin-left:8px">'+pausierte.length+'</span></div>'
-      +'<div class="ln-pausenote">Eingefroren: nichts wird f&auml;llig, die Stufen bleiben stehen. Beim Fortsetzen '
-      +'verschieben sich alle Termine um die Dauer der Pause &ndash; der Plan ist dann wieder wie am Tag des Pausierens.</div>';
-    for(const n of pausierte)hFaellig+=lnSetZeile(n,false);
-  }
-
-  h+='<div class="ln-sec">F&auml;cher</div><div class="ln-kacheln">';
-  for(const f of (d.faecher||[])){
+  const lnFachKachel=(f)=>{
     const farbe=f.farbe||'var(--accent)';
     const anteil=f.karten?Math.round((f.fertig/f.karten)*100):0;
     const off=f.faellig+f.neu;
     const fid=aq(escHtml(f.id===null?'__ohne__':f.id));
     const fPause=!!f.pausiertGanz;
-    h+='<div class="ln-kachel'+(fPause?' pausiert':'')+'" style="--ln-c:'+aq(escHtml(farbe))+'">'
+    return '<div class="ln-kachel'+(fPause?' pausiert':'')+'" style="--ln-c:'+aq(escHtml(farbe))+'">'
       +'<h3>'+escHtml(f.name)+'</h3>'
       +'<div class="ln-pruef">'+(f.pruefung
           ?('Pr&uuml;fung <b>'+escHtml(f.pruefung)+'</b> &middot; '+(f.resttage>0?('noch <b>'+f.resttage+'</b> Tage'):(f.resttage===0?'<b>heute</b>':'vorbei')))
@@ -6039,8 +6027,7 @@ function lnRenderDashboard(d){
            +'<span class="ln-badge">'+f.pausiert+' Karten eingefroren</span>'
           :((f.faellig?'<span class="ln-badge faellig">'+f.faellig+' f&auml;llig</span>':'')
            +(f.neu?'<span class="ln-badge neu">'+f.neu+' neu</span>':'')
-           +(f.pausierteSets?'<span class="ln-badge pause" title="Pausierte Lernsets stehen unten im Abschnitt &bdquo;Pausiert&ldquo;">&#9208; '+f.pausierteSets+' von '+f.notizen+' Lernsets pausiert</span>':'')
-           +(off||f.pausierteSets?'':'<span class="ln-badge">nichts offen</span>')))
+           +(off?'':'<span class="ln-badge">nichts offen</span>')))
         +(f.bildOffen?'<span class="ln-badge warn">'+f.bildOffen+' ohne Regionen</span>':'')
       +'</div>'
       +'<div class="ln-akt">'
@@ -6051,13 +6038,37 @@ function lnRenderDashboard(d){
       +'<button class="lnm-mini" data-ln="statistik" data-fach="'+fid+'" title="Statistik dieses Fachs">&#128202;</button>'
       +'<button class="lnm-mini ln-menue" data-ln="menue-fach" data-fach="'+fid+'" title="Pausieren, zur&uuml;cksetzen, bearbeiten">&#8943;</button></div>'
       +'</div>';
-  }
+  };
+  // Komplett pausierte Faecher gehoeren nicht in die Arbeitsansicht – sie stehen
+  // unten im Abschnitt "Pausiert", zusammen mit den pausierten Lernsets.
+  const faecherAktiv=(d.faecher||[]).filter(f=>!f.pausiertGanz);
+  const faecherPause=(d.faecher||[]).filter(f=>f.pausiertGanz);
+  h+='<div class="ln-sec">F&auml;cher</div><div class="ln-kacheln">';
+  for(const f of faecherAktiv)h+=lnFachKachel(f);
+  if(!faecherAktiv.length)h+='<div class="ln-hinweis">Kein aktives Fach. Pausierte F&auml;cher stehen unten.</div>';
   h+='</div><div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">'
     +'<button class="ln-btn" data-ln="faecher">&#9881; F&auml;cher &amp; Pr&uuml;fungstermine verwalten</button>'
     +'<button class="ln-btn" data-ln="statistik">&#128202; Statistik &amp; Verlauf</button>'
     +'<button class="ln-btn" data-ln="anki" title="Alle Karten als Textdatei f&uuml;r Ankis Import – zum Lernen am Handy. Der Lernstand bleibt in Nexus.">&#11015; Anki-Export</button></div>';
 
   h+=hFaellig;
+
+  // R28: Pausiertes hat EINEN festen Platz – hier unten, nicht verteilt in der
+  // Arbeitsansicht. Hier stehen sowohl ganz pausierte Faecher als auch einzelne Sets.
+  const nName=n=>n.titel||lnNotizName(n.notiz);
+  const pausierte=(d.notizen||[]).filter(n=>n.pausiertSeit)
+    .sort((a,b)=>nName(a).localeCompare(nName(b),'de',{numeric:true,sensitivity:'base'}));
+  if(pausierte.length||faecherPause.length){
+    h+='<div class="ln-sec">&#9208; Pausiert<span class="ln-badge" style="margin-left:8px">'+(pausierte.length+faecherPause.length)+'</span></div>'
+      +'<div class="ln-pausenote">Eingefroren: nichts wird f&auml;llig, die Stufen bleiben stehen. Beim Fortsetzen '
+      +'verschieben sich alle Termine um die Dauer der Pause &ndash; der Plan ist dann wieder wie am Tag des Pausierens.</div>';
+    if(faecherPause.length){
+      h+='<div class="ln-kacheln">';
+      for(const f of faecherPause)h+=lnFachKachel(f);
+      h+='</div>';
+    }
+    for(const n of pausierte)h+=lnSetZeile(n,false);
+  }
 
   // "Alle Kartensaetze" ganz unten und eingeklappt: die Liste waechst mit jedem
   // Lernset und schiebt sonst alles Wichtige aus dem Blick.

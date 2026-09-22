@@ -554,6 +554,14 @@ export function makeTools(indexer, vaultPath) {
       notizenPausiert: ueber.notizen
         .filter(n => n.pausiertSeit && (gewaehlt === undefined || n.fach === gewaehlt))
         .map(n => ({ notiz: n.notiz, seit: n.pausiertSeit, karten: n.pausiert })),
+      // Lernsets ohne Fach gehoeren zu keinem Lernplan und haben darum keine Fach-Kachel.
+      // Gezaehlt werden sie weiter normal (Tagespensum, Kalender, Sitzung) – wer noch kein
+      // Fach angelegt hat, soll trotzdem lernen koennen. Hier stehen sie, damit erkennbar
+      // bleibt, welche Kartensaetze noch keinem Fach zugeordnet sind.
+      ...(gewaehlt === undefined ? (() => {
+        const frei = ueber.notizen.filter(n => !n.imPlan);
+        return frei.length ? { ohneFach: frei.map(n => ({ notiz: n.notiz, karten: n.karten + n.pausiert })) } : {};
+      })() : {}),
       verteilung: stat.verteilung,
       quote: stat.gesamt.quote,
       serie: stat.gesamt.serie,

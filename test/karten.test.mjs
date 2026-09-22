@@ -354,8 +354,12 @@ ok('Uebersicht nennt die Leiter-Tage', JSON.stringify(ueb.stufenTage) === '[1,3,
 ok('Fach NHM: Pruefung + Resttage', fNhm.pruefung === '2026-08-21' && fNhm.resttage === 12);
 ok('Fach NHM: proTagNoetig = ceil(fehlend/Resttage)', fNhm.proTagNoetig === Math.ceil(fNhm.fehlend / 12), `${fNhm.proTagNoetig} bei fehlend=${fNhm.fehlend}`);
 ok('Fach NHM: aufKurs ist boolesch', typeof fNhm.aufKurs === 'boolean');
-const ohne = ueb.faecher.find(f => f.id === null);
-ok('"Ohne Fach" fuer nicht zugeordnete Notiz', ohne && ohne.karten === 1, JSON.stringify(ohne?.karten));
+// Seit 2026-09-22 (Auftrag Paul): nicht zugeordnete Lernsets bekommen KEINE eigene
+// Kachel mehr. Sie zaehlen aber weiter normal mit (Gesamtzahlen, Kalender, Sitzung)
+// und sind ueber `notizen` mit `imPlan:false` auffindbar.
+ok('keine "Ohne Fach"-Kachel mehr', !ueb.faecher.some(f => f.id === null), JSON.stringify(ueb.faecher.map(f => f.id)));
+ok('nicht zugeordnetes Lernset bleibt in notizen (imPlan:false)',
+  ueb.notizen.some(n => n.imPlan === false), JSON.stringify(ueb.notizen.map(n => [n.notiz, n.imPlan])));
 ok('Gesamtzahlen ueber alle Faecher', ueb.gesamt.karten === 5 && ueb.gesamt.faellig === 1 && ueb.gesamt.neu === 2, JSON.stringify(ueb.gesamt));
 ok('notizen: 3 Eintraege', ueb.notizen.length === 3);
 ok('notizen: nach Arbeitsmenge absteigend sortiert',
@@ -790,12 +794,21 @@ console.log('\nTeil F: Pause, Fortsetzen, Reset');
   ok('pausierteNotizen kennt nur das pausierte Lernset',
     pausierteNotizen(sidecars, inPause).get(scH.notiz) === SO && !pausierteNotizen(sidecars, inPause).has(scM.notiz));
 
-  const ueP = lernUebersicht({ sidecars, zustaende: inPause, faecher: [], heute: MI });
+  // Ein Fach ueber beide Lernsets, damit es ueberhaupt eine Fach-Kachel gibt: ohne Fach
+  // gibt es seit 2026-09-22 keine Kachel mehr (gezaehlt wird das Set aber weiterhin).
+  const fachUni = [{ id: 'uni', name: 'Uni', ordner: ['Uni'] }];
+  const ueP = lernUebersicht({ sidecars, zustaende: inPause, faecher: fachUni, heute: MI });
   const nH = ueP.notizen.find(n => n.notiz === scH.notiz);
   ok('Uebersicht: pausiertes Set hat 0 faellig / 0 neu, 3 pausiert', nH.faellig === 0 && nH.neu === 0 && nH.pausiert === 3 && nH.pausiertSeit === SO, JSON.stringify(nH));
-  ok('Uebersicht: Stufenverteilung bleibt sichtbar (eingefroren)', nH.stufen[1] === 1 && nH.stufen[2] === 1 && nH.stufen[0] === 1, JSON.stringify(nH.stufen));
+  ok('Uebersicht: pausierte Karten stehen in KEINER Stufe und nicht im Bestand',
+    nH.stufen.every(v => v === 0) && nH.karten === 0, JSON.stringify(nH.stufen) + ' karten=' + nH.karten);
   ok('Uebersicht: pausiertes Set steht nicht unter "heute faellig"', !ueP.faellige.some(n => n.notiz === scH.notiz) && ueP.faellige.some(n => n.notiz === scM.notiz));
-  ok('Uebersicht: Fach "Ohne Fach" ist nur teilweise pausiert', ueP.faecher[0].pausierteSets === 1 && ueP.faecher[0].pausiertGanz === false, JSON.stringify(ueP.faecher[0]));
+  ok('Uebersicht: Fach ist nur teilweise pausiert', ueP.faecher[0].pausierteSets === 1 && ueP.faecher[0].pausiertGanz === false, JSON.stringify(ueP.faecher[0]));
+  ok('Uebersicht: Fach-Bestand zaehlt nur die aktiven Karten', ueP.faecher[0].karten === 1 && ueP.faecher[0].pausiert === 3, JSON.stringify(ueP.faecher[0]));
+  ok('Uebersicht: ohne Fach gibt es keine Kachel mehr',
+    lernUebersicht({ sidecars, zustaende: inPause, faecher: [], heute: MI }).faecher.length === 0);
+  ok('Uebersicht: fachlose Lernsets bleiben in notizen sichtbar',
+    lernUebersicht({ sidecars, zustaende: inPause, faecher: [], heute: MI }).notizen.some(n => n.notiz === scH.notiz && n.imPlan === false));
   ok('Kalender zaehlt pausierte Karten nicht', kalenderVorschau({ sidecars, zustaende: inPause, heute: MI, tage: 5 }).reduce((s, t) => s + t.faellig + t.neu + t.ueberfaellig, 0) === 1);
   const qP = sessionQueue({ sidecars, zustaende: inPause, heute: MI, filter: {} });
   ok('Sitzung: pausierte Karten bleiben draussen', qP.karten.every(e => e.notiz !== scH.notiz) && qP.uebersprungenPausiert === 3, JSON.stringify(qP.karten.map(e => e.karte.id)));

@@ -499,7 +499,6 @@ function lnRenderDashboard(d){
                                   :'heute nichts mehr offen &#127881;')+'</div>'
     +'<div class="ln-zeile" style="margin-top:11px">'
       +'<span class="ln-badge">'+d.gesamt.karten+' Karten</span>'
-      +(d.gesamt.pausiert?'<span class="ln-badge pause">&#9208; '+d.gesamt.pausiert+' pausiert</span>':'')
       +(d.gesamt.quote!==null?'<span class="ln-badge">'+d.gesamt.quote+'% richtig</span>':'')
     +'</div></div>';
 
@@ -511,7 +510,9 @@ function lnRenderDashboard(d){
   h+=lnStatusHtml(d);
 
   h+='<div class="ln-sec">F&auml;cher</div>';
-  for(const f of (d.faecher||[])){
+  // Pausierte Faecher ganz nach unten – oben steht nur, was wirklich ansteht.
+  const faecherSort=[...(d.faecher||[])].sort((a,b)=>(a.pausiertGanz?1:0)-(b.pausiertGanz?1:0));
+  for(const f of faecherSort){
     const farbe=f.farbe||'var(--accent)';
     const anteil=f.karten?Math.round((f.fertig/f.karten)*100):0;
     const off=f.faellig+f.neu;
@@ -532,8 +533,7 @@ function lnRenderDashboard(d){
            +'<span class="ln-badge">'+f.pausiert+' Karten eingefroren</span>'
           :((f.faellig?'<span class="ln-badge faellig">'+f.faellig+' f&auml;llig</span>':'')
            +(f.neu?'<span class="ln-badge neu">'+f.neu+' neu</span>':'')
-           +(f.pausierteSets?'<span class="ln-badge pause">&#9208; '+f.pausierteSets+' von '+f.notizen+' Lernsets pausiert</span>':'')
-           +(off||f.pausierteSets?'':'<span class="ln-badge">nichts offen</span>')))
+           +(off?'':'<span class="ln-badge">nichts offen</span>')))
       +'</div>'
       +'<div class="ln-akt">'
         +(fPause
@@ -650,7 +650,7 @@ function lnSheet(ziel){
   let h='<div class="lsh" role="dialog" aria-label="Aktionen"><div class="lsh-griff"></div>'
     +'<div class="lsh-titel">'+escHtml(info.name)+'</div>'
     +'<div class="lsh-sub">'+info.art+' &middot; '+(e.karten||0)+' Karten'
-      +(pausiert?(' &middot; pausiert seit '+seit):(teils?(' &middot; '+e.pausierteSets+' von '+e.notizen+' Lernsets pausiert'):''))+'</div>';
+      +(pausiert?(' &middot; pausiert seit '+seit):'')+'</div>';
   if(pausiert||teils)h+='<button class="lsh-btn primary" data-sh="weiter"><span class="ic">&#9654;</span><span>'
     +(teils?'Pausierte Lernsets fortsetzen':'Fortsetzen')
     +'<small>Alle Termine verschieben sich um die Dauer der Pause &ndash; der Plan ist wieder wie am Tag des Pausierens.</small></span></button>';

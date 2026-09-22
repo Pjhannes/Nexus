@@ -123,7 +123,10 @@ try {
     u1.gesamt.karten === 3 && u1.gesamt.neu === 2 && u1.gesamt.bildOffen === 1, JSON.stringify(u1.gesamt));
   ok('genau eine Notiz ist faellig', u1.faellige.length === 1 && u1.faellige[0].notiz === 'Uni/NHM/VL 01.md', JSON.stringify(u1.faellige));
   ok('Notiz-Titel kommt aus dem Kartenset', u1.faellige[0].titel === 'Karten VL 01', u1.faellige[0].titel);
-  ok('ohne Fach -> Sammeleintrag', u1.faecher.length === 1 && u1.faecher[0].id === null);
+  // Seit 2026-09-22: kein Sammeleintrag "Ohne Fach" mehr – das Set bleibt in notizen (imPlan:false).
+  ok('ohne Fach -> keine Kachel, Set steht in notizen mit imPlan:false',
+    u1.faecher.length === 0 && u1.notizen.some(n => n.notiz === 'Uni/NHM/VL 01.md' && n.imPlan === false),
+    JSON.stringify({ faecher: u1.faecher.length, notizen: u1.notizen.map(n => [n.notiz, n.imPlan]) }));
 
   console.log('\n── 5. Faecher + Pruefungstermin ──');
   const fBad = await post('/api/lernen/faecher', { vault: V, faecher: [{ id: 'nhm', name: 'NHM', ordner: ['Gibt/Es/Nicht'] }] });
@@ -346,7 +349,9 @@ try {
   const n1P = inP.notizen.find(n => n.notiz === NOTIZ1);
   ok('Pause: Set ist eingefroren (nichts faellig/neu, pausiertSeit = heute)',
     n1P.pausiertSeit === heute && n1P.faellig === 0 && n1P.neu === 0 && n1P.pausiert > 0, JSON.stringify(n1P));
-  ok('Pause: Stufenverteilung unveraendert', JSON.stringify(n1P.stufen) === JSON.stringify(n1Vor.stufen));
+  // Seit 2026-09-22: pausierte Karten zaehlen NUR als pausiert – in keiner Stufe, nicht im Bestand.
+  ok('Pause: pausierte Karten stehen in keiner Stufe und nicht im Bestand',
+    n1P.stufen.every(v => v === 0) && n1P.karten === 0, JSON.stringify(n1P.stufen) + ' karten=' + n1P.karten);
   const sP = await get(`/api/lernen/session?vault=${V}&note=${encodeURIComponent(NOTIZ1)}&limit=0&ohneTageslimit=1`);
   ok('Pause: Sitzung fuer das Set ist leer', sP.karten.length === 0 && sP.uebersprungenPausiert > 0, JSON.stringify(sP).slice(0, 300));
   const sPU = await get(`/api/lernen/session?vault=${V}&note=${encodeURIComponent(NOTIZ1)}&uebung=1&limit=0`);
