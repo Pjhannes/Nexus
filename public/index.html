@@ -74,6 +74,17 @@ body{
 .logo{font-weight:700;letter-spacing:.2em;font-size:12px;color:var(--accent);cursor:default;user-select:none}
 .crumb{color:var(--dim);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto;min-width:0}
 .crumb b{color:var(--text);font-weight:500}
+.crumb .crumb-seg{cursor:pointer;border-radius:5px;padding:1px 4px;margin:0 -4px;transition:color .15s,background .15s}
+.crumb .crumb-seg:hover{color:var(--text);background:var(--panel2)}
+/* Geschwister-Dropdown unter einem Breadcrumb-Segment (Hover) */
+#crumb-drop{position:fixed;background:var(--pop);border:1px solid var(--border);border-radius:9px;box-shadow:0 10px 40px rgba(0,0,0,.7);z-index:60;min-width:170px;max-width:320px;max-height:60vh;overflow:auto;padding:4px;display:none}
+#crumb-drop.show{display:block}
+#crumb-drop .cd-head{padding:4px 10px 6px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#crumb-drop .cd-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;font-size:12.5px;color:var(--dim);cursor:pointer;white-space:nowrap}
+#crumb-drop .cd-item:hover{background:var(--panel2);color:var(--text)}
+#crumb-drop .cd-item.current{color:var(--accent);font-weight:500}
+#crumb-drop .cd-item .cd-name{flex:1;overflow:hidden;text-overflow:ellipsis}
+#crumb-drop .cd-item .cd-count{font-size:11px;opacity:.6}
 .search-btn{margin-left:auto;display:flex;align-items:center;gap:8px;padding:5px 14px;border-radius:99px;background:var(--panel2);border:1px solid var(--border);color:var(--dim);font-size:12.5px;cursor:pointer;transition:.2s;white-space:nowrap;flex-shrink:0}
 .search-btn:hover{border-color:var(--accent);color:var(--text);box-shadow:0 0 18px var(--accent-20)}
 kbd{background:rgba(255,255,255,.1);border-radius:5px;padding:1px 6px;font-size:11px;font-family:Consolas,monospace}
@@ -382,6 +393,12 @@ table.dataview-table tr:hover td{background:var(--accent-08)}
 .bl-item .bl-title{font-size:13px;color:#7ec8e3}
 .bl-item .bl-path{font-size:11px;color:var(--dim);margin-left:auto}
 .bl-empty{color:var(--dim);font-size:12.5px;font-style:italic}
+/* Ordner-Ansicht: Unterordner-Karten + Abschnittslabels */
+.fv-label{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:16px 0 8px}
+.fv-label:first-of-type{margin-top:4px}
+.bl-item.fv-folder .bl-title{color:var(--text);font-weight:500}
+.bl-item.fv-folder .bl-path{font-variant-numeric:tabular-nums}
+.bl-item.fv-up .bl-title{color:var(--dim);font-weight:400}
 
 /* Search results – Karten */
 .search-head{display:flex;align-items:center;gap:10px;padding:20px 46px 14px;flex-wrap:wrap}
@@ -810,7 +827,11 @@ body.row-resizing{cursor:row-resize;user-select:none}
 #rail-flyout-rz::after{content:'';position:absolute;top:14px;bottom:14px;left:50%;transform:translateX(-50%);width:2px;border-radius:2px;background:transparent;transition:background .12s}
 #rail-flyout-rz:hover::after,#rail-flyout-rz.drag::after{background:var(--accent)}
 #rail-flyout .fo-head{display:flex;align-items:center;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);padding:4px 10px 9px}
-#rail-flyout .fo-head .fo-new{margin-left:auto;color:var(--accent);cursor:pointer;letter-spacing:0;text-transform:none}
+#rail-flyout .fo-head .fo-new{margin-left:auto;color:var(--accent);cursor:pointer;letter-spacing:0;text-transform:none;flex-shrink:0}
+#rail-flyout .fo-head .fo-title{flex-shrink:0}
+#rail-flyout .fo-head .fo-sub{opacity:.7;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:8px}
+#rail-flyout .fo-head .fo-back{cursor:pointer;margin-right:6px;padding:0 5px;border-radius:5px;font-size:15px;line-height:1;letter-spacing:0;color:var(--dim);flex-shrink:0}
+#rail-flyout .fo-head .fo-back:hover{color:var(--accent);background:var(--panel2)}
 /* Flyout-Reihen im Mockup-Stil (saubere Karten-Optik statt Farb-Punkte) */
 #rail-flyout .folder-row{padding:7px 10px;gap:10px;border-radius:10px;border-left:none;font-size:13px;color:var(--dim)}
 #rail-flyout .folder-row.folder-gradient,#rail-flyout .folder-row.folder-gradient:hover{background:none;border-left:none}
@@ -1215,6 +1236,7 @@ body[data-studio="cream"] #outline-panel .ol-row:hover,body[data-light] #outline
   </div>
 </div>
 <div id="rail-flyout"></div>
+<div id="crumb-drop"></div>
 <div id="rail-flyout-rz" title="Breite ziehen"></div>
 <div id="toast"></div>
 
@@ -1448,7 +1470,93 @@ function aq(s){return (s??'').toString().replace(/"/g,'&quot;');}
 // Browser ignorieren z. B. \x08 vor der Scheme-Aufloesung, ein reiner \s-Test
 // (der C0-Steuerzeichen nicht erfasst) waere sonst umgehbar.
 function dangerScheme(u){return /^(javascript|data|vbscript|file):/i.test((u??"").toString().replace(/[\u0000-\u0020]+/g,""));}
-function setCrumb(html){document.getElementById('crumb').innerHTML=html;}
+function setCrumb(html){crumbDropHide();document.getElementById('crumb').innerHTML=html;}
+// Breadcrumb mit klickbaren Ordner-Segmenten: Vault / Ordner / Unterordner / <b>Datei</b>.
+// isFile: letztes Segment ist eine Datei (nicht klickbar, fett). Sonst ist das letzte Segment
+// selbst ein Ordner (fett UND klickbar). Klick auf ein Segment -> crumbGoFolder (Ordner-Flyout).
+function crumbPathHtml(path,isFile,suffix){
+  const parts=(path||'').split('/').filter(Boolean);
+  const file=isFile?parts.pop():null;
+  let acc='',html=esc(activeVault);
+  parts.forEach((p,i)=>{acc=acc?acc+'/'+p:p;const last=!isFile&&i===parts.length-1;html+=' / <span class="crumb-seg" data-path="'+esc(acc)+'" title="Ordner öffnen">'+(last?'<b>'+esc(p)+'</b>':esc(p))+'</span>';});
+  if(file)html+=' / <b class="crumb-file" data-path="'+esc(path)+'">'+esc(file)+'</b>';
+  return html+(suffix||'');
+}
+document.getElementById('crumb').addEventListener('click',e=>{const seg=e.target.closest('.crumb-seg');if(!seg)return;e.stopPropagation();crumbDropHide();crumbGoFolder(seg.dataset.path);});
+// Rechtsklick auf ein Segment = Ordner-Kontextmenue (Neue Notiz, Umbenennen, Papierkorb …), auf den Dateinamen = Datei-Kontextmenue.
+document.getElementById('crumb').addEventListener('contextmenu',e=>{
+  const seg=e.target.closest('.crumb-seg');if(seg){crumbDropHide();showCtx(e,seg.dataset.path,'folder');return;}
+  const f=e.target.closest('.crumb-file');if(f&&f.dataset.path){crumbDropHide();showCtx(e,f.dataset.path,'file',extOf(f.dataset.path));}
+});
+// ── Geschwister-Dropdown (Hover auf ein Segment, wie die macOS-Pfadleiste) ──
+// Zeigt alle Ordner auf derselben Ebene wie das Segment; Klick wechselt in die Ordner-Ansicht
+// des Nachbarordners (ohne Flyout), Rechtsklick oeffnet dessen Kontextmenue.
+function findTreeNode(path){let found=null;(function w(ns){for(const n of ns){if(found)return;if(n.path===path)found=n;else if(n.children)w(n.children);}})(vaultTree);return found;}
+function crumbSiblings(path){const i=path.lastIndexOf('/');const parent=i<0?'':path.slice(0,i);const list=parent?(findTreeNode(parent)?.children??[]):vaultTree;return {parent,folders:list.filter(x=>x.type==='folder')};}
+let _cdShowT=null,_cdHideT=null,_cdSeg=null;
+function crumbDropShow(seg){
+  const dd=document.getElementById('crumb-drop');if(!dd||!seg.isConnected)return;
+  const path=seg.dataset.path;const {parent,folders}=crumbSiblings(path);
+  if(!folders.length){crumbDropHide();return;}
+  _cdSeg=seg;
+  dd.innerHTML='<div class="cd-head">'+esc(parent||activeVault)+'</div>'+folders.map(f=>'<div class="cd-item'+(f.path===path?' current':'')+'" data-path="'+esc(f.path)+'" title="'+esc(f.path)+'"><span>'+folderIcon(f.name)+'</span><span class="cd-name">'+esc(f.name)+'</span><span class="cd-count">'+countFiles(f.children??[]).toLocaleString('de')+'</span></div>').join('');
+  dd.querySelectorAll('.cd-item').forEach(it=>{
+    it.addEventListener('click',e=>{e.stopPropagation();const p=it.dataset.path;crumbDropHide();openFolderView(p);});
+    it.addEventListener('contextmenu',e=>{const p=it.dataset.path;crumbDropHide();showCtx(e,p,'folder');});
+  });
+  const r=seg.getBoundingClientRect();
+  dd.style.left='0px';dd.style.top=(r.bottom+4)+'px';dd.classList.add('show');
+  dd.style.left=Math.max(8,Math.min(r.left-6,window.innerWidth-dd.offsetWidth-8))+'px';
+  const cur=dd.querySelector('.cd-item.current');if(cur)dd.scrollTop=Math.max(0,cur.offsetTop-dd.clientHeight/2);
+}
+function crumbDropHide(){clearTimeout(_cdShowT);clearTimeout(_cdHideT);_cdShowT=_cdHideT=null;const dd=document.getElementById('crumb-drop');if(dd)dd.classList.remove('show');_cdSeg=null;}
+function crumbDropArmHide(){clearTimeout(_cdHideT);_cdHideT=setTimeout(crumbDropHide,260);}
+(function initCrumbDrop(){
+  const crumb=document.getElementById('crumb'),dd=document.getElementById('crumb-drop');if(!crumb||!dd)return;
+  crumb.addEventListener('mouseover',e=>{
+    const seg=e.target.closest('.crumb-seg');clearTimeout(_cdHideT);_cdHideT=null;
+    if(!seg){crumbDropArmHide();return;}
+    if(seg===_cdSeg)return;
+    clearTimeout(_cdShowT);_cdShowT=setTimeout(()=>crumbDropShow(seg),_cdSeg?60:180);
+  });
+  crumb.addEventListener('mouseleave',()=>{clearTimeout(_cdShowT);_cdShowT=null;crumbDropArmHide();});
+  dd.addEventListener('mouseenter',()=>{clearTimeout(_cdHideT);_cdHideT=null;});
+  dd.addEventListener('mouseleave',crumbDropArmHide);
+})();
+// Ordner aus dem Breadcrumb im Rail-Flyout zeigen: Thema (Hauptordner) wie beim Icon-Klick oeffnen
+// (gleiche Positionsregeln: Tab-Ober-/Notizfenster-Untergrenze, Icon-Leiste nachscrollen), alle
+// Zwischenordner aufklappen, Ziel-Reihe ins Bild scrollen, aktuelle Datei markieren.
+function crumbGoFolder(path){
+  if(!path)return;
+  const top=path.split('/')[0];
+  if(currentLayout()!=='softdark'){
+    // Klassisches Layout: kein Flyout, sondern den Sidebar-Baum bis zum Ordner aufklappen und hinscrollen.
+    const ps=path.split('/');for(let i=1;i<=ps.length;i++)openFolders.add(ps.slice(0,i).join('/'));
+    currentFolder=path;renderSidebar();
+    if(selectedPath)document.querySelector('#folder-list .tree-file[data-path="'+cssAttr(selectedPath)+'"]')?.classList.add('selected');
+    const row=document.querySelector('#folder-list .folder-row[data-path="'+cssAttr(path)+'"]'),side=document.getElementById('side-scroll');
+    if(row&&side){const sr=side.getBoundingClientRect(),rr=row.getBoundingClientRect();if(rr.top<sr.top||rr.bottom>sr.bottom)smoothScrollTop(side,Math.max(0,side.scrollTop+(rr.top-sr.top)-12),320);}
+    return;
+  }
+  const node=vaultTree.find(n=>n.type==='folder'&&n.path===top);
+  const btn=[...document.querySelectorAll('#folder-list .rail-btn')].find(b=>b.dataset.path===top);
+  const fo=document.getElementById('rail-flyout');
+  if(!node||!btn||!fo)return;
+  const parts=path.split('/');for(let i=2;i<=parts.length;i++)openFolders.add(parts.slice(0,i).join('/'));
+  if(path!==top)currentFolder=path;
+  if(_railFlyoutPath===top){
+    // Flyout ist schon fuer dieses Thema offen -> nur neu rendern und wieder in den Korridor bringen
+    refreshRailFlyout();railFlyoutClamp();
+  }else{
+    // Icon zuerst in der Leiste sichtbar machen (openRailFlyout misst die Icon-Position)
+    const side=document.getElementById('side-scroll');
+    if(side){const sr=side.getBoundingClientRect(),br=btn.getBoundingClientRect();if(br.top<sr.top)side.scrollTop-=(sr.top-br.top)+8;else if(br.bottom>sr.bottom)side.scrollTop+=(br.bottom-sr.bottom)+8;}
+    openRailFlyout(node,btn);
+  }
+  if(selectedPath)fo.querySelector('.tree-file[data-path="'+cssAttr(selectedPath)+'"]')?.classList.add('selected');
+  // Ziel ins Bild scrollen: die Unterordner-Reihe, sonst die gerade geoeffnete Datei
+  railFlyoutReveal((path!==top?fo.querySelector('.folder-row[data-path="'+cssAttr(path)+'"]'):null)||(selectedPath?fo.querySelector('.tree-file[data-path="'+cssAttr(selectedPath)+'"]'):null));
+}
 let toastTimer;
 // R27c (D1f): genau zwei Varianten – 'ok' und 'err' (alte Namen success/error werden noch gemappt).
 function toast(msg,type=''){type=type==='success'?'ok':type==='error'?'err':type;const el=document.getElementById('toast');el.textContent=msg;el.className='show'+(type?' '+type:'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),3200);}
@@ -1965,7 +2073,8 @@ function renderRailFlyoutContent(node){
   const fo=document.getElementById('rail-flyout');if(!fo)return;
   fo.innerHTML='';
   const head=document.createElement('div');head.className='fo-head';
-  head.innerHTML=`<span>${esc(node.name)}</span><span class="fo-new">+ Notiz</span>`;
+  head.innerHTML=`<span class="fo-back" title="Eine Ebene zurück">&lsaquo;</span><span class="fo-title">${esc(node.name)}</span><span class="fo-sub"></span><span class="fo-new">+ Notiz</span>`;
+  head.querySelector('.fo-back').addEventListener('click',e=>{e.stopPropagation();railFlyoutUp();});
   head.querySelector('.fo-new').addEventListener('click',e=>{e.stopPropagation();ctxNewNote(node.path);});
   attachFileDrop(head,node.path); // R15: Datei-Drop auf den Flyout-Kopf -> Upload in das Thema (Hauptordner)
   fo.appendChild(head);
@@ -1979,8 +2088,9 @@ function renderRailFlyoutContent(node){
   // Unterordner im Flyout aufklappen -> sanft so scrollen, dass die Reihe auf Höhe des Themen-Icons rückt
   // (gleiches Gefühl wie das Hochscrollen der Icon-Leiste). Zweiter Listener auf der Reihe: makeFolderEl ruft
   // nur stopPropagation (nicht stopImmediatePropagation), daher feuert dieser nach dem Auf-/Zuklappen.
+  updateFlyoutHead();
   fo.querySelectorAll('.folder-row').forEach(row=>{
-    row.addEventListener('click',()=>requestAnimationFrame(()=>{
+    row.addEventListener('click',()=>{updateFlyoutHead();requestAnimationFrame(()=>{
       const cw=row.nextElementSibling;
       if(!cw||!cw.classList.contains('folder-children')||!cw.classList.contains('open'))return;
       const icon=_railFlyoutBtn; if(!icon)return;
@@ -1999,8 +2109,46 @@ function renderRailFlyoutContent(node){
         const maxScroll=Math.max(0,fo.scrollHeight-fo.clientHeight);
         smoothScrollTop(fo,Math.min(maxScroll,fo.scrollTop+scrollRest),320);
       }
-    }));
+    });});
   });
+}
+// Tiefster aufgeklappter Unterordner des Themas auf dem Weg zu currentFolder (null = nur Thema offen).
+function railFlyoutActiveSub(){
+  const top=_railFlyoutPath;if(!top)return null;
+  let best=null;
+  for(const p of openFolders){if(p.startsWith(top+'/')&&(currentFolder+'/').startsWith(p+'/')&&(!best||p.length>best.length))best=p;}
+  return best;
+}
+// Kopf des Flyouts: Zurueck-Pfeil + "› Unterordner › …" nur, wenn ein Unterordner aktiv ist.
+function updateFlyoutHead(){
+  const head=document.querySelector('#rail-flyout .fo-head');if(!head)return;
+  const back=head.querySelector('.fo-back'),subEl=head.querySelector('.fo-sub');if(!back||!subEl)return;
+  const sub=railFlyoutActiveSub();
+  if(!sub){back.style.display='none';subEl.style.display='none';subEl.textContent='';return;}
+  const rel=sub.slice(_railFlyoutPath.length+1).split('/');
+  // Nur der tiefste Ordner im Kopf (sonst schneidet die Ellipse genau den wichtigsten Namen ab); volle Kette im Tooltip.
+  subEl.textContent=' › '+rel[rel.length-1];subEl.title=_railFlyoutPath+' › '+rel.join(' › ');subEl.style.display='';back.style.display='';
+  back.title='Zurück zu '+(rel.length>1?rel[rel.length-2]:_railFlyoutPath.split('/').pop());
+}
+// Flyout-Hoehe/-Position nach einer Inhaltsaenderung wieder in den Korridor Tab-Leiste…Notizfenster bringen.
+function railFlyoutClamp(){
+  const fo=document.getElementById('rail-flyout');if(!fo||!fo.classList.contains('show'))return;
+  const lim=railTopLimit(),botLim=railBottomLimit(),curTop=parseFloat(fo.style.top)||fo.getBoundingClientRect().top;
+  tween(curTop,Math.max(lim,Math.min(curTop,botLim-fo.offsetHeight)),320,v=>{fo.style.top=v+'px';positionFlyoutResizer();});
+}
+// Element (Reihe/Datei) im Flyout sanft ins Bild scrollen, falls es ausserhalb liegt.
+function railFlyoutReveal(el){
+  const fo=document.getElementById('rail-flyout');if(!fo||!el)return;
+  const fr=fo.getBoundingClientRect(),rr=el.getBoundingClientRect();
+  if(rr.top<fr.top||rr.bottom>fr.bottom)smoothScrollTop(fo,Math.max(0,rr.top-fr.top+fo.scrollTop-12),320);
+}
+// Zurueck-Pfeil im Kopf: den aktiven Unterordner zuklappen, Elternordner wird aktuell + sichtbar.
+function railFlyoutUp(){
+  const sub=railFlyoutActiveSub();if(!sub)return;
+  openFolders.delete(sub);
+  const parent=sub.slice(0,sub.lastIndexOf('/'));currentFolder=parent;
+  refreshRailFlyout();railFlyoutClamp();
+  railFlyoutReveal(document.querySelector('#rail-flyout .folder-row[data-path="'+cssAttr(parent)+'"]'));
 }
 // Offenes Flyout nach einem Live-Refresh mit frischen Baumdaten neu rendern.
 // (refreshTree() aktualisiert nur #folder-list/renderRail – das Flyout-DOM bliebe
@@ -2399,9 +2547,8 @@ async function openFile(path,opts){
   if(!_silentRender){flushNoteScroll();updateActiveTab(path,'file');}
   document.querySelectorAll('.tree-file.selected').forEach(e=>e.classList.remove('selected'));
   document.querySelector('.tree-file[data-path="'+cssAttr(path)+'"]')?.classList.add('selected');
-  const parts=path.split('/'), fname=parts[parts.length-1];
-  const folder=parts.length>1?parts.slice(0,-1).join(' / '):activeVault;
-  setCrumb(esc(activeVault)+' / '+esc(folder)+' / <b>'+esc(fname)+'</b>');
+  const fname=path.split('/').pop();
+  setCrumb(crumbPathHtml(path,true));
   document.getElementById('sb-vault').textContent=path;
   const ext=extOf(path), area=document.getElementById('note-area');
   // Bei MD NICHT hier auf 0 scrollen: das liefe auf der noch sichtbaren ALTEN Notiz, und der
@@ -3495,7 +3642,7 @@ async function openEditor(path,isNew){
     editorState={path,original:raw,getValue:()=>ta.value,isNew:!!isNew,textarea:ta};
     ta.focus();
   }
-  setCrumb(esc(activeVault)+' / <b>'+esc(fname)+'</b> &middot; bearbeiten');
+  setCrumb(crumbPathHtml(path,true,' &middot; bearbeiten'));
   logActivity(folderColor((path.split('/')[0])||''),'edit &rarr; <b>'+esc(fname)+'</b>');
   markDirty();
   }finally{openEditor._busy=false;}
@@ -3512,7 +3659,7 @@ async function saveEditor(){
     editorState.original=content;markDirty();
     toast('Gespeichert ✓','ok');
     logActivity(folderColor((path.split('/')[0])||''),'write_note &rarr; <b>'+esc(path.split('/').pop())+'</b>');
-    if(editorState.isNew){editorState.isNew=false;invalidateVaultGraph();await refreshTree();document.querySelector('.tree-file[data-path="'+cssAttr(path)+'"]')?.classList.add('selected');setCrumb(esc(activeVault)+' / <b>'+esc(path.split('/').pop())+'</b> &middot; bearbeiten');}
+    if(editorState.isNew){editorState.isNew=false;invalidateVaultGraph();await refreshTree();document.querySelector('.tree-file[data-path="'+cssAttr(path)+'"]')?.classList.add('selected');setCrumb(crumbPathHtml(path,true,' &middot; bearbeiten'));}
   }catch(e){toast('Speichern fehlgeschlagen','err');}
 }
 function togglePreview(){
@@ -4519,18 +4666,45 @@ function frameGraph(){
   if(graph.alpha>=0.004||graph.hover||graph.drag||graph._needFit){graph.raf=requestAnimationFrame(frameGraph);}else{graph.raf=0;}
 }
 
+// Ordner-Ansicht = eine Ebene: Unterordner (Klick -> tiefer) und die Dateien DIREKT in diesem Ordner.
+// Frueher wurden alle Dateien rekursiv flach gelistet (bei grossen Themen tausende) und die Unterordner
+// fehlten - damit liess sich die Breadcrumb-Navigation nicht durchziehen (Paul, 2026-10-03).
 function openFolderView(folderPath){
   _lnDashAktiv=false;
   hideEditFab();
   if(!_silentRender)updateActiveTab(folderPath,'folder');
-  let node=null;(function w(ns){for(const n of ns){if(node)return;if(n.type==='folder'&&n.path===folderPath)node=n;else if(n.children)w(n.children);}})(vaultTree);
-  if(!node)return;
-  const files=[];(function w(ns){for(const n of ns){if(n.type==='file')files.push(n);else if(n.children)w(n.children);}})(node.children||[]);
+  const node=findTreeNode(folderPath);
+  if(!node||node.type!=='folder')return;
+  const kids=node.children||[];
+  const folders=kids.filter(n=>n.type==='folder'), files=kids.filter(n=>n.type==='file');
+  const total=countFiles(kids);
   const area=document.getElementById('note-area');area.scrollTop=0;
-  setCrumb(esc(activeVault)+' / <b>'+esc(folderPath)+'</b>');
+  setCrumb(crumbPathHtml(folderPath,false));
   const col=colorForPath(folderPath+'/x');
-  area.innerHTML='<div class="note-content"><div class="note-meta"><span class="chip" style="border-color:'+col+';color:'+col+'">&#128193; '+esc(node.name)+'</span><span class="chip stat">'+files.length+' Dateien</span></div><h1 class="note-title">'+esc(node.name)+'</h1>'+(files.map(f=>'<div class="bl-item" data-path="'+esc(f.path)+'"><span class="bl-title">'+fileIcon(f.ext)+' '+esc(f.name)+'</span><span class="bl-path">'+esc(f.path)+'</span></div>').join('')||'<div class="bl-empty">Leerer Ordner.</div>')+'</div>';
-  area.querySelectorAll('.bl-item').forEach(it=>it.addEventListener('click',()=>openFile(it.dataset.path)));
+  const i=folderPath.lastIndexOf('/'), parent=i<0?'':folderPath.slice(0,i);
+  const chips='<span class="chip" style="border-color:'+col+';color:'+col+'">&#128193; '+esc(node.name)+'</span>'
+    +(folders.length?'<span class="chip stat">'+folders.length+' Unterordner</span>':'')
+    +'<span class="chip stat">'+files.length+' Dateien hier</span>'
+    +(total!==files.length?'<span class="chip stat">'+total.toLocaleString('de')+' gesamt</span>':'');
+  let body='';
+  if(parent)body+='<div class="bl-item fv-up" data-folder="'+esc(parent)+'"><span class="bl-title">&#8249; Zurück zu '+esc(parent.split('/').pop())+'</span><span class="bl-path">'+esc(parent)+'</span></div>';
+  if(folders.length){
+    body+='<div class="fv-label">Ordner</div>'+folders.map(f=>{const c=countFiles(f.children||[]),sub=(f.children||[]).filter(x=>x.type==='folder').length;
+      return '<div class="bl-item fv-folder" data-folder="'+esc(f.path)+'"><span class="bl-title">'+folderIcon(f.name)+' '+esc(f.name)+'</span><span class="bl-path">'+(sub?sub+' Ordner · ':'')+c.toLocaleString('de')+' Dateien</span></div>';}).join('');
+  }
+  if(files.length){
+    body+=(folders.length?'<div class="fv-label">Dateien</div>':'')+files.map(f=>'<div class="bl-item" data-path="'+esc(f.path)+'"><span class="bl-title">'+fileIcon(f.ext)+' '+esc(f.name)+'</span><span class="bl-path">'+esc(f.ext||'')+'</span></div>').join('');
+  }
+  if(!folders.length&&!files.length)body+='<div class="bl-empty">Leerer Ordner.</div>';
+  area.innerHTML='<div class="note-content"><div class="note-meta">'+chips+'</div><h1 class="note-title">'+esc(node.name)+'</h1>'+body+'</div>';
+  area.querySelectorAll('.bl-item[data-folder]').forEach(it=>{
+    it.addEventListener('click',()=>openFolderView(it.dataset.folder));
+    if(!it.classList.contains('fv-up'))it.addEventListener('contextmenu',e=>showCtx(e,it.dataset.folder,'folder'));
+  });
+  area.querySelectorAll('.bl-item[data-path]').forEach(it=>{
+    it.addEventListener('click',()=>openFile(it.dataset.path));
+    it.addEventListener('contextmenu',e=>showCtx(e,it.dataset.path,'file',extOf(it.dataset.path)));
+  });
   logActivity(col,'open_folder &rarr; <b>'+esc(node.name)+'</b>');
 }
 
@@ -4762,11 +4936,11 @@ function ctxIcon(name){
 function iconApply(){if(!_ipTarget)return;const v=(document.getElementById('ip-input').value||'').trim();setCustomFolderIcon(_ipTarget,v||null);iconClose();renderSidebar();}
 function iconRemove(){if(!_ipTarget)return;setCustomFolderIcon(_ipTarget,null);iconClose();renderSidebar();}
 function iconClose(){document.getElementById('icon-pop').classList.remove('show');_ipTarget=null;}
-document.addEventListener('click',e=>{closeCtx();if(!document.getElementById('color-pop').contains(e.target))cpClose();if(!document.getElementById('icon-pop').contains(e.target))iconClose();});
+document.addEventListener('click',e=>{closeCtx();if(!document.getElementById('crumb-drop').contains(e.target))crumbDropHide();if(!document.getElementById('color-pop').contains(e.target))cpClose();if(!document.getElementById('icon-pop').contains(e.target))iconClose();});
 // Hinweis: Das Rail-Flyout bleibt bewusst offen (kein Schließen bei Klick außerhalb).
 // Es schließt nur über dasselbe Rail-Icon (Toggle in openRailFlyout), ein anderes Icon
 // (öffnet dort neu) oder Esc. Beim Layout-/Vault-Wechsel + Drag wird es explizit geschlossen.
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(_ln.aktiv&&!document.querySelector('.overlay.show')){e.preventDefault();lnStop();return;}if(_vt.aktiv&&!document.querySelector('.overlay.show')){e.preventDefault();vtStop();return;}if(document.querySelector('.app')?.classList.contains('reading')&&!document.querySelector('.overlay.show')){e.preventDefault();exitReading();return;}closeCtx();cpClose();iconClose();closeRailFlyout();closePalette();closeVaultModal();pickerCancel();_confirmCancel();closeSettings();closeUsagePopover();lnModalClose();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(_ln.aktiv&&!document.querySelector('.overlay.show')){e.preventDefault();lnStop();return;}if(_vt.aktiv&&!document.querySelector('.overlay.show')){e.preventDefault();vtStop();return;}if(document.querySelector('.app')?.classList.contains('reading')&&!document.querySelector('.overlay.show')){e.preventDefault();exitReading();return;}closeCtx();cpClose();iconClose();crumbDropHide();closeRailFlyout();closePalette();closeVaultModal();pickerCancel();_confirmCancel();closeSettings();closeUsagePopover();lnModalClose();}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
 
 // ═════════════════════ DRAG & DROP / UPLOAD ═════════════════════
 // R15: Das Vollbild-Overlay nur zeigen, wenn der Cursor NICHT ueber einer praezisen Datei-Drop-Zone
