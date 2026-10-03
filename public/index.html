@@ -85,6 +85,10 @@ body{
 #crumb-drop .cd-item.current{color:var(--accent);font-weight:500}
 #crumb-drop .cd-item .cd-name{flex:1;overflow:hidden;text-overflow:ellipsis}
 #crumb-drop .cd-item .cd-count{font-size:11px;opacity:.6}
+#crumb-drop .cd-head.cd-open{cursor:pointer;border-radius:6px}
+#crumb-drop .cd-head.cd-open:hover{color:var(--accent);background:var(--panel2)}
+#crumb-drop .cd-item.cd-file{color:var(--dim)}
+#crumb-drop .cd-item.cd-more{color:var(--accent);font-size:12px}
 .search-btn{margin-left:auto;display:flex;align-items:center;gap:8px;padding:5px 14px;border-radius:99px;background:var(--panel2);border:1px solid var(--border);color:var(--dim);font-size:12.5px;cursor:pointer;transition:.2s;white-space:nowrap;flex-shrink:0}
 .search-btn:hover{border-color:var(--accent);color:var(--text);box-shadow:0 0 18px var(--accent-20)}
 kbd{background:rgba(255,255,255,.1);border-radius:5px;padding:1px 6px;font-size:11px;font-family:Consolas,monospace}
@@ -1489,24 +1493,36 @@ document.getElementById('crumb').addEventListener('contextmenu',e=>{
   const f=e.target.closest('.crumb-file');if(f&&f.dataset.path){crumbDropHide();showCtx(e,f.dataset.path,'file',extOf(f.dataset.path));}
 });
 // ── Geschwister-Dropdown (Hover auf ein Segment, wie die macOS-Pfadleiste) ──
-// Zeigt alle Ordner auf derselben Ebene wie das Segment; Klick wechselt in die Ordner-Ansicht
-// des Nachbarordners (ohne Flyout), Rechtsklick oeffnet dessen Kontextmenue.
+// Zeigt den INHALT des Segments: Unterordner (Klick -> Ordner-Ansicht, Rechtsklick -> Kontextmenue)
+// und die Dateien direkt darin (Klick -> oeffnen, gekappt). Kopfzeile = Pfad, Klick -> Ordner-Ansicht.
 function findTreeNode(path){let found=null;(function w(ns){for(const n of ns){if(found)return;if(n.path===path)found=n;else if(n.children)w(n.children);}})(vaultTree);return found;}
-function crumbSiblings(path){const i=path.lastIndexOf('/');const parent=i<0?'':path.slice(0,i);const list=parent?(findTreeNode(parent)?.children??[]):vaultTree;return {parent,folders:list.filter(x=>x.type==='folder')};}
+const CRUMB_DROP_MAX_FILES=25;
 let _cdShowT=null,_cdHideT=null,_cdSeg=null;
 function crumbDropShow(seg){
   const dd=document.getElementById('crumb-drop');if(!dd||!seg.isConnected)return;
-  const path=seg.dataset.path;const {parent,folders}=crumbSiblings(path);
-  if(!folders.length){crumbDropHide();return;}
+  const path=seg.dataset.path;const node=findTreeNode(path);
+  const kids=node&&node.type==='folder'?(node.children||[]):[];
+  const folders=kids.filter(x=>x.type==='folder'), files=kids.filter(x=>x.type==='file');
+  if(!folders.length&&!files.length){crumbDropHide();return;}
   _cdSeg=seg;
-  dd.innerHTML='<div class="cd-head">'+esc(parent||activeVault)+'</div>'+folders.map(f=>'<div class="cd-item'+(f.path===path?' current':'')+'" data-path="'+esc(f.path)+'" title="'+esc(f.path)+'"><span>'+folderIcon(f.name)+'</span><span class="cd-name">'+esc(f.name)+'</span><span class="cd-count">'+countFiles(f.children??[]).toLocaleString('de')+'</span></div>').join('');
-  dd.querySelectorAll('.cd-item').forEach(it=>{
-    it.addEventListener('click',e=>{e.stopPropagation();const p=it.dataset.path;crumbDropHide();openFolderView(p);});
-    it.addEventListener('contextmenu',e=>{const p=it.dataset.path;crumbDropHide();showCtx(e,p,'folder');});
+  let html='<div class="cd-head cd-open" data-path="'+esc(path)+'" title="Ordner-Ansicht öffnen">'+esc(path)+'</div>';
+  html+=folders.map(f=>'<div class="cd-item" data-folder="'+esc(f.path)+'" title="'+esc(f.path)+'"><span>'+folderIcon(f.name)+'</span><span class="cd-name">'+esc(f.name)+'</span><span class="cd-count">'+countFiles(f.children??[]).toLocaleString('de')+'</span></div>').join('');
+  html+=files.slice(0,CRUMB_DROP_MAX_FILES).map(f=>'<div class="cd-item cd-file'+(f.path===selectedPath?' current':'')+'" data-path="'+esc(f.path)+'" title="'+esc(f.path)+'"><span>'+fileIcon(f.ext)+'</span><span class="cd-name">'+esc(f.name)+'</span></div>').join('');
+  if(files.length>CRUMB_DROP_MAX_FILES)html+='<div class="cd-item cd-more" data-folder="'+esc(path)+'"><span>…</span><span class="cd-name">'+(files.length-CRUMB_DROP_MAX_FILES).toLocaleString('de')+' weitere Dateien – Ordner öffnen</span></div>';
+  dd.innerHTML=html;
+  dd.querySelector('.cd-open').addEventListener('click',e=>{e.stopPropagation();const p=path;crumbDropHide();openFolderView(p);});
+  dd.querySelectorAll('.cd-item[data-folder]').forEach(it=>{
+    it.addEventListener('click',e=>{e.stopPropagation();const p=it.dataset.folder;crumbDropHide();openFolderView(p);});
+    if(!it.classList.contains('cd-more'))it.addEventListener('contextmenu',e=>{const p=it.dataset.folder;crumbDropHide();showCtx(e,p,'folder');});
+  });
+  dd.querySelectorAll('.cd-item[data-path]').forEach(it=>{
+    it.addEventListener('click',e=>{e.stopPropagation();const p=it.dataset.path;crumbDropHide();openFile(p);});
+    it.addEventListener('contextmenu',e=>{const p=it.dataset.path;crumbDropHide();showCtx(e,p,'file',extOf(p));});
   });
   const r=seg.getBoundingClientRect();
   dd.style.left='0px';dd.style.top=(r.bottom+4)+'px';dd.classList.add('show');
   dd.style.left=Math.max(8,Math.min(r.left-6,window.innerWidth-dd.offsetWidth-8))+'px';
+  dd.scrollTop=0;
   const cur=dd.querySelector('.cd-item.current');if(cur)dd.scrollTop=Math.max(0,cur.offsetTop-dd.clientHeight/2);
 }
 function crumbDropHide(){clearTimeout(_cdShowT);clearTimeout(_cdHideT);_cdShowT=_cdHideT=null;const dd=document.getElementById('crumb-drop');if(dd)dd.classList.remove('show');_cdSeg=null;}
