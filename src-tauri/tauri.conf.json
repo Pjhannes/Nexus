@@ -42,6 +42,7 @@
       "webviewInstallMode": { "type": "downloadBootstrapper" },
       "nsis": {
         "installMode": "currentUser",
+        "installerHooks": "./nsis/hooks.nsh",
         "languages": ["German", "English"],
         "displayLanguageSelector": true,
         "installerIcon": "../build/icon.ico",
