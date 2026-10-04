@@ -12,16 +12,24 @@
 ; (Pauls eigene Node-Projekte, Dev-Server aus D:\Nexus etc. laufen weiter). Danach kurz
 ; warten, bis das Datei-Handle frei ist (max. 25 x 200 ms).
 ;
+; WICHTIG (Lehre aus v1.2.6): Der NSIS-Installer ist 32-bit und startet damit die 32-bit-
+; PowerShell. Dort liefert Get-Process fuer 64-bit-Prozesse KEINEN .Path (Zugriff auf
+; Module eines 64-bit-Prozesses verboten) -> der Pfadfilter traf nichts, nichts wurde
+; beendet. Deshalb Win32_Process (WMI/CIM): ExecutablePath ist bitness-unabhaengig lesbar,
+; Stop-Process -Id beendet auch 64-bit-Prozesse aus der 32-bit-Shell.
+;
 ; Folge fuer Claude Desktop: der nexus-MCP-Server ist bis zum Neustart von Claude Desktop
 ; getrennt – das war er nach einem Update ohnehin (alter Code im Speicher).
 ;
 ; NSIS-Schreibweise: Backtick-Strings erlauben " und ' innen; $$ = literales $ fuer
-; PowerShell-Variablen; $INSTDIR wird von NSIS eingesetzt.
+; PowerShell-Variablen; $INSTDIR wird von NSIS eingesetzt. Im PowerShell-Teil bewusst
+; KEINE doppelten Anfuehrungszeichen (die begrenzen -Command).
 
 !macro _NEXUS_KILL_NODE
   DetailPrint "Beende laufende Nexus-Node-Prozesse (MCP-Server, UI-Sidecar) ..."
-  nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$x='$INSTDIR\node.exe'; for($$i=0;$$i -lt 25;$$i++){ $$p=@(Get-Process node -ErrorAction SilentlyContinue | Where-Object { $$_.Path -ieq $$x }); if($$p.Count -eq 0){break}; $$p | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 200 }"`
+  nsExec::ExecToLog `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$x='$INSTDIR\node.exe'; for($$i=0;$$i -lt 25;$$i++){ $$p=@(Get-CimInstance Win32_Process | Where-Object { $$_.Name -ieq 'node.exe' -and $$_.ExecutablePath -ieq $$x }); if($$p.Count -eq 0){break}; $$p | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 200 }"`
   Pop $0
+  DetailPrint "Nexus-Node-Prozesse beendet (PowerShell-Exit $0)."
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL
