@@ -16,6 +16,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { buildIndexer, watchVault } from './indexer.js';
 import { makeTools, emptyOldTrash } from './tools.js';
@@ -163,11 +164,19 @@ const IDEM = { readOnlyHint: false, destructiveHint: false, idempotentHint: true
 const DEST = { readOnlyHint: false, destructiveHint: true,  idempotentHint: false, openWorldHint: false };
 const DESTI = { readOnlyHint: false, destructiveHint: true, idempotentHint: true,  openWorldHint: false }; // ueberschreibt, aber gleicher Inhalt = gleiches Ergebnis
 
+// Ausgabe-Schemas sind OFFEN: sie garantieren die genannten Felder, erlauben aber weitere.
+// Zod 4 setzt fuer z.object() im Output-Modus additionalProperties:false – Clients, die
+// structuredContent gegen das outputSchema pruefen (SDK-Client, Cowork/Agent-SDK via Ajv),
+// wuerden sonst jedes Zusatzfeld (samples, dryRun, retentionDays ...) als Fehler werten
+// und das Tool-Ergebnis verwerfen. Gilt fuer die Wurzel (in tool()) UND fuer verschachtelte
+// Objekte – deshalb unten ueberall offen({...}) statt z.object({...}) in output-Schemas.
+const offen = (shape) => { const o = z.object(shape); return typeof o.loose === 'function' ? o.loose() : o.passthrough(); };
+
 function tool(name, { description, input = {}, output, annotations, title }, fn) {
   server.registerTool(name, {
     title, description,
     inputSchema: input,
-    ...(output ? { outputSchema: output } : {}),
+    ...(output ? { outputSchema: offen(output) } : {}),
     annotations,
   }, run(fn));
 }
@@ -180,8 +189,8 @@ tool('list_vaults', {
     'In der App neu angelegte Vaults werden live erkannt.',
   output: {
     activeVault: z.string().nullable(),
-    vaults: z.array(z.object({ name: z.string(), path: z.string(), active: z.boolean(), notes: z.number() })),
-    server: z.object({ version: z.string(), gitCommit: z.string().nullable(), buildDate: z.string().nullable(), dataDir: z.string(), dev: z.boolean() }),
+    vaults: z.array(offen({ name: z.string(), path: z.string(), active: z.boolean(), notes: z.number() })),
+    server: offen({ version: z.string(), gitCommit: z.string().nullable(), buildDate: z.string().nullable(), dataDir: z.string(), dev: z.boolean() }),
   },
   annotations: RO,
 }, () => structured({ ...registry.list(), server: SERVER_INFO }));
@@ -198,7 +207,7 @@ tool('search', {
     vault:  vaultParam,
   },
   output: {
-    results: z.array(z.object({ path: z.string(), title: z.string().nullable().optional(), snippet: z.string().nullable().optional() })),
+    results: z.array(offen({ path: z.string(), title: z.string().nullable().optional(), snippet: z.string().nullable().optional() })),
     count: z.number(),
   },
   annotations: RO,
@@ -264,7 +273,7 @@ tool('list_notes', {
     offset: offsetParam,
     vault:  vaultParam,
   },
-  output: { results: z.array(z.object({ path: z.string(), title: z.string().nullable().optional() })), count: z.number() },
+  output: { results: z.array(offen({ path: z.string(), title: z.string().nullable().optional() })), count: z.number() },
   annotations: RO,
 }, ({ prefix, limit, offset, vault }) => plain(registry.get(vault).tools.listNotes({ prefix, limit, offset }), structured));
 
@@ -314,7 +323,7 @@ tool('list_trash', {
   title: 'Papierkorb anzeigen',
   description: 'Was liegt im Papierkorb des Vaults? Listet geloeschte Notizen/Dateien (Original-Pfad, Loeschzeitpunkt, trashPath fuer restore), neueste zuerst.',
   input: { limit: limitParam(200, 1000), vault: vaultParam },
-  output: { vault: z.string(), eintraege: z.array(z.object({ path: z.string(), trashPath: z.string(), geloescht: z.string(), bytes: z.number() })), gesamt: z.number() },
+  output: { vault: z.string(), eintraege: z.array(offen({ path: z.string(), trashPath: z.string(), geloescht: z.string(), bytes: z.number() })), gesamt: z.number() },
   annotations: RO,
 }, ({ limit, vault }) => {
   const e = registry.get(vault);
@@ -515,6 +524,30 @@ tool('vault_check', {
   const r = e.tools.vaultCheck({ dryRun: dry_run, regeln });
   return r.error ? fail(`[${e.vault.name}] ${r.error}`) : structured({ vault: e.vault.name, ...r });
 });
+
+// "$schema" aus den Tool-Schemas entfernen (Cowork-Fix, 2026-10-04).
+// Das SDK (bis mindestens 1.32) konvertiert Zod->JSON-Schema fest mit target draft-7 und
+// ohne Option; Zod 4 schreibt dabei "$schema": draft-07 in jedes input-/outputSchema.
+// MCP legt als Standard-Dialekt JSON Schema 2020-12 fest – Clients wie Cowork/Agent-SDK
+// pruefen outputSchemas mit Ajv 2020 und lehnen draft-07 ab ("unsupported dialect"):
+// ALLE Tools mit outputSchema waeren dort unbenutzbar. Ohne "$schema" gilt der Standard-
+// Dialekt, und die Schemas sind in beiden Dialekten identisch gueltig.
+// Der tools/list-Handler des SDK ist nur ueber _requestHandlers erreichbar (kein Hook,
+// keine Option) – daher der Griff ins Private; die Neu-Registrierung laeuft ueber die
+// oeffentliche setRequestHandler-API. Fehlt der Handler (SDK-Umbau), passiert nichts.
+const listToolsOrig = server.server._requestHandlers?.get('tools/list');
+if (typeof listToolsOrig === 'function') {
+  server.server.setRequestHandler(ListToolsRequestSchema, async (req, extra) => {
+    const r = await listToolsOrig(req, extra);
+    for (const t of r.tools ?? []) {
+      if (t.inputSchema) delete t.inputSchema.$schema;
+      if (t.outputSchema) delete t.outputSchema.$schema;
+    }
+    return r;
+  });
+} else {
+  console.error('[nexus] Warnung: tools/list-Handler nicht gefunden – "$schema" bleibt in den Tool-Schemas.');
+}
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
