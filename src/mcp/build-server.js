@@ -10,6 +10,9 @@
 //             registriert (z. B. "nur lesen" fuer den Remote-Zugriff). Standard: alles erlaubt.
 //   info      { name, version, gitCommit, buildDate, dataDir, dev } – Identitaet dieses Servers
 //             (initialize + list_vaults.server).
+//   onResult  optional: (name, args, result) => result – laeuft nach JEDEM Tool-Aufruf ueber das
+//             fertige Ergebnis (auch Fehler). Der HTTP-Einstieg begrenzt damit die Antwortgroesse
+//             und fuehrt sein Aufruf-Log; ohne Hook bleibt alles wie bisher.
 //   instructions  optional: eigener Hinweistext fuer initialize (Remote-Connector: Kurzfassung
 //             ohne Schreib-Tools). Standard: die lokale Fassung NEXUS_INSTRUCTIONS.
 //
@@ -117,7 +120,7 @@ const DESTI = { readOnlyHint: false, destructiveHint: true, idempotentHint: true
 // Objekte – deshalb unten ueberall offen({...}) statt z.object({...}) in output-Schemas.
 const offen = (shape) => { const o = z.object(shape); return typeof o.loose === 'function' ? o.loose() : o.passthrough(); };
 
-export function buildServer({ registry, policy = {}, info = {}, instructions = NEXUS_INSTRUCTIONS } = {}) {
+export function buildServer({ registry, policy = {}, info = {}, instructions = NEXUS_INSTRUCTIONS, onResult = null } = {}) {
   if (!registry || typeof registry.get !== 'function') throw new Error('buildServer: registry fehlt');
   const erlaubt = typeof policy?.allow === 'function' ? policy.allow : () => true;
   // Identitaet fuer list_vaults – Felder wie im outputSchema (version/dataDir Pflicht, Rest nullable).
@@ -138,12 +141,15 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
   function tool(name, { description, input = {}, output, annotations, title }, fn) {
     if (!erlaubt(name, { annotations })) return;
     registriert++;
+    const aufruf = run(fn);
     server.registerTool(name, {
       title, description,
       inputSchema: input,
       ...(output ? { outputSchema: offen(output) } : {}),
       annotations,
-    }, run(fn));
+    }, typeof onResult === 'function'
+      ? async (args, extra) => { const r = await aufruf(args, extra); return onResult(name, args ?? {}, r) ?? r; }
+      : aufruf);
   }
 
   // ── Lese-Tools ────────────────────────────────────────────────────────────────

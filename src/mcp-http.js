@@ -28,5 +28,8 @@ if (config.enabled) {
 const http = createHttpApp({ registry, info, config }).listen(config.port, config.bind, () => {
   log(`v${info.version ?? '?'} lauscht auf ${config.bind}:${http.address().port}`);
 });
+// Langsame/haengende Verbindungen nicht ewig halten (Tool-Aufrufe dauern Millisekunden).
+http.requestTimeout = 30_000;
+http.headersTimeout = 15_000;
 http.on('error', (e) => { log('Start abgebrochen – ' + e.message); process.exit(1); });
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { http.close(); try { registry?.close(); } catch {} process.exit(0); });

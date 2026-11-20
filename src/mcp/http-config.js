@@ -66,6 +66,15 @@ export function loadHttpConfig(env = {}) {
     // Freigegebene Vaults (Namen aus nexus.config.json). Standard: KEINER – ohne diese Variable
     // laeuft der Server, liefert aber aus keinem Vault etwas.
     config.allowedVaults = liste(env.NEXUS_MCP_ALLOWED_VAULTS);
+
+    // Haertung: erlaubte Host-Header (Standard: der Host der Ressourcen-URL) und erlaubte
+    // Origins (Standard: nur der eigene). Alles andere wird mit 403 abgewiesen.
+    const klein = (s) => liste(s).map(x => x.toLowerCase());
+    config.allowedHosts = klein(env.NEXUS_MCP_ALLOWED_HOSTS);
+    if (config.allowedHosts.length === 0 && resource) config.allowedHosts = [resource.u.host];
+    config.allowedOrigins = [...new Set([...(resource ? [resource.u.origin] : []), ...klein(env.NEXUS_MCP_ALLOWED_ORIGINS)])];
+    // Groessenlimit je Tool-Antwort in Bytes (serialisiertes Ergebnis inkl. Bilddaten).
+    config.maxResponseBytes = ganzzahl(env, 'NEXUS_MCP_MAX_RESPONSE_BYTES', 512 * 1024, 1024, 16 * 1024 * 1024, fehler);
     // Optional: Scopes, die im scp-Claim stehen muessen (Standard: keine Scope-Pflicht).
     config.requiredScopes = liste(String(env.NEXUS_MCP_REQUIRED_SCOPES ?? '').replace(/\s+/g, ','));
   }

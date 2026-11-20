@@ -37,12 +37,13 @@ function baueRegistry() {
   const vaults = [];
   for (const [name, datei, inhalt] of [
     ['wissen', 'Notiz.md', '# Notiz\n\nDer Connector findet das Wort Leuchtturm.\n\n## Abschnitt\n\nZweiter Teil.\n'],
+    ['wissen', 'Gross.md', '# Gross\n\n' + 'Murmeltier schlaeft lange. '.repeat(400) + '\n'],
     ['privat', 'Geheim.md', '# Geheim\n\nNur lokal: Zitronenfalter.\n'],
   ]) {
     const dir = join(scratch, name);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, datei), inhalt, 'utf8');
-    vaults.push({ name, path: dir });
+    if (!vaults.some(v => v.name === name)) vaults.push({ name, path: dir });
   }
   const cfgPath = join(scratch, 'nexus.config.json');
   writeFileSync(cfgPath, JSON.stringify({ activeVault: 'privat', vaults, ignore: ['.trash', '.nexus'] }), 'utf8');
@@ -68,7 +69,7 @@ function anfrage(port, { method = 'POST', path = '/mcp', headers = {}, body, tok
   return new Promise((resolve, reject) => {
     const daten = body === undefined ? null : (typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
     const h = { ...(daten !== null ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(daten) } : {}),
-      accept: 'application/json, text/event-stream', ...(token ? { authorization: 'Bearer ' + token } : {}), ...headers };
+      host: 'mcp.example.com', accept: 'application/json, text/event-stream', ...(token ? { authorization: 'Bearer ' + token } : {}), ...headers };
     const rq = http.request({ host: '127.0.0.1', port, method, path, headers: h }, (res) => {
       let text = '';
       res.setEncoding('utf8');
@@ -129,10 +130,15 @@ function token({ sub = SUB, iss = ISSUER, aud = [RESOURCE], typ = 'at+jwt', key 
 const GUT = await token();
 const wirft =(env) => { try { loadHttpConfig(env); return null; } catch (e) { return e.message; } };
 
+// Aufruf-Log der App landet hier statt auf stdout.
+const logZeilen = [];
+const baueApp = (config, reg = registry) => createHttpApp({ registry: reg, info, config, log: (z) => logZeilen.push(z) });
+let registry = null;
+
 const info = { name: 'nexus-test', version: '9.9.9', gitCommit: null, buildDate: null, dataDir: scratch, dev: true };
 
 try {
-  const registry = baueRegistry();
+  registry = baueRegistry();
 
   // ── 1. HTTP-Einstieg ───────────────────────────────────────────────────────
   console.log('1. HTTP-Einstieg');
@@ -141,7 +147,7 @@ try {
     ok('Standard: eingeschaltet, Port 3100, Bind nur Loopback', config.enabled === true && config.port === 3100 && config.bind === '127.0.0.1', JSON.stringify(config));
     ok('ungueltiger Port -> Konfigurationsfehler', /NEXUS_MCP_PORT/.test(wirft({ ...ENV, NEXUS_MCP_PORT: 'abc' }) ?? ''));
 
-    const port = await starte(createHttpApp({ registry, info, config }));
+    const port = await starte(baueApp(config));
     const vorher = registry.size();
     const init = await anfrage(port, { token: GUT, body: rpc('initialize', INIT) });
     ok('POST /mcp initialize -> 200 JSON', init.status === 200 && /application\/json/.test(init.headers['content-type'] ?? '') && init.json?.result?.serverInfo?.name === 'nexus-test',
@@ -166,7 +172,7 @@ try {
     // Kill-Switch
     for (const wert of ['0', 'false', 'off']) {
       const aus = loadHttpConfig({ NEXUS_MCP_ENABLED: wert });
-      const p = await starte(createHttpApp({ registry: null, info, config: aus }));
+      const p = await starte(baueApp(aus, null));
       const a = await anfrage(p, { token: GUT, body: rpc('initialize', INIT) });
       const b = await anfrage(p, { method: 'GET', path: '/.well-known/oauth-protected-resource' });
       ok(`Kill-Switch NEXUS_MCP_ENABLED=${wert}: alles 503, ohne Registry`, aus.enabled === false && a.status === 503 && b.status === 503, `${a.status} ${b.status}`);
@@ -188,7 +194,7 @@ try {
   console.log('2. Metadaten-Endpoint');
   {
     const config = loadHttpConfig(ENV);
-    const port = await starte(createHttpApp({ registry, info, config }));
+    const port = await starte(baueApp(config));
     for (const pfad of ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp']) {
       const m = await anfrage(port, { method: 'GET', path: pfad });
       ok(`GET ${pfad} -> 200, ohne Token`, m.status === 200 && /application\/json/.test(m.headers['content-type'] ?? ''), `${m.status} ${m.text}`);
@@ -216,7 +222,7 @@ try {
   console.log('3. Token-Pruefung');
   {
     const config = loadHttpConfig(ENV);
-    const port = await starte(createHttpApp({ registry, info, config }));
+    const port = await starte(baueApp(config));
     const init = (opt) => anfrage(port, { body: rpc('initialize', INIT), ...opt });
     const META = 'https://mcp.example.com/.well-known/oauth-protected-resource/mcp';
     const ist401 = (r) => r.status === 401 && (r.headers['www-authenticate'] ?? '').startsWith(`Bearer resource_metadata="${META}"`) && !r.json?.result;
@@ -273,7 +279,7 @@ try {
     ok('Allowlist nur aus Kommas/Leerzeichen zaehlt als leer', /NEXUS_MCP_ALLOWED_SUBS fehlt/.test(wirft({ ...ENV, NEXUS_MCP_ALLOWED_SUBS: ' , ,' }) ?? ''));
     ok('ohne NEXUS_MCP_JWKS_URI startet der Server nicht', /NEXUS_MCP_JWKS_URI fehlt/.test(wirft({ ...ENV, NEXUS_MCP_JWKS_URI: '' }) ?? ''));
     const mitScope = loadHttpConfig({ ...ENV, NEXUS_MCP_REQUIRED_SCOPES: 'nexus:read' });
-    const pScope = await starte(createHttpApp({ registry, info, config: mitScope }));
+    const pScope = await starte(baueApp(mitScope));
     const ohneScope = await anfrage(pScope, { token: GUT, body: rpc('initialize', INIT) });
     ok('Pflicht-Scope fehlt in scp -> 403 insufficient_scope', ohneScope.status === 403 && /error="insufficient_scope", scope="nexus:read"/.test(ohneScope.headers['www-authenticate'] ?? ''),
       `${ohneScope.status} ${ohneScope.headers['www-authenticate']}`);
@@ -286,7 +292,7 @@ try {
 
     // JWKS nicht erreichbar -> 503, nicht 401 (der Client soll sein Token behalten)
     const tot = loadHttpConfig({ ...ENV, NEXUS_MCP_JWKS_URI: 'http://127.0.0.1:1/jwks.json' });
-    const pTot = await starte(createHttpApp({ registry, info, config: tot }));
+    const pTot = await starte(baueApp(tot));
     const r503 = await anfrage(pTot, { token: GUT, body: rpc('initialize', INIT) });
     ok('JWKS nicht erreichbar -> 503 mit Retry-After', r503.status === 503 && r503.headers['retry-after'] !== undefined, `${r503.status} ${r503.text}`);
     const r401 = await anfrage(pTot, { body: rpc('initialize', INIT) });
@@ -311,7 +317,7 @@ try {
     ok('jedes lokale Tool OHNE readOnlyHint steht nicht auf der Liste', alle.filter(t => t.annotations?.readOnlyHint !== true).every(t => !LESEN.includes(t.name)));
 
     const config = loadHttpConfig({ ...ENV, NEXUS_MCP_ALLOWED_VAULTS: 'wissen' });
-    const port = await starte(createHttpApp({ registry, info, config }));
+    const port = await starte(baueApp(config));
     const ruf = (name, args = {}, p = port) => anfrage(p, { token: GUT, body: rpc('tools/call', { name, arguments: args }) });
     const text = (r) => (r.json?.result?.content ?? []).filter(x => x.type === 'text').map(x => x.text).join('\n');
     const abgelehnt = (r) => r.json?.error !== undefined || r.json?.result?.isError === true;
@@ -375,13 +381,116 @@ try {
     // Standard: kein Vault freigegeben.
     const zu = loadHttpConfig(ENV);
     ok('Standard: NEXUS_MCP_ALLOWED_VAULTS leer', zu.allowedVaults.length === 0);
-    const pZu = await starte(createHttpApp({ registry, info, config: zu }));
+    const pZu = await starte(baueApp(zu));
     const leer = await ruf('list_vaults', {}, pZu);
     ok('ohne Freigabe: list_vaults ist leer', leer.json?.result?.structuredContent?.vaults?.length === 0 && leer.json?.result?.structuredContent?.activeVault === null, leer.text);
     for (const v of [undefined, 'wissen', 'privat']) {
       const r = await ruf('search', { q: 'Leuchtturm', ...(v ? { vault: v } : {}) }, pZu);
       ok(`ohne Freigabe: search (vault=${v ?? 'Standard'}) -> Fehler`, r.json?.result?.isError === true && !r.text.includes('Notiz.md'), r.text);
     }
+  }
+
+  // ── 5. Haertung ────────────────────────────────────────────────────────────
+  console.log('5. Haertung');
+  {
+    const config = loadHttpConfig({ ...ENV, NEXUS_MCP_ALLOWED_VAULTS: 'wissen' });
+    const port = await starte(baueApp(config));
+    const init = (opt = {}) => anfrage(port, { token: GUT, body: rpc('initialize', INIT), ...opt });
+    const ruf = (name, args = {}, p = port) => anfrage(p, { token: GUT, body: rpc('tools/call', { name, arguments: args }) });
+    const text = (r) => (r.json?.result?.content ?? []).filter(x => x.type === 'text').map(x => x.text).join('\n');
+    const letzte = () => JSON.parse(logZeilen.at(-1));
+
+    // Host-Allowlist
+    ok('Standard-Host = Host der Ressourcen-URL', config.allowedHosts.join() === 'mcp.example.com', config.allowedHosts.join());
+    for (const host of ['boese.example.com', '127.0.0.1', 'mcp.example.com.boese.example.com', 'mcp.example.com:8443']) {
+      logZeilen.length = 0;
+      const r = await init({ headers: { host } });
+      ok(`falscher Host ${host} -> 403, trotz gueltigem Token`, r.status === 403 && !r.json?.result, `${r.status} ${r.text}`);
+      ok('  im Log als host_abgelehnt, ohne sub', logZeilen.length === 1 && letzte().ergebnis === 'host_abgelehnt' && letzte().sub === null, logZeilen.join());
+    }
+    const metaFremd = await anfrage(port, { method: 'GET', path: '/.well-known/oauth-protected-resource', headers: { host: 'boese.example.com' } });
+    ok('falscher Host gilt auch fuer die Metadaten', metaFremd.status === 403, `${metaFremd.status}`);
+    const gross = await init({ headers: { host: 'MCP.Example.COM' } });
+    ok('Host-Vergleich ohne Gross-/Kleinschreibung', gross.status === 200, `${gross.status}`);
+    const mehr = loadHttpConfig({ ...ENV, NEXUS_MCP_ALLOWED_HOSTS: 'Intern.example.com:3100, mcp.example.com' });
+    ok('NEXUS_MCP_ALLOWED_HOSTS ersetzt den Standard (kleingeschrieben)', mehr.allowedHosts.join() === 'intern.example.com:3100,mcp.example.com', mehr.allowedHosts.join());
+
+    // Origin
+    const fremderOrigin = await init({ headers: { origin: 'https://boese.example.com' } });
+    ok('fremder Origin -> 403', fremderOrigin.status === 403 && letzte().ergebnis === 'origin_abgelehnt', `${fremderOrigin.status}`);
+    const nullOrigin = await init({ headers: { origin: 'null' } });
+    ok('Origin "null" -> 403', nullOrigin.status === 403, `${nullOrigin.status}`);
+    const eigener = await init({ headers: { origin: 'https://mcp.example.com' } });
+    ok('eigener Origin -> 200', eigener.status === 200, `${eigener.status}`);
+    ok('ohne Origin (Server-zu-Server) -> 200', (await init()).status === 200);
+    const mitOrigin = loadHttpConfig({ ...ENV, NEXUS_MCP_ALLOWED_ORIGINS: 'https://werkzeug.example.com' });
+    const pO = await starte(baueApp(mitOrigin));
+    const zus = await anfrage(pO, { token: GUT, body: rpc('initialize', INIT), headers: { origin: 'https://werkzeug.example.com' } });
+    ok('NEXUS_MCP_ALLOWED_ORIGINS gibt weitere Origins frei', zus.status === 200, `${zus.status}`);
+
+    // Body-Limit 2 MB
+    const riesig = JSON.stringify(rpc('tools/call', { name: 'search', arguments: { q: 'x'.repeat(2 * 1024 * 1024 + 10) } }));
+    const zuGross = await anfrage(port, { token: GUT, body: riesig });
+    ok('Body ueber 2 MB -> 413', zuGross.status === 413 && letzte().ergebnis === 'body_zu_gross', `${zuGross.status} ${zuGross.text.slice(0, 100)}`);
+    const knapp = await anfrage(port, { token: GUT, body: JSON.stringify(rpc('tools/call', { name: 'search', arguments: { q: 'Leuchtturm', tag: 'y'.repeat(1024 * 1024) } })) });
+    ok('Body unter 2 MB wird angenommen', knapp.status === 200, `${knapp.status}`);
+    const stapel = await anfrage(port, { token: GUT, body: [rpc('tools/list'), rpc('tools/list')] });
+    ok('JSON-RPC-Batch -> 400', stapel.status === 400 && stapel.json?.error?.code === -32600, `${stapel.status} ${stapel.text}`);
+
+    // Groessenlimit je Tool-Antwort
+    ok('Standard-Antwortlimit 512 KiB', config.maxResponseBytes === 512 * 1024);
+    ok('Antwortlimit unter 1024 -> Konfigurationsfehler', /NEXUS_MCP_MAX_RESPONSE_BYTES/.test(wirft({ ...ENV, NEXUS_MCP_MAX_RESPONSE_BYTES: '10' }) ?? ''));
+    const eng = loadHttpConfig({ ...ENV, NEXUS_MCP_ALLOWED_VAULTS: 'wissen', NEXUS_MCP_MAX_RESPONSE_BYTES: '2048' });
+    const pEng = await starte(baueApp(eng));
+    const grosseNotiz = await ruf('read_note', { path: 'Gross.md' }, pEng);
+    ok('Antwort ueber dem Limit -> Tool-Fehler mit Ausweg statt Inhalt', grosseNotiz.json?.result?.isError === true && /Antwort zu gross \(\d+ Bytes, Limit 2048\)/.test(text(grosseNotiz)) && !grosseNotiz.text.includes('Murmeltier'),
+      grosseNotiz.text.slice(0, 300));
+    ok('  im Log als zu_gross', letzte().ergebnis === 'zu_gross' && letzte().tool === 'read_note' && letzte().pfad === 'Gross.md', logZeilen.at(-1));
+    const kleinerTeil = await ruf('read_note', { path: 'Gross.md', lines: 1 }, pEng);
+    ok('derselbe Aufruf enger gefasst (lines) geht durch', kleinerTeil.json?.result?.isError !== true && text(kleinerTeil).includes('# Gross'), kleinerTeil.text.slice(0, 200));
+    const normal = await ruf('read_note', { path: 'Gross.md' });
+    ok('mit Standardlimit kommt die Notiz ganz', text(normal).includes('Murmeltier'), normal.text.slice(0, 100));
+
+    // Aufruf-Log: eine Zeile je Aufruf, ohne Inhalte
+    logZeilen.length = 0;
+    await ruf('search', { q: 'Leuchtturm', vault: 'wissen' });
+    ok('eine Logzeile je Aufruf', logZeilen.length === 1, logZeilen.join('\n'));
+    let z = letzte();
+    ok('Logzeile: Zeit, sub, Tool, Ergebnis', !Number.isNaN(Date.parse(z.zeit)) && z.sub === SUB && z.methode === 'tools/call' && z.tool === 'search' && z.vault === 'wissen' && z.ergebnis === 'ok' && z.status === 200,
+      logZeilen.at(-1));
+    ok('Logzeile hat genau die vereinbarten Felder', Object.keys(z).sort().join() === 'ergebnis,methode,ms,pfad,status,sub,tool,vault,zeit', Object.keys(z).join());
+    ok('Suchbegriff steht NICHT im Log', !logZeilen.at(-1).includes('Leuchtturm'), logZeilen.at(-1));
+    await ruf('read_note', { path: 'Notiz.md' });
+    z = letzte();
+    ok('Logzeile nennt den Pfad, aber keinen Notiztext', z.pfad === 'Notiz.md' && z.tool === 'read_note' && !logZeilen.at(-1).includes('Connector findet'), logZeilen.at(-1));
+    await ruf('list_notes', { prefix: 'Uni/' });
+    ok('list_notes: prefix als Pfad', letzte().pfad === 'Uni/', logZeilen.at(-1));
+    await ruf('dataview', { source: 'LIST FROM "Geheimes Projekt"' });
+    ok('dataview: Abfrage steht nicht im Log', !logZeilen.at(-1).includes('Geheimes Projekt') && letzte().tool === 'dataview', logZeilen.at(-1));
+    await ruf('read_note', { path: 'gibt-es-nicht.md' });
+    ok('Tool-Fehler -> ergebnis tool_fehler', letzte().ergebnis === 'tool_fehler', logZeilen.at(-1));
+    await ruf('write_note', { path: 'Neu.md', content: 'streng geheimer Inhalt', create: true });
+    ok('nicht freigegebenes Tool -> tool_abgelehnt, Inhalt nicht im Log', letzte().ergebnis === 'tool_abgelehnt' && letzte().tool === 'write_note' && !logZeilen.at(-1).includes('geheimer'), logZeilen.at(-1));
+    await ruf('read_note', { path: 42 });
+    ok('ungueltige Argumente -> aufruf_fehler, Pfad nur als Text', letzte().ergebnis === 'aufruf_fehler' && letzte().pfad === null, logZeilen.at(-1));
+    await anfrage(port, { token: GUT, body: rpc('tools/list') });
+    ok('tools/list: Methode im Log, kein Tool', letzte().methode === 'tools/list' && letzte().tool === null && letzte().ergebnis === 'ok', logZeilen.at(-1));
+    await anfrage(port, { body: rpc('tools/list') });
+    ok('ohne Token: sub null, ergebnis kein_token', letzte().sub === null && letzte().ergebnis === 'kein_token' && letzte().status === 401, logZeilen.at(-1));
+    await anfrage(port, { token: await token({ exp: jetzt() - 60 }), body: rpc('tools/list') });
+    ok('abgelaufenes Token: Grund im Log, sub nicht (ungeprueft)', letzte().sub === null && letzte().ergebnis === 'ERR_JWT_EXPIRED:exp', logZeilen.at(-1));
+    await anfrage(port, { token: await token({ sub: SUB_FREMD }), body: rpc('tools/list') });
+    ok('nicht erlaubter sub: steht im Log (Signatur war echt)', letzte().sub === SUB_FREMD && letzte().ergebnis === 'sub_nicht_erlaubt' && letzte().status === 403, logZeilen.at(-1));
+    const davor = logZeilen.length;
+    await anfrage(port, { method: 'GET', path: '/.well-known/oauth-protected-resource' });
+    ok('Metadaten-Abruf erzeugt keine Logzeile', logZeilen.length === davor);
+    ok('keine Logzeile enthaelt ein Token', logZeilen.every(l => !l.includes('eyJ') && !/Bearer/i.test(l)));
+    ok('jede Logzeile ist einzeiliges JSON', logZeilen.every(l => !l.includes('\n') && typeof JSON.parse(l) === 'object'));
+    await ruf('read_note', { path: 'Zeile1\nZeile2.md' });
+    ok('Zeilenumbruch im Pfad bricht die Logzeile nicht', !logZeilen.at(-1).includes('\n') && letzte().pfad === 'Zeile1\nZeile2.md');
+
+    const kopf = await init();
+    ok('Antwort-Header: nosniff + no-store', kopf.headers['x-content-type-options'] === 'nosniff' && kopf.headers['cache-control'] === 'no-store', JSON.stringify(kopf.headers));
   }
 } catch (e) {
   console.error('  \x1b[31m✗ Testlauf-Fehler:\x1b[0m', e.stack || e.message);
