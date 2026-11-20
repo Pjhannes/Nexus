@@ -7,6 +7,7 @@ import { runVaultCheck, renderReport, REPORT_REL } from './vault-check.js';
 import { evaluateDataview } from './dataview.js';
 import { vortragNorm, ohneBom, ohneFrontmatter } from './norm.js';
 import { safeFull as safeFullIn, TRASH_DIR, makeIgnore } from './paths.js';
+import { parseFtsQuery, fallbackFtsQuery } from './fts-query.js';
 
 // R27b: Papierkorb-Eintraege aelter als `days` Tage entfernen (Stempel-Ordner
 // <vault>/.trash/<JJJJ-MM-TT_HHMMSS>). Wird beim Start von UI-Server und MCP-Server
@@ -157,6 +158,12 @@ export function makeTools(indexer, vaultPath) {
       WHERE notes_fts MATCH ?
       ORDER BY rank LIMIT ?
     `),
+    searchFtsOff: db.prepare(`
+      SELECT path, title, snippet(notes_fts, 2, '**', '**', '…', 15) AS snip
+      FROM notes_fts
+      WHERE notes_fts MATCH ?
+      ORDER BY rank LIMIT ? OFFSET ?
+    `),
     noteTags:    db.prepare('SELECT tags FROM notes WHERE path = ?'),
     listAll:     db.prepare('SELECT path, title, tags FROM notes LIMIT ?'),
     listAllOff:  db.prepare('SELECT path, title, tags FROM notes LIMIT ? OFFSET ?'),
@@ -182,27 +189,24 @@ export function makeTools(indexer, vaultPath) {
     dvNotes:     db.prepare('SELECT path, title, mtime, size, tags, frontmatter FROM notes'),
   };
 
-  // FTS5-Sanitizer: Sonderzeichen entfernen, je Wort Prefix-Wildcard anhaengen.
-  // Verhindert "SQL logic error" bei Eingaben mit FTS5-Sonderzeichen (+ - " ( ) * ^).
-  function buildFtsQuery(q) {
-    const clean = q.replace(/[^\p{L}\p{N}\s]/gu, ' ').trim().replace(/\s+/g, ' ');
-    if (!clean) return null;
-    return clean.split(' ').map(w => w + '*').join(' ');
-  }
-
+  // R29/N1: Die Suchanfrage wird von src/fts-query.js in einen FTS5-MATCH-Ausdruck uebersetzt
+  // (Phrasen, AND/OR/NOT, Klammern, Praefix nur explizit oder am letzten Wort). Kaputte Eingaben
+  // laufen dort schon als bereinigte Suche; lehnt SQLite einen geprueften Ausdruck trotzdem ab
+  // (fts5: syntax error), greift hier derselbe Rueckfall statt eines Fehlers.
   function search({ q, limit = 20, offset = 0, tag }) {
     let rows;
     if (q) {
-      const ftsQ = buildFtsQuery(q);
-      if (!ftsQ) return [];
+      const parsed = parseFtsQuery(q);
+      if (!parsed.match) return [];
       // offset fuer FTS5: LIMIT + OFFSET direkt in SQL
-      const stmt = offset > 0
-        ? db.prepare(`
-            SELECT path, title, snippet(notes_fts, 2, '**', '**', '…', 15) AS snip
-            FROM notes_fts WHERE notes_fts MATCH ? ORDER BY rank LIMIT ? OFFSET ?
-          `)
-        : stmts.searchFts;
-      rows = offset > 0 ? stmt.all(ftsQ, limit, offset) : stmt.all(ftsQ, limit);
+      const lauf = (m) => offset > 0 ? stmts.searchFtsOff.all(m, limit, offset) : stmts.searchFts.all(m, limit);
+      try { rows = lauf(parsed.match); }
+      catch (e) {
+        const fb = parsed.fallback ? null : fallbackFtsQuery(q);
+        if (!fb || !/fts5|syntax/i.test(e?.message || '')) throw e;
+        if (!fb.match) return [];
+        rows = lauf(fb.match);
+      }
       if (tag) {
         rows = rows.filter(r => {
           const nr = stmts.noteTags.get(r.path);

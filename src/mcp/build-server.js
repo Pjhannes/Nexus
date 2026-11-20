@@ -160,7 +160,9 @@ export function buildServer({ registry, policy = {}, info = {} } = {}) {
     description: 'Etwas im Vault finden, ohne Dateien zu lesen: Volltextsuche (FTS5) ueber alle Notizen, liefert Pfad, Titel und Treffer-Snippet. ' +
       'Ohne q: Notizliste (optional nach Tag gefiltert). Erster Schritt vor read_note.',
     input: {
-      q:      z.string().optional().describe('Suchbegriff(e); FTS5-Syntax erlaubt (AND/OR/NOT, "Phrase", praefix*)'),
+      q:      z.string().optional().describe('Suchbegriff(e). Mehrere Woerter = alle muessen vorkommen. Operatoren GROSS: AND, OR, NOT (a NOT b); ' +
+        '"exakte Phrase"; wortanfang*; Klammern. Das letzte Wort ohne Anfuehrungszeichen zaehlt als Wortanfang. ' +
+        'Kaputte Syntax fuehrt nicht zum Fehler, sondern zur einfachen Suche nach allen Woertern.'),
       limit:  limitParam(20),
       offset: offsetParam,
       tag:    z.string().optional().describe('Nach Tag filtern (optional)'),
