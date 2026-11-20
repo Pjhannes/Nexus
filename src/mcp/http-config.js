@@ -17,6 +17,21 @@ function ganzzahl(env, name, def, min, max, fehler) {
   return n;
 }
 
+// Lokale Namen duerfen ohne TLS laufen (Tests, Entwicklung) – alles andere nur https.
+const LOKAL = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+function url(env, name, fehler) {
+  const roh = String(env[name] ?? '').trim();
+  if (!roh) { fehler.push(`${name} fehlt`); return null; }
+  let u;
+  try { u = new URL(roh); } catch { fehler.push(`${name} ist keine URL`); return null; }
+  if (u.protocol !== 'https:' && !(u.protocol === 'http:' && LOKAL.has(u.hostname))) { fehler.push(`${name} muss https sein`); return null; }
+  if (u.search || u.hash || u.username || u.password) { fehler.push(`${name} darf weder Query, Fragment noch Zugangsdaten enthalten`); return null; }
+  return { roh, u };
+}
+
+export const WELL_KNOWN = '/.well-known/oauth-protected-resource';
+
 export function loadHttpConfig(env = {}) {
   const fehler = [];
   const config = {
@@ -26,6 +41,22 @@ export function loadHttpConfig(env = {}) {
     port: ganzzahl(env, 'NEXUS_MCP_PORT', 3100, 0, 65535, fehler),
     bind: String(env.NEXUS_MCP_BIND ?? '').trim() || '127.0.0.1',
   };
+  // Abgeschaltet braucht es keine weitere Konfiguration – der Kill-Switch wirkt immer.
+  if (config.enabled) {
+    // Ressourcen-URL: exakt die Adresse, die im Connector-Dialog eingetragen wird (inkl. Pfad).
+    // Sie ist zugleich der erwartete aud-Wert der Tokens.
+    const resource = url(env, 'NEXUS_MCP_RESOURCE_URL', fehler);
+    const issuer = url(env, 'NEXUS_MCP_ISSUER', fehler);
+    if (resource) {
+      config.resource = resource.roh;
+      // RFC 9728: Metadaten unter /.well-known/oauth-protected-resource, bei einer Ressource
+      // mit Pfad zusaetzlich mit diesem Pfad als Suffix. Beide Formen werden bedient.
+      const suffix = resource.u.pathname === '/' ? '' : resource.u.pathname.replace(/\/+$/, '');
+      config.metadataPaths = [...new Set([WELL_KNOWN, WELL_KNOWN + suffix])];
+      config.metadataUrl = resource.u.origin + WELL_KNOWN + suffix;
+    }
+    if (issuer) config.issuer = issuer.roh; // unveraendert: iss wird zeichengenau verglichen
+  }
   if (fehler.length) throw new Error('Konfiguration ungueltig: ' + fehler.join('; '));
   return Object.freeze(config);
 }

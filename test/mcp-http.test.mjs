@@ -78,6 +78,12 @@ let seq = 0;
 const rpc = (method, params = {}) => ({ jsonrpc: '2.0', id: ++seq, method, params });
 const INIT = { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'mcp-http-test', version: '0.0.0' } };
 
+// Basis-Umgebung fuer alle Tests – nur Platzhalter.
+const RESOURCE = 'https://mcp.example.com/mcp';
+const ISSUER = 'https://auth.example.com';
+const ENV = { NEXUS_MCP_RESOURCE_URL: RESOURCE, NEXUS_MCP_ISSUER: ISSUER };
+const wirft = (env) => { try { loadHttpConfig(env); return null; } catch (e) { return e.message; } };
+
 const info = { name: 'nexus-test', version: '9.9.9', gitCommit: null, buildDate: null, dataDir: scratch, dev: true };
 
 try {
@@ -86,11 +92,9 @@ try {
   // ── 1. HTTP-Einstieg ───────────────────────────────────────────────────────
   console.log('1. HTTP-Einstieg');
   {
-    const config = loadHttpConfig({});
+    const config = loadHttpConfig(ENV);
     ok('Standard: eingeschaltet, Port 3100, Bind nur Loopback', config.enabled === true && config.port === 3100 && config.bind === '127.0.0.1', JSON.stringify(config));
-    let wirft = false;
-    try { loadHttpConfig({ NEXUS_MCP_PORT: 'abc' }); } catch { wirft = true; }
-    ok('ungueltiger Port -> Konfigurationsfehler', wirft);
+    ok('ungueltiger Port -> Konfigurationsfehler', /NEXUS_MCP_PORT/.test(wirft({ ...ENV, NEXUS_MCP_PORT: 'abc' }) ?? ''));
 
     const port = await starte(createHttpApp({ registry, info, config }));
     const vorher = registry.size();
@@ -133,6 +137,34 @@ try {
     if (existsSync(join(ROOT, 'src-tauri', 'tauri.conf.json'))) quellen.push('src-tauri/tauri.conf.json');
     const verweise = quellen.filter(f => /mcp-http|http-app/.test(readFileSync(join(ROOT, f), 'utf8')));
     ok('UI-Server, stdio-Einstieg und Desktop-Shell verweisen nicht auf den HTTP-Einstieg', verweise.length === 0, verweise.join(','));
+  }
+
+  // ── 2. Protected-Resource-Metadaten ────────────────────────────────────────
+  console.log('2. Metadaten-Endpoint');
+  {
+    const config = loadHttpConfig(ENV);
+    const port = await starte(createHttpApp({ registry, info, config }));
+    for (const pfad of ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp']) {
+      const m = await anfrage(port, { method: 'GET', path: pfad });
+      ok(`GET ${pfad} -> 200, ohne Token`, m.status === 200 && /application\/json/.test(m.headers['content-type'] ?? ''), `${m.status} ${m.text}`);
+      ok('  resource = eingetragene URL inkl. Pfad', m.json?.resource === RESOURCE, m.text);
+      ok('  authorization_servers = [Issuer]', Array.isArray(m.json?.authorization_servers) && m.json.authorization_servers.join() === ISSUER, m.text);
+      ok('  bearer_methods_supported = ["header"]', m.json?.bearer_methods_supported?.join() === 'header', m.text);
+    }
+    const post = await anfrage(port, { method: 'POST', path: '/.well-known/oauth-protected-resource', body: {} });
+    ok('POST auf die Metadaten -> 405', post.status === 405, `${post.status}`);
+    const anders = await anfrage(port, { method: 'GET', path: '/.well-known/oauth-protected-resource/anders' });
+    ok('fremdes Suffix -> 404', anders.status === 404, `${anders.status}`);
+    ok('metadataUrl zeigt auf die Form mit Pfad-Suffix', config.metadataUrl === 'https://mcp.example.com/.well-known/oauth-protected-resource/mcp', config.metadataUrl);
+    const wurzel = loadHttpConfig({ ...ENV, NEXUS_MCP_RESOURCE_URL: 'https://mcp.example.com/' });
+    ok('Ressource ohne Pfad: nur die Grundform', wurzel.metadataPaths.join() === '/.well-known/oauth-protected-resource', wurzel.metadataPaths.join());
+
+    ok('fehlende Ressourcen-URL -> Start verweigert', /NEXUS_MCP_RESOURCE_URL fehlt/.test(wirft({ NEXUS_MCP_ISSUER: ISSUER }) ?? ''));
+    ok('fehlender Issuer -> Start verweigert', /NEXUS_MCP_ISSUER fehlt/.test(wirft({ NEXUS_MCP_RESOURCE_URL: RESOURCE }) ?? ''));
+    ok('http-Ressource (nicht lokal) -> Start verweigert', /muss https/.test(wirft({ ...ENV, NEXUS_MCP_RESOURCE_URL: 'http://mcp.example.com/mcp' }) ?? ''));
+    ok('Ressource mit Query -> Start verweigert', /Query/.test(wirft({ ...ENV, NEXUS_MCP_RESOURCE_URL: RESOURCE + '?x=1' }) ?? ''));
+    ok('http auf 127.0.0.1 ist erlaubt (lokale Tests)', wirft({ ...ENV, NEXUS_MCP_RESOURCE_URL: 'http://127.0.0.1:3100/mcp' }) === null);
+    ok('Kill-Switch braucht keine weitere Konfiguration', wirft({ NEXUS_MCP_ENABLED: '0' }) === null);
   }
 } catch (e) {
   console.error('  \x1b[31m✗ Testlauf-Fehler:\x1b[0m', e.stack || e.message);

@@ -32,6 +32,19 @@ export function createHttpApp({ registry, info = {}, config }) {
   // Bis die Lese-Policy steht, ist KEIN Tool freigegeben.
   const policy = { allow: () => false };
 
+  // OAuth Protected Resource Metadata (RFC 9728) – oeffentlich, sagt dem Client nur, WO er sich
+  // anmelden muss. Enthaelt nichts ausser der eigenen Adresse und der des Autorisierungsservers.
+  const metadaten = {
+    resource: config.resource,
+    authorization_servers: [config.issuer],
+    bearer_methods_supported: ['header'],
+  };
+  app.all(config.metadataPaths, (req, res) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') { res.set('Allow', 'GET'); return res.status(405).json({ error: 'method_not_allowed' }); }
+    res.set('Cache-Control', 'public, max-age=300');
+    return res.json(metadaten);
+  });
+
   // Nur POST: kein SSE-Stream (GET) und keine Sitzung, die man beenden koennte (DELETE).
   app.all('/mcp', (req, res, next) => {
     if (req.method === 'POST') return next();
