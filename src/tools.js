@@ -8,6 +8,7 @@ import { evaluateDataview } from './dataview.js';
 import { vortragNorm, ohneBom, ohneFrontmatter } from './norm.js';
 import { safeFull as safeFullIn, TRASH_DIR, makeIgnore } from './paths.js';
 import { parseFtsQuery, fallbackFtsQuery } from './fts-query.js';
+import { parseNote } from './parse.js';
 
 // R27b: Papierkorb-Eintraege aelter als `days` Tage entfernen (Stempel-Ordner
 // <vault>/.trash/<JJJJ-MM-TT_HHMMSS>). Wird beim Start von UI-Server und MCP-Server
@@ -46,6 +47,24 @@ import {
 // Zeilen (Prinzip: Information pro Token – ein "# Titel"-Abschnitt kann die ganze Notiz sein).
 // Darueber: truncated + sectionLines, der Aufrufer fordert mit lines=… gezielt nach.
 export const SECTION_MAX_LINES = 200;
+
+// read_note(section) mit unbekanntem Titel: die Fehlermeldung nennt die vorhandenen Ueberschriften,
+// damit der naechste Aufruf sitzt – aber hoechstens so viele. Hat die Notiz mehr, wird die Tiefe
+// reduziert (erst alle Ebenen, dann bis 5, 4, …), statt mitten in der Liste abzuschneiden.
+export const SECTION_LISTE_MAX = 60;
+export function ueberschriftenListe(hs, max = SECTION_LISTE_MAX) {
+  if (!hs.length) return { zeilen: [], hinweis: null };
+  const zeile = (h) => '#'.repeat(h.level) + ' ' + h.text;
+  for (let ebene = 6; ebene >= 1; ebene--) {
+    const sicht = hs.filter(h => h.level <= ebene);
+    if (!sicht.length || sicht.length > max) continue;
+    const rest = hs.length - sicht.length;
+    return { zeilen: sicht.map(zeile), hinweis: rest ? `nur bis Ebene ${ebene}, ${rest} tiefere nicht gezeigt – outline zeigt alle` : null };
+  }
+  const flach = Math.min(...hs.map(h => h.level));
+  const sicht = hs.filter(h => h.level === flach).slice(0, max);
+  return { zeilen: sicht.map(zeile), hinweis: `nur die ersten ${sicht.length} von ${hs.length} – outline zeigt alle` };
+}
 
 // R29/N12: Zeilenenden. Vault-Dateien haben unter Windows oft CRLF, Claude schickt "\n".
 // dateiEol:   Stil der Datei = die Mehrheit ihrer Zeilenumbrueche (ohne Umbruch: LF).
@@ -258,18 +277,22 @@ export function makeTools(indexer, vaultPath) {
     // (vorher: stur 30 Zeilen -> zu wenig, oder der Anfang des Folgeabschnitts hing dran).
     // `lines` begrenzt; ohne `lines` gilt SECTION_MAX_LINES. Wird gekappt, sagt es truncated
     // (+ sectionLines = volle Laenge), damit der Aufrufer gezielt nachfordern kann.
-    let sectionFound;
+    // Unbekannter Abschnitt = FEHLER mit der Liste der vorhandenen Ueberschriften. Vorher kam
+    // dann still die ganze Notiz – bei einem Tippfehler die teuerste aller Antworten.
     if (section) {
       const allLines = content.split('\n');
       const istUeberschrift = (h) => !!h && /^#{1,6}\s/.test(allLines[h.line - 1] ?? '') && allLines[h.line - 1].includes(h.text);
       let note = stmts.findNote.get(path);
-      let h = note ? findSection(note.id, section) : null;
+      // Nicht im Index (z. B. ignorierter Ordner): Ueberschriften direkt aus dem Inhalt –
+      // sonst liesse sich der Abschnitt auch mit dem richtigen Titel nie lesen.
+      const ueberschriften = () => note ? stmts.headings.all(note.id) : parseNote(content).headings;
+      let h = findSection(ueberschriften(), section);
       // Index hinkt der Datei hinterher (Aenderung am Nexus vorbei, Watcher noch nicht durch):
       // die gemerkte Zeile ist dann keine Ueberschrift mehr -> Datei neu indexieren, einmal neu suchen.
       if (note && /\.md$/i.test(fullPath) && (!h || !istUeberschrift(h))) {
         try { indexer.indexFile(fullPath); } catch { /* Index bleibt wie er ist */ }
         note = stmts.findNote.get(path);
-        h = note ? findSection(note.id, section) : null;
+        h = findSection(ueberschriften(), section);
         if (!istUeberschrift(h)) h = null;
       }
       if (h) {
@@ -285,13 +308,19 @@ export function makeTools(indexer, vaultPath) {
           truncated, sectionLines: total,
         };
       }
-      sectionFound = false;   // Verhalten wie bisher (Notiz ab Anfang), aber fuer den Aufrufer erkennbar
+      const hs = ueberschriften();
+      const { zeilen, hinweis } = ueberschriftenListe(hs);
+      return {
+        error: `Abschnitt "${section}" nicht gefunden in ${path}. ` + (zeilen.length
+          ? `Vorhandene Ueberschriften (${hs.length}${hinweis ? '; ' + hinweis : ''}):\n` + zeilen.join('\n')
+          : 'Die Notiz hat keine Ueberschriften – ohne section lesen (ggf. mit lines).'),
+      };
     }
     if (lines) {
       const allLines = content.split('\n');
-      return { path, content: allLines.slice(0, lines).join('\n'), truncated: allLines.length > lines, totalLines: allLines.length, ...(section ? { sectionFound } : {}) };
+      return { path, content: allLines.slice(0, lines).join('\n'), truncated: allLines.length > lines, totalLines: allLines.length };
     }
-    return { path, content, ...(section ? { sectionFound } : {}) };
+    return { path, content };
   }
 
   // Abschnitt ueber seinen Titel finden – EINE Regel fuer read_note und append_to_section:
@@ -299,11 +328,10 @@ export function makeTools(indexer, vaultPath) {
   // Vorher gewann per LIKE '%x%' der erste Teiltreffer: section "Setup" konnte "Vor-Setup" liefern.
   // Fuehrende "#" in der Angabe ("## Setup") werden ignoriert.
   // endIdx: Zeilenindex (0-basiert) der naechsten Ueberschrift gleicher/hoeherer Ebene, null = Dateiende.
-  function findSection(noteId, section) {
+  function findSection(hs, section) {
     const roh = String(section ?? '').replace(/^\s*#+\s*/, '');
     const such = roh.trim();
     if (!such) return null;
-    const hs = stmts.headings.all(noteId);
     const klein = such.toLowerCase(), rohKlein = roh.toLowerCase();
     const h = hs.find(x => x.text === such)
       ?? hs.find(x => x.text.toLowerCase() === klein)
@@ -643,7 +671,7 @@ export function makeTools(indexer, vaultPath) {
     const note = stmts.findNote.get(path);
     let insertAt = lines.length;
     if (note && section) {
-      const h = findSection(note.id, section);   // R29/N2: dieselbe Abschnitts-Regel wie read_note
+      const h = findSection(stmts.headings.all(note.id), section);   // R29/N2: dieselbe Abschnitts-Regel wie read_note
       if (h) insertAt = h.endIdx ?? lines.length;
     }
     // R29/N12: im Zeilenende-Stil der Datei einfuegen. Vorher kamen die neuen Zeilen mit nacktem

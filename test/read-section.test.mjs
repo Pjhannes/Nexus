@@ -1,7 +1,8 @@
 // test/read-section.test.mjs – R29/N2: read_note(section) liefert genau den Abschnitt.
 //
 //   A. tools.readNote: Ende = naechste Ueberschrift gleicher/hoeherer Ebene (nicht mehr stur 30 Zeilen),
-//      exakter Titel vor Teiltreffer, truncated + sectionLines, CRLF, veralteter Index
+//      exakter Titel vor Teiltreffer, truncated + sectionLines, CRLF, veralteter Index,
+//      unbekannter Abschnitt = Fehler mit der Liste der vorhandenen Ueberschriften
 //   B. tools.appendToSection nutzt dieselbe Abschnitts-Regel
 //   C. MCP read_note (buildServer, InMemoryTransport): Kuerzung/Nicht-gefunden stehen im Text
 // Alles im Temp-Scratch. Lauf: node test/read-section.test.mjs
@@ -11,7 +12,7 @@ import { tmpdir } from 'os';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildIndexer } from '../src/indexer.js';
-import { makeTools, SECTION_MAX_LINES } from '../src/tools.js';
+import { makeTools, SECTION_MAX_LINES, SECTION_LISTE_MAX, ueberschriftenListe } from '../src/tools.js';
 import { buildServer } from '../src/mcp/build-server.js';
 
 let pass = 0, fail = 0;
@@ -87,12 +88,42 @@ try {
   ok('lines kleiner als der Abschnitt: genau so viele Zeilen, truncated', zeilen(setup2).length === 2 && setup2.truncated === true && setup2.sectionLines === 11, setup2);
   ok('lines groesser als der Abschnitt: endet trotzdem am Abschnittsende', lies('Setup', 500).content === setup.content && lies('Setup', 500).truncated === false);
 
+  // Unbekannter Abschnitt: Fehler mit den vorhandenen Ueberschriften – NICHT die ganze Notiz
   const fehlt = lies('Gibt es nicht');
-  ok('unbekannter Abschnitt: ganze Notiz wie bisher, aber sectionFound=false', fehlt.sectionFound === false && fehlt.content === PLAN && !fehlt.error, Object.keys(fehlt));
-  const fehlt5 = lies('Gibt es nicht', 5);
-  ok('unbekannter Abschnitt + lines: Anfang der Notiz, truncated, sectionFound=false', fehlt5.sectionFound === false && zeilen(fehlt5).length === 5 && fehlt5.truncated === true && fehlt5.totalLines === PLAN.split('\n').length);
+  ok('unbekannter Abschnitt: Fehler statt Notiz-Inhalt', typeof fehlt.error === 'string' && !('content' in fehlt), Object.keys(fehlt));
+  ok('Fehler nennt Abschnitt und Notiz', fehlt.error.startsWith('Abschnitt "Gibt es nicht" nicht gefunden in Plan.md. Vorhandene Ueberschriften (11):\n'), fehlt.error.slice(0, 120));
+  const liste = fehlt.error.split('\n').slice(1);
+  ok('Fehler listet ALLE Ueberschriften mit Ebene, in Dateireihenfolge', liste.join('|') ===
+    '# Plan|## Vor-Setup|## Setup|### Details|#### Tiefer|## 🔒 12. Sicherheit|## 🔒 13. Betrieb|## Mittel|# Anhang|## Setup extra|## Lang', liste);
+  ok('Fehler enthaelt keinen Notiztext', !fehlt.error.includes('Langzeile') && !fehlt.error.includes('Intro.') && fehlt.error.length < 400, fehlt.error.length);
+  ok('jede gelistete Ueberschrift ist so direkt lesbar', liste.every(z => !lies(z).error && lies(z).section === z.replace(/^#+ /, '')), liste.filter(z => lies(z).error));
+  ok('unbekannter Abschnitt + lines: ebenfalls Fehler (lines rettet nichts)', typeof lies('Gibt es nicht', 5).error === 'string' && !('content' in lies('Gibt es nicht', 5)));
+  ok('leere/reine-#-Angabe zaehlt als nicht gefunden', typeof lies('##').error === 'string' && typeof lies('   ').error === 'string');
   const ohne = tools.readNote({ path: 'Plan.md' });
-  ok('ohne section: unveraendert die ganze Notiz, kein sectionFound', ohne.content === PLAN && !('sectionFound' in ohne));
+  ok('ohne section: unveraendert die ganze Notiz', ohne.content === PLAN && !ohne.error && Object.keys(ohne).join() === 'path,content');
+  const ohne5 = tools.readNote({ path: 'Plan.md', lines: 5 });
+  ok('lines ohne section: unveraendert der Anfang + truncated', zeilen(ohne5).length === 5 && ohne5.truncated === true && ohne5.totalLines === PLAN.split('\n').length);
+
+  writeFileSync(join(vaultDir, 'Flach.md'), 'Nur Text.\nKeine Ueberschrift.\n', 'utf8'); indexer.reindex();
+  const flach = lies('Irgendwas', undefined, 'Flach.md');
+  ok('Notiz ohne Ueberschriften: Fehler sagt das (und wie man sie liest)', flach.error === 'Abschnitt "Irgendwas" nicht gefunden in Flach.md. Die Notiz hat keine Ueberschriften – ohne section lesen (ggf. mit lines).', flach);
+
+  // Viele Ueberschriften: Liste wird in der Tiefe reduziert statt mittendrin abgeschnitten
+  const viele = [];
+  for (let k = 1; k <= 10; k++) { viele.push('# Kapitel ' + k, ''); for (let u = 1; u <= 9; u++) viele.push('## K' + k + ' Teil ' + u, '', 'Text.', ''); }
+  writeFileSync(join(vaultDir, 'Gross.md'), viele.join('\n'), 'utf8'); indexer.reindex();
+  const gross = lies('Gibt es nicht', undefined, 'Gross.md');
+  const grossListe = gross.error.split('\n').slice(1);
+  ok(`100 Ueberschriften: hoechstens ${SECTION_LISTE_MAX} gelistet, nur die obere Ebene`, grossListe.length === 10 && grossListe.every(z => /^# Kapitel \d+$/.test(z)), grossListe.length);
+  ok('100 Ueberschriften: Kopfzeile nennt Gesamtzahl und verweist auf outline', gross.error.includes('Vorhandene Ueberschriften (100; nur bis Ebene 1, 90 tiefere nicht gezeigt – outline zeigt alle):'), gross.error.slice(0, 200));
+  ok('ueberschriftenListe: genau am Deckel bleibt alles drin', ueberschriftenListe(Array.from({ length: SECTION_LISTE_MAX }, (_, k) => ({ level: 2, text: 'T' + k }))).zeilen.length === SECTION_LISTE_MAX);
+  const nurFlach = ueberschriftenListe(Array.from({ length: SECTION_LISTE_MAX + 15 }, (_, k) => ({ level: 2, text: 'T' + k })));
+  ok('ueberschriftenListe: zu viele auf einer Ebene -> die ersten, mit Hinweis', nurFlach.zeilen.length === SECTION_LISTE_MAX && /nur die ersten 60 von 75/.test(nurFlach.hinweis), nurFlach.hinweis);
+
+  // Notiz, die (noch) nicht im Index steht: Abschnitt direkt aus dem Inhalt
+  writeFileSync(join(vaultDir, 'Frisch.md'), '# Frisch\n\n## A\n\neins\n\n## B\n\nzwei\n', 'utf8');
+  ok('nicht indexierte Notiz: Abschnitt wird trotzdem gefunden', lies('B', undefined, 'Frisch.md').content === '## B\n\nzwei', lies('B', undefined, 'Frisch.md'));
+  ok('nicht indexierte Notiz: unbekannter Abschnitt listet ihre Ueberschriften', (lies('Xyz', undefined, 'Frisch.md').error || '').endsWith('(3):\n# Frisch\n## A\n## B'), lies('Xyz', undefined, 'Frisch.md'));
 
   const win = lies('Eins', undefined, 'Win.md');
   ok('CRLF-Datei: Abschnitt endet richtig, kein \\r am Ende', win.content === '## Eins\r\n\r\nerste Zeile\r\nzweite Zeile' && win.sectionLines === 4, JSON.stringify(win.content));
@@ -125,8 +156,11 @@ try {
     mLang.text.endsWith(`[gekuerzt: ${SECTION_MAX_LINES} von 302 Zeilen des Abschnitts "Lang" – mehr mit lines=302 oder ueber einen Unterabschnitt (outline).]`), mLang.text.slice(-200));
   const mLang302 = await mcp({ section: 'Lang', lines: 302 });
   ok('Nachfordern mit dem genannten lines liefert den ganzen Abschnitt ohne Hinweis', mLang302.text.endsWith('Langzeile 300'), mLang302.text.slice(-60));
-  const mFehlt = await mcp({ section: 'Gibt es nicht', lines: 3 });
-  ok('unbekannter Abschnitt: Hinweis steht VORNE', !mFehlt.err && mFehlt.text.startsWith('[Hinweis: Abschnitt "Gibt es nicht" nicht gefunden – die ersten 3 von '), mFehlt.text.slice(0, 120));
+  const mFehlt = await mcp({ section: 'Gibt es nicht' });
+  ok('unbekannter Abschnitt: isError mit Ueberschriftenliste, kein Notiztext', mFehlt.err && mFehlt.text.startsWith('Abschnitt "Gibt es nicht" nicht gefunden in Plan.md. Vorhandene Ueberschriften (') &&
+    mFehlt.text.includes('\n## Vor-Setup\n') && !mFehlt.text.includes('Das kommt VOR dem Setup') && !mFehlt.text.includes('Langzeile'), mFehlt.text.slice(0, 200));
+  const mKorrigiert = await mcp({ section: mFehlt.text.split('\n')[2] });
+  ok('eine Zeile aus der Fehlerliste fuehrt direkt zum Abschnitt', !mKorrigiert.err && mKorrigiert.text.startsWith('## Vor-Setup'), mKorrigiert.text.slice(0, 60));
   const mZeilen = await mcp({ lines: 4 });
   ok('lines ohne section: Kuerzung wird gemeldet', mZeilen.text.startsWith('---\ntitle: Plan\n---\n# Plan\n\n[gekuerzt: 4 von '), mZeilen.text.slice(0, 120));
   const mGanz = await mcp({});

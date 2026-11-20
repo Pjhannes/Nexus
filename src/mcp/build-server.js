@@ -190,7 +190,7 @@ export function buildServer({ registry, policy = {}, info = {} } = {}) {
       'Bevorzugt abschnittsweise (maximale Information pro Token).',
     input: {
       path:    z.string().describe('Relativer Pfad zur Notiz im Vault'),
-      section: z.string().optional().describe('Abschnittstitel (optional) – liefert diesen Abschnitt bis zur naechsten Ueberschrift gleicher oder hoeherer Ebene (Unterabschnitte inklusive). Exakter Titel gewinnt vor Teiltreffer'),
+      section: z.string().optional().describe('Abschnittstitel (optional) – liefert diesen Abschnitt bis zur naechsten Ueberschrift gleicher oder hoeherer Ebene (Unterabschnitte inklusive). Exakter Titel gewinnt vor Teiltreffer. Unbekannter Titel = Fehler mit der Liste der vorhandenen Ueberschriften'),
       lines:   z.number().int().min(1).max(2000).optional().describe(`Zeilenlimit (optional, 1..2000). Ohne Angabe: ganze Notiz bzw. hoechstens ${SECTION_MAX_LINES} Zeilen eines Abschnitts; Kuerzungen werden am Ende gemeldet`),
       vault:   vaultParam,
     },
@@ -198,10 +198,8 @@ export function buildServer({ registry, policy = {}, info = {} } = {}) {
   }, ({ path, section, lines, vault }) => {
     const r = registry.get(vault).tools.readNote({ path, section, lines });
     if (r.error) return fail(r.error);
-    // R29/N2: Kuerzung und "Abschnitt nicht gefunden" stehen im Text – read_note liefert nur Text,
-    // ein Flag im Ergebnisobjekt saehe der Aufrufer nie.
-    if (section && r.sectionFound === false)
-      return text(`[Hinweis: Abschnitt "${section}" nicht gefunden – ${r.truncated ? `die ersten ${lines} von ${r.totalLines} Zeilen` : 'die ganze Notiz'} geliefert. Ueberschriften zeigt outline.]\n\n${r.content}`);
+    // R29/N2: Eine Kuerzung steht im Text – read_note liefert nur Text, ein Flag im Ergebnisobjekt
+    // saehe der Aufrufer nie. (Unbekannter Abschnitt ist ein Fehler: r.error mit Ueberschriftenliste.)
     if (r.truncated && r.sectionLines)
       return text(`${r.content}\n\n[gekuerzt: ${lines || SECTION_MAX_LINES} von ${r.sectionLines} Zeilen des Abschnitts "${r.section}" – mehr mit lines=${Math.min(r.sectionLines, 2000)} oder ueber einen Unterabschnitt (outline).]`);
     if (r.truncated)
