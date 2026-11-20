@@ -123,7 +123,7 @@ try {
   tools.appendToSection({ path: 'Alt.md', section: 'Eins', text: 'T' });
   ok('LF-Datei: mitten einfuegen byte-gleich zum bisherigen Verhalten', platte('Alt.md') === mitte, platte('Alt.md'));
   lege('Alt2.md', '\n');
-  tools.appendToSection({ path: 'Alt2.md', section: 'Gibt es nicht', text: 'T' });
+  tools.appendToSection({ path: 'Alt2.md', section: 'Drei', text: 'T' });   // letzter Abschnitt = Dateiende
   ok('LF-Datei: am Ende anhaengen byte-gleich zum bisherigen Verhalten', platte('Alt2.md') === [...BASIS.join('\n').split('\n'), '', 'T'].join('\n'), platte('Alt2.md').slice(-20));
 
   console.log('\n── D. MCP ──');

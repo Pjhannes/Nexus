@@ -291,20 +291,7 @@ export function makeTools(indexer, vaultPath) {
     // dann still die ganze Notiz – bei einem Tippfehler die teuerste aller Antworten.
     if (section) {
       const allLines = content.split('\n');
-      const istUeberschrift = (h) => !!h && /^#{1,6}\s/.test(allLines[h.line - 1] ?? '') && allLines[h.line - 1].includes(h.text);
-      let note = stmts.findNote.get(path);
-      // Nicht im Index (z. B. ignorierter Ordner): Ueberschriften direkt aus dem Inhalt –
-      // sonst liesse sich der Abschnitt auch mit dem richtigen Titel nie lesen.
-      const ueberschriften = () => note ? stmts.headings.all(note.id) : parseNote(content).headings;
-      let h = findSection(ueberschriften(), section);
-      // Index hinkt der Datei hinterher (Aenderung am Nexus vorbei, Watcher noch nicht durch):
-      // die gemerkte Zeile ist dann keine Ueberschrift mehr -> Datei neu indexieren, einmal neu suchen.
-      if (note && /\.md$/i.test(fullPath) && (!h || !istUeberschrift(h))) {
-        try { indexer.indexFile(fullPath); } catch { /* Index bleibt wie er ist */ }
-        note = stmts.findNote.get(path);
-        h = findSection(ueberschriften(), section);
-        if (!istUeberschrift(h)) h = null;
-      }
+      const { h, hs } = resolveSection(path, content, section);
       if (h) {
         const start = h.line - 1;
         let end = h.endIdx ?? allLines.length;
@@ -318,19 +305,49 @@ export function makeTools(indexer, vaultPath) {
           truncated, sectionLines: total,
         };
       }
-      const hs = ueberschriften();
-      const { zeilen, hinweis } = ueberschriftenListe(hs);
-      return {
-        error: `Abschnitt "${section}" nicht gefunden in ${path}. ` + (zeilen.length
-          ? `Vorhandene Ueberschriften (${hs.length}${hinweis ? '; ' + hinweis : ''}):\n` + zeilen.join('\n')
-          : 'Die Notiz hat keine Ueberschriften – ohne section lesen (ggf. mit lines).'),
-      };
+      return { error: abschnittFehlt(path, section, hs, { ohne: 'Die Notiz hat keine Ueberschriften – ohne section lesen (ggf. mit lines).' }) };
     }
     if (lines) {
       const allLines = content.split('\n');
       return { path, content: allLines.slice(0, lines).join('\n'), truncated: allLines.length > lines, totalLines: allLines.length };
     }
     return { path, content };
+  }
+
+  // Abschnitt einer Notiz aufloesen – gemeinsam fuer read_note und append_to_section.
+  // Liefert { h } (gefunden) oder { h: null, hs } (nicht gefunden; hs = die vorhandenen
+  // Ueberschriften fuer die Fehlermeldung).
+  function resolveSection(path, content, section) {
+    const fullPath = safeFull(path);
+    const allLines = content.split('\n');
+    const istUeberschrift = (h) => !!h && /^#{1,6}\s/.test(allLines[h.line - 1] ?? '') && allLines[h.line - 1].includes(h.text);
+    let note = stmts.findNote.get(path);
+    // Nicht im Index (z. B. ignorierter Ordner): Ueberschriften direkt aus dem Inhalt –
+    // sonst liesse sich der Abschnitt auch mit dem richtigen Titel nie ansprechen.
+    const ueberschriften = () => note ? stmts.headings.all(note.id) : parseNote(content).headings;
+    let h = findSection(ueberschriften(), section);
+    // Index hinkt der Datei hinterher (Aenderung am Nexus vorbei, Watcher noch nicht durch):
+    // die gemerkte Zeile ist dann keine Ueberschrift mehr -> Datei neu indexieren, einmal neu suchen.
+    // Fuer append_to_section ist das mehr als Kosmetik: die Zeile bestimmt, WO eingefuegt wird.
+    if (note && fullPath && /\.md$/i.test(fullPath) && (!h || !istUeberschrift(h))) {
+      try { indexer.indexFile(fullPath); } catch { /* Index bleibt wie er ist */ }
+      note = stmts.findNote.get(path);
+      h = findSection(ueberschriften(), section);
+      if (!istUeberschrift(h)) h = null;
+    }
+    return h ? { h } : { h: null, hs: ueberschriften() };
+  }
+
+  // Fehlermeldung "Abschnitt nicht gefunden" mit der Liste der vorhandenen Ueberschriften
+  // (jede Zeile ist so wieder als section verwendbar). zusatz: Einschub nach dem Kopf,
+  // ohne: Satz fuer Notizen ganz ohne Ueberschriften.
+  function abschnittFehlt(path, section, hs, { zusatz = '', ohne }) {
+    const leer = !String(section ?? '').replace(/^\s*#+\s*/, '').trim();
+    const kopf = (leer ? `Kein Abschnitt angegeben fuer ${path}` : `Abschnitt "${section}" nicht gefunden in ${path}`) + zusatz + '. ';
+    const { zeilen, hinweis } = ueberschriftenListe(hs);
+    return kopf + (zeilen.length
+      ? `Vorhandene Ueberschriften (${hs.length}${hinweis ? '; ' + hinweis : ''}):\n` + zeilen.join('\n')
+      : ohne);
   }
 
   // Abschnitt ueber seinen Titel finden – EINE Regel fuer read_note und append_to_section:
@@ -678,12 +695,16 @@ export function makeTools(indexer, vaultPath) {
     if (error) return { error };
     const originalBytes = Buffer.byteLength(content, 'utf8');
     const lines = content.split('\n');
-    const note = stmts.findNote.get(path);
-    let insertAt = lines.length;
-    if (note && section) {
-      const h = findSection(stmts.headings.all(note.id), section);   // R29/N2: dieselbe Abschnitts-Regel wie read_note
-      if (h) insertAt = h.endIdx ?? lines.length;
-    }
+    // Dieselbe Abschnitts-Aufloesung wie read_note (R29/N2). Unbekannter oder leerer Abschnitt =
+    // FEHLER mit der Liste der vorhandenen Ueberschriften, es wird NICHTS geschrieben. Vorher
+    // landete der Text dann still am Dateiende – ein Tippfehler im Titel (oder eine umbenannte
+    // Ueberschrift) legte Eintraege unbemerkt an der falschen Stelle ab.
+    const { h, hs } = resolveSection(path, content, section);
+    if (!h) return { error: abschnittFehlt(path, section, hs, {
+      zusatz: ' – nichts geschrieben',
+      ohne: 'Die Notiz hat keine Ueberschriften – Text mit patch einfuegen oder die Notiz mit write_note neu schreiben.',
+    }) };
+    const insertAt = h.endIdx ?? lines.length;
     // R29/N12: im Zeilenende-Stil der Datei einfuegen. Vorher kamen die neuen Zeilen mit nacktem
     // "\n" in eine CRLF-Datei -> gemischte Zeilenenden. Ueber Offsets statt split/join, damit
     // jedes andere Byte der Datei bleibt, wie es ist (LF-Dateien: Ergebnis wie bisher).

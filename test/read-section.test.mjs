@@ -3,7 +3,7 @@
 //   A. tools.readNote: Ende = naechste Ueberschrift gleicher/hoeherer Ebene (nicht mehr stur 30 Zeilen),
 //      exakter Titel vor Teiltreffer, truncated + sectionLines, CRLF, veralteter Index,
 //      unbekannter Abschnitt = Fehler mit der Liste der vorhandenen Ueberschriften
-//   B. tools.appendToSection nutzt dieselbe Abschnitts-Regel
+//   B. tools.appendToSection nutzt dieselbe Abschnitts-Regel; unbekannter Abschnitt = Fehler, nichts geschrieben
 //   C. MCP read_note (buildServer, InMemoryTransport): Kuerzung/Nicht-gefunden stehen im Text
 // Alles im Temp-Scratch. Lauf: node test/read-section.test.mjs
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'fs';
@@ -141,6 +141,32 @@ try {
   ok('append "Setup" landet im Abschnitt Setup (nicht im Teiltreffer "Vor-Setup")', ap.ok === true && nachSetup.content.endsWith('ANGEHAENGT') && !tools.readNote({ path: 'Plan.md', section: 'Vor-Setup' }).content.includes('ANGEHAENGT'), nachSetup.content);
   ok('append steht am Abschnittsende, direkt vor der naechsten Ueberschrift gleicher Ebene', nachher.includes('ganz tief.\n\n\nANGEHAENGT\n## 🔒 12. Sicherheit'), nachher.slice(nachher.indexOf('ganz tief'), nachher.indexOf('ganz tief') + 60));
 
+  // Unbekannter Abschnitt: Fehler mit Ueberschriftenliste, die Datei bleibt Byte fuer Byte gleich
+  const vorAppend = readFileSync(join(vaultDir, 'Plan.md'), 'utf8');
+  const apFehlt = tools.appendToSection({ path: 'Plan.md', section: 'Gibt es nicht', text: 'DARF NICHT REIN' });
+  ok('append, unbekannter Abschnitt: Fehler statt ok', typeof apFehlt.error === 'string' && apFehlt.ok !== true, apFehlt);
+  ok('append, unbekannter Abschnitt: nichts geschrieben (vorher: still ans Dateiende)', readFileSync(join(vaultDir, 'Plan.md'), 'utf8') === vorAppend);
+  ok('append-Fehler nennt Abschnitt, Notiz und "nichts geschrieben"', apFehlt.error.startsWith('Abschnitt "Gibt es nicht" nicht gefunden in Plan.md – nichts geschrieben. Vorhandene Ueberschriften (11):\n'), apFehlt.error.slice(0, 140));
+  const apListe = apFehlt.error.split('\n').slice(1);
+  ok('append-Fehler listet dieselben Ueberschriften wie read_note', apListe.join('|') === tools.readNote({ path: 'Plan.md', section: 'Gibt es nicht' }).error.split('\n').slice(1).join('|') && apListe.includes('## Setup extra'), apListe);
+  const apKorrigiert = tools.appendToSection({ path: 'Plan.md', section: apListe[apListe.indexOf('## Setup extra')], text: 'JETZT RICHTIG' });
+  ok('eine Zeile aus der Fehlerliste fuehrt direkt zum Ziel', apKorrigiert.ok === true && tools.readNote({ path: 'Plan.md', section: 'Setup extra' }).content.endsWith('JETZT RICHTIG'));
+  for (const leer of ['', '   ', '##', undefined]) {
+    const r = tools.appendToSection({ path: 'Plan.md', section: leer, text: 'DARF NICHT REIN' });
+    ok(`append, leere section (${JSON.stringify(leer)}): Fehler "Kein Abschnitt angegeben", nichts geschrieben`, (r.error || '').startsWith('Kein Abschnitt angegeben fuer Plan.md – nichts geschrieben. Vorhandene Ueberschriften (11):') && !readFileSync(join(vaultDir, 'Plan.md'), 'utf8').includes('DARF NICHT REIN'), r);
+  }
+  const apFlach = tools.appendToSection({ path: 'Flach.md', section: 'Irgendwas', text: 'DARF NICHT REIN' });
+  ok('append, Notiz ohne Ueberschriften: Fehler nennt den Ausweg (patch/write_note)', apFlach.error === 'Abschnitt "Irgendwas" nicht gefunden in Flach.md – nichts geschrieben. Die Notiz hat keine Ueberschriften – Text mit patch einfuegen oder die Notiz mit write_note neu schreiben.' && readFileSync(join(vaultDir, 'Flach.md'), 'utf8') === 'Nur Text.\nKeine Ueberschrift.\n', apFlach);
+  const apGross = tools.appendToSection({ path: 'Gross.md', section: 'Gibt es nicht', text: 'x' });
+  ok('append, viele Ueberschriften: Liste wie bei read_note in der Tiefe reduziert', apGross.error.includes('(100; nur bis Ebene 1, 90 tiefere nicht gezeigt – outline zeigt alle):') && apGross.error.split('\n').length === 11, apGross.error.slice(0, 160));
+  ok('append, Datei nicht lesbar: weiterhin der Lese-Fehler', tools.appendToSection({ path: 'Fehlt.md', section: 'A', text: 'x' }).error === 'Datei nicht lesbar: Fehlt.md');
+
+  // Veralteter Index: die Einfuegestelle kommt aus der Zeilennummer – sie muss zur Datei passen
+  writeFileSync(join(vaultDir, 'Alt.md'), '# Alt\n\n## A\n\na\n\n## B\n\nb\n', 'utf8'); indexer.reindex();
+  writeFileSync(join(vaultDir, 'Alt.md'), '# Alt\n\nneu 1\nneu 2\nneu 3\nneu 4\n\n## A\n\na\n\n## B\n\nb\n', 'utf8');   // am Index vorbei
+  const apAlt = tools.appendToSection({ path: 'Alt.md', section: 'A', text: 'ZU A' });
+  ok('append, veralteter Index: Text landet am Ende von A (nicht mitten im Text)', apAlt.ok === true && readFileSync(join(vaultDir, 'Alt.md'), 'utf8') === '# Alt\n\nneu 1\nneu 2\nneu 3\nneu 4\n\n## A\n\na\n\n\nZU A\n## B\n\nb\n', readFileSync(join(vaultDir, 'Alt.md'), 'utf8'));
+
   console.log('\n── C. MCP read_note ──');
   const registry = { get: () => ({ vault: { name: 'vault', path: vaultDir }, tools }), list: () => ({ activeVault: 'vault', vaults: [] }), config: () => ({}) };
   const [c, s] = InMemoryTransport.createLinkedPair();
@@ -161,6 +187,13 @@ try {
     mFehlt.text.includes('\n## Vor-Setup\n') && !mFehlt.text.includes('Das kommt VOR dem Setup') && !mFehlt.text.includes('Langzeile'), mFehlt.text.slice(0, 200));
   const mKorrigiert = await mcp({ section: mFehlt.text.split('\n')[2] });
   ok('eine Zeile aus der Fehlerliste fuehrt direkt zum Abschnitt', !mKorrigiert.err && mKorrigiert.text.startsWith('## Vor-Setup'), mKorrigiert.text.slice(0, 60));
+  const vorMcp = readFileSync(join(vaultDir, 'Plan.md'), 'utf8');
+  const mApp = await client.callTool({ name: 'append_to_section', arguments: { path: 'Plan.md', section: 'Gibt es nicht', text: 'DARF NICHT REIN' } });
+  ok('MCP append_to_section, unbekannter Abschnitt: isError mit Vault-Praefix + Ueberschriftenliste, nichts geschrieben', mApp.isError === true &&
+    mApp.content[0].text.startsWith('[vault] Abschnitt "Gibt es nicht" nicht gefunden in Plan.md – nichts geschrieben. Vorhandene Ueberschriften (11):\n# Plan\n## Vor-Setup\n') &&
+    readFileSync(join(vaultDir, 'Plan.md'), 'utf8') === vorMcp, mApp.content?.[0]?.text?.slice(0, 200));
+  const mAppOk = await client.callTool({ name: 'append_to_section', arguments: { path: 'Plan.md', section: '## 🔒 13. Betrieb', text: 'per MCP' } });
+  ok('MCP append_to_section, Titel aus der Liste: ok', mAppOk.isError !== true && tools.readNote({ path: 'Plan.md', section: '🔒 13. Betrieb' }).content.endsWith('per MCP'), mAppOk.content?.[0]?.text);
   const mZeilen = await mcp({ lines: 4 });
   ok('lines ohne section: Kuerzung wird gemeldet', mZeilen.text.startsWith('---\ntitle: Plan\n---\n# Plan\n\n[gekuerzt: 4 von '), mZeilen.text.slice(0, 120));
   const mGanz = await mcp({});

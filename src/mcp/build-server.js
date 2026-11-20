@@ -339,7 +339,7 @@ export function buildServer({ registry, policy = {}, info = {} } = {}) {
     description: 'Text an das Ende eines Abschnitts (Ueberschrift) einer Notiz anhaengen – z.B. eine neue Erkenntnis, einen Log-Eintrag. Nichts wird ueberschrieben.',
     input: {
       path:    z.string().describe('Relativer Pfad der Notiz'),
-      section: z.string().describe('Ueberschrift des Abschnitts'),
+      section: z.string().describe('Ueberschrift des Abschnitts (exakter Titel gewinnt vor Teiltreffer). Unbekannter Titel = Fehler mit der Liste der vorhandenen Ueberschriften, es wird nichts geschrieben'),
       text:    z.string().describe('Anzuhaengender Text'),
       vault:   vaultParam,
     },
