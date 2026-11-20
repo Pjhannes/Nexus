@@ -2,7 +2,14 @@
 //
 // Alles im selben Prozess: Scratch-Vault + Registry, die Express-App auf einem freien
 // Loopback-Port, rohe HTTP-Anfragen ueber node:http (damit auch der Host-Header frei setzbar ist).
-// In Tests und Doku nur example.com – keine echten Domains/IDs.
+// Tokens: lokal erzeugtes RSA-Schluesselpaar + lokale JWKS auf einem Loopback-Port.
+// In Tests und Doku nur example.com – keine echten Domains/IDs (Abschnitt 6c prueft das).
+//
+// Wo die Pflichtfaelle stehen:
+//   ohne Token, falsches aud, falscher iss, abgelaufen, falsche Signatur, sub nicht erlaubt -> 3
+//   falscher Host -> 5 · GET -> 405 -> 1 · Metadaten-Endpoint -> 2
+//   erfolgreicher tools/list und search -> 4 (roh), 6a (SDK-Client), 6b (echter Prozess)
+//   kein Schreib-Tool sichtbar oder aufrufbar -> 4
 // Lauf: node test/mcp-http.test.mjs
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
@@ -13,6 +20,8 @@ import { createHmac, randomUUID } from 'crypto';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { spawn } from 'child_process';
 import { buildServer } from '../src/mcp/build-server.js';
 import { REMOTE_READ_TOOLS } from '../src/mcp/remote-policy.js';
 import { createHttpApp } from '../src/mcp/http-app.js';
@@ -491,6 +500,121 @@ try {
 
     const kopf = await init();
     ok('Antwort-Header: nosniff + no-store', kopf.headers['x-content-type-options'] === 'nosniff' && kopf.headers['cache-control'] === 'no-store', JSON.stringify(kopf.headers));
+  }
+
+  // ── 6. Ende-zu-Ende: echter MCP-Client, echter Prozess ─────────────────────
+  console.log('6. Ende-zu-Ende');
+  {
+    // 6a. SDK-Client ueber Streamable HTTP (so spricht auch ein Connector): initialize,
+    //     notifications/initialized, tools/list, tools/call – alles mit Bearer-Token.
+    const srv = http.createServer();
+    await new Promise(r => srv.listen(0, '127.0.0.1', r));
+    aufraeumen.push(() => new Promise(r => { srv.closeAllConnections?.(); srv.close(r); }));
+    const p = srv.address().port;
+    srv.on('request', baueApp(loadHttpConfig({ ...ENV, NEXUS_MCP_ALLOWED_VAULTS: 'wissen', NEXUS_MCP_ALLOWED_HOSTS: `127.0.0.1:${p}` })));
+    const verbinde = async (kopf) => {
+      const client = new Client({ name: 'mcp-http-e2e', version: '0.0.0' });
+      await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${p}/mcp`), { requestInit: { headers: kopf } }));
+      return client;
+    };
+    const client = await verbinde({ Authorization: 'Bearer ' + GUT });
+    ok('SDK-Client verbindet sich (initialize + initialized)', client.getServerVersion()?.name === 'nexus-test', JSON.stringify(client.getServerVersion()));
+    const tools = (await client.listTools()).tools.map(t => t.name).sort();
+    ok('SDK-Client: tools/list liefert die 11 Lese-Tools', tools.join() === [...REMOTE_READ_TOOLS].sort().join(), tools.join());
+    const treffer = await client.callTool({ name: 'search', arguments: { q: 'Leuchtturm' } });
+    ok('SDK-Client: search liefert den Treffer (structuredContent besteht das outputSchema)', treffer.isError !== true && treffer.structuredContent?.results?.[0]?.path === 'Notiz.md', JSON.stringify(treffer).slice(0, 300));
+    const gliederung = await client.callTool({ name: 'outline', arguments: { path: 'Notiz.md' } });
+    ok('SDK-Client: outline', gliederung.isError !== true && JSON.stringify(gliederung.content).includes('Abschnitt'), JSON.stringify(gliederung).slice(0, 300));
+    let schreibFehler = null;
+    try { const r = await client.callTool({ name: 'write_note', arguments: { path: 'E2E.md', content: 'x', create: true } }); if (r.isError) schreibFehler = 'isError'; }
+    catch (e) { schreibFehler = e.message; }
+    ok('SDK-Client: write_note ist nicht aufrufbar', schreibFehler !== null && !existsSync(join(scratch, 'wissen', 'E2E.md')), String(schreibFehler));
+    await client.close();
+    let ohneToken = null;
+    try { const c = await verbinde({}); await c.close(); } catch (e) { ohneToken = e; }
+    ok('SDK-Client ohne Token: Verbindung scheitert (401)', ohneToken !== null && /401|unauthorized/i.test(String(ohneToken?.message ?? ohneToken) + (ohneToken?.code ?? '')), String(ohneToken?.message));
+
+    // 6b. Der echte Einstieg als Prozess: node src/mcp-http.js
+    const EINSTIEG = join(ROOT, 'src', 'mcp-http.js');
+    const daten = join(scratch, 'daten');
+    mkdirSync(daten, { recursive: true });
+    writeFileSync(join(daten, 'nexus.config.json'), JSON.stringify({
+      vaultsRoot: scratch, activeVault: 'privat',
+      vaults: [{ name: 'wissen', path: join(scratch, 'wissen'), dbPath: '.nexus/wissen.db' }, { name: 'privat', path: join(scratch, 'privat'), dbPath: '.nexus/privat.db' }],
+      ignore: ['.trash', '.nexus'],
+    }), 'utf8');
+    // Saubere Umgebung: keine NEXUS_MCP_*-Werte des Entwicklers erben.
+    const basisEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('NEXUS_')));
+    const starteProzess = (env) => {
+      const kind = spawn(process.execPath, [EINSTIEG], { env: { ...basisEnv, NEXUS_DATA_DIR: daten, NEXUS_MCP_PORT: '0', ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+      const st = { kind, out: '', err: '', code: undefined };
+      kind.stdout.on('data', d => { st.out += d; });
+      kind.stderr.on('data', d => { st.err += d; });
+      st.ende = new Promise(r => kind.once('exit', (c) => { st.code = c; r(c); }));
+      aufraeumen.push(() => { try { kind.kill(); } catch {} return st.ende; });
+      return st;
+    };
+    const wartePort = async (st) => {
+      for (let i = 0; i < 300 && st.code === undefined; i++) {
+        const m = /lauscht auf 127\.0\.0\.1:(\d+)/.exec(st.err);
+        if (m) return Number(m[1]);
+        await new Promise(r => setTimeout(r, 50));
+      }
+      return null;
+    };
+
+    const ohneSubs = starteProzess({ ...ENV, NEXUS_MCP_ALLOWED_SUBS: '' });
+    const code = await Promise.race([ohneSubs.ende, new Promise(r => setTimeout(() => r('laeuft'), 15000))]);
+    ok('Prozess ohne sub-Allowlist startet nicht (Exit 1, nennt die Variable)', code === 1 && /NEXUS_MCP_ALLOWED_SUBS/.test(ohneSubs.err), `code ${code} ${ohneSubs.err.slice(-300)}`);
+    ok('  und hat davor keinen Vault geoeffnet', !/indexiert|Lade Vaults/.test(ohneSubs.err), ohneSubs.err.slice(-300));
+    const leer = starteProzess({});
+    const codeLeer = await Promise.race([leer.ende, new Promise(r => setTimeout(() => r('laeuft'), 15000))]);
+    ok('Prozess ganz ohne Konfiguration startet nicht', codeLeer === 1 && /NEXUS_MCP_RESOURCE_URL fehlt/.test(leer.err), `code ${codeLeer} ${leer.err.slice(-300)}`);
+
+    const lauf = starteProzess({ ...ENV, NEXUS_MCP_ALLOWED_VAULTS: 'wissen' });
+    const port = await wartePort(lauf);
+    ok('Prozess mit vollstaendiger Konfiguration lauscht (nur Loopback)', Number.isInteger(port) && port > 0, lauf.err.slice(-400));
+    if (port) {
+      const m = await anfrage(port, { method: 'GET', path: '/.well-known/oauth-protected-resource/mcp' });
+      ok('Prozess: Metadaten-Endpoint', m.status === 200 && m.json?.resource === RESOURCE, `${m.status} ${m.text}`);
+      const kein = await anfrage(port, { body: rpc('tools/list') });
+      ok('Prozess: ohne Token 401', kein.status === 401 && /resource_metadata=/.test(kein.headers['www-authenticate'] ?? ''), `${kein.status}`);
+      const tl = await anfrage(port, { token: GUT, body: rpc('tools/list') });
+      ok('Prozess: tools/list mit Token -> 11 Lese-Tools', tl.status === 200 && tl.json?.result?.tools?.length === 11, `${tl.status} ${tl.text.slice(0, 200)}`);
+      const su = await anfrage(port, { token: GUT, body: rpc('tools/call', { name: 'search', arguments: { q: 'Leuchtturm' } }) });
+      ok('Prozess: search findet im freigegebenen Vault', su.json?.result?.structuredContent?.results?.some(x => x.path === 'Notiz.md'), su.text.slice(0, 300));
+      const pr = await anfrage(port, { token: GUT, body: rpc('tools/call', { name: 'read_note', arguments: { path: 'Geheim.md', vault: 'privat' } }) });
+      ok('Prozess: nicht freigegebener Vault bleibt zu', pr.json?.result?.isError === true && !pr.text.includes('Zitronenfalter'), pr.text.slice(0, 300));
+      await new Promise(r => setTimeout(r, 150));
+      const zeilen = lauf.out.trim().split('\n').filter(Boolean);
+      ok('Prozess: stdout enthaelt nur JSON-Logzeilen (eine je /mcp-Aufruf)', zeilen.length === 4 && zeilen.every(l => { try { return typeof JSON.parse(l).zeit === 'string'; } catch { return false; } }), lauf.out);
+      ok('Prozess: Log nennt sub und Tool, nicht den Suchbegriff', zeilen.some(l => JSON.parse(l).tool === 'search' && JSON.parse(l).sub === SUB) && !lauf.out.includes('Leuchtturm'), lauf.out);
+      ok('Prozess: Papierkorb wird beim Start nicht aufgeraeumt (kein Schreibzugriff)', !/Papierkorb/.test(lauf.err), lauf.err.slice(-300));
+    }
+    lauf.kind.kill();
+
+    const aus = starteProzess({ NEXUS_MCP_ENABLED: '0' });
+    const portAus = await wartePort(aus);
+    if (portAus) {
+      const r = await anfrage(portAus, { token: GUT, body: rpc('tools/list') });
+      ok('Prozess mit NEXUS_MCP_ENABLED=0: 503, kein Vault geladen', r.status === 503 && !/indexiert|Lade Vaults/.test(aus.err), `${r.status} ${aus.err.slice(-300)}`);
+    } else ok('Prozess mit NEXUS_MCP_ENABLED=0 lauscht', false, aus.err.slice(-300));
+    aus.kind.kill();
+
+    // 6c. Keine persoenlichen Werte im Repo: in Code, Test und Doku des Connectors nur example.com.
+    const dateien = ['src/mcp-http.js', 'src/mcp/http-app.js', 'src/mcp/http-config.js', 'src/mcp/token.js', 'src/mcp/remote-policy.js', 'test/mcp-http.test.mjs', 'docs/remote-connector.md']
+      .filter(f => existsSync(join(ROOT, f)));
+    const ERLAUBT = /(^|\.)example\.com$|^127\.0\.0\.1$|^localhost$|^claude\.ai$/;
+    const funde = [];
+    for (const f of dateien) {
+      const inhalt = readFileSync(join(ROOT, f), 'utf8');
+      for (const m of inhalt.matchAll(/https?:\/\/([A-Za-z0-9.-]+)/g)) if (!ERLAUBT.test(m[1].replace(/\.$/, ''))) funde.push(`${f}: ${m[0]}`);
+      // Adressbereiche: nur Dokumentationsnetze (RFC 5737) oder Loopback.
+      for (const m of inhalt.matchAll(/\b(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}\/\d{1,2}\b/g)) if (!['192.0.2', '198.51.100', '203.0.113', '127.0.0'].includes(m[1])) funde.push(`${f}: ${m[0]}`);
+      // UUIDs: nur die offensichtlichen Test-IDs (0000…).
+      for (const m of inhalt.matchAll(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi)) if (!m[0].startsWith('00000000-0000-')) funde.push(`${f}: ${m[0]}`);
+    }
+    ok(`keine echten Domains, Adressbereiche oder Benutzer-IDs in ${dateien.length} Connector-Dateien`, funde.length === 0, funde.join(' | '));
   }
 } catch (e) {
   console.error('  \x1b[31m✗ Testlauf-Fehler:\x1b[0m', e.stack || e.message);
