@@ -8,7 +8,7 @@
 // die Antwort ist ein JSON-Dokument (enableJsonResponse).
 //
 // Reihenfolge der Pruefungen (jede bricht ab, bevor die naechste Arbeit macht):
-//   Kill-Switch -> Host-Allowlist -> Origin -> Methode -> Token -> Body (max. 2 MB) -> Policy
+//   Kill-Switch -> (/healthz) -> Host-Allowlist -> Origin -> Methode -> Token -> Body (max. 2 MB) -> Policy
 import express from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { buildServer } from './build-server.js';
@@ -62,6 +62,16 @@ export function createHttpApp({ registry, info = {}, config, log = stdoutLog }) 
     });
     res.set('X-Content-Type-Options', 'nosniff');
     next();
+  });
+
+  // ── /healthz: Lebenszeichen fuer Container-Healthcheck und Proxy. Bewusst VOR der Host-
+  // Allowlist (der Healthcheck fragt ueber localhost) und ohne Token – dafuer ohne jede
+  // Information ueber Vaults, Version oder Konfiguration. Bei Kill-Switch: 503 (siehe oben).
+  app.all('/healthz', (req, res) => {
+    res.locals.log.still = true;
+    res.set('Cache-Control', 'no-store');
+    if (req.method !== 'GET' && req.method !== 'HEAD') { res.set('Allow', 'GET'); return res.status(405).json({ error: 'method_not_allowed' }); }
+    return res.json({ status: 'ok' });
   });
 
   // ── Host-Allowlist + Origin (Schutz vor DNS-Rebinding und fremden Webseiten). Anfragen aus

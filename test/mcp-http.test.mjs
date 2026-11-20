@@ -498,6 +498,22 @@ try {
     await ruf('read_note', { path: 'Zeile1\nZeile2.md' });
     ok('Zeilenumbruch im Pfad bricht die Logzeile nicht', !logZeilen.at(-1).includes('\n') && letzte().pfad === 'Zeile1\nZeile2.md');
 
+    // /healthz: ohne Token, ohne Host-Pruefung, ohne Vault-Informationen
+    logZeilen.length = 0;
+    const hz = await anfrage(port, { method: 'GET', path: '/healthz', headers: { host: '127.0.0.1:3100' } });
+    ok('GET /healthz -> 200 ohne Token, auch mit fremdem Host (Healthcheck ueber localhost)', hz.status === 200 && hz.json?.status === 'ok', `${hz.status} ${hz.text}`);
+    ok('/healthz verraet nichts: genau {"status":"ok"}', hz.text === '{"status":"ok"}' && !/wissen|privat|9\.9\.9|example/.test(hz.text + JSON.stringify(hz.headers)), hz.text + JSON.stringify(hz.headers));
+    const hzOrigin = await anfrage(port, { method: 'GET', path: '/healthz', headers: { origin: 'https://boese.example.com' } });
+    ok('/healthz setzt keine CORS-Header (fremde Seiten koennen die Antwort nicht lesen)', hzOrigin.status === 200 && hzOrigin.headers['access-control-allow-origin'] === undefined);
+    const hzPost = await anfrage(port, { method: 'POST', path: '/healthz', body: {} });
+    ok('POST /healthz -> 405', hzPost.status === 405 && hzPost.headers.allow === 'GET', `${hzPost.status}`);
+    ok('/healthz erzeugt keine Logzeile', logZeilen.length === 0, logZeilen.join());
+    const nachbar = await anfrage(port, { method: 'GET', path: '/healthz/x', headers: { host: '127.0.0.1:3100' } });
+    ok('die Ausnahme gilt nur fuer /healthz selbst (Nachbarpfad mit fremdem Host -> 403)', nachbar.status === 403, `${nachbar.status}`);
+    const pAus = await starte(baueApp(loadHttpConfig({ NEXUS_MCP_ENABLED: '0' }), null));
+    const hzAus = await anfrage(pAus, { method: 'GET', path: '/healthz' });
+    ok('/healthz bei NEXUS_MCP_ENABLED=0 -> 503', hzAus.status === 503, `${hzAus.status}`);
+
     const kopf = await init();
     ok('Antwort-Header: nosniff + no-store', kopf.headers['x-content-type-options'] === 'nosniff' && kopf.headers['cache-control'] === 'no-store', JSON.stringify(kopf.headers));
   }
@@ -578,6 +594,8 @@ try {
       const m = await anfrage(port, { method: 'GET', path: '/.well-known/oauth-protected-resource/mcp' });
       ok('Prozess: Metadaten-Endpoint', m.status === 200 && m.json?.resource === RESOURCE, `${m.status} ${m.text}`);
       const kein = await anfrage(port, { body: rpc('tools/list') });
+      const h = await anfrage(port, { method: 'GET', path: '/healthz', headers: { host: `127.0.0.1:${port}` } });
+      ok('Prozess: /healthz ueber die Loopback-Adresse -> 200', h.status === 200 && h.json?.status === 'ok', `${h.status} ${h.text}`);
       ok('Prozess: ohne Token 401', kein.status === 401 && /resource_metadata=/.test(kein.headers['www-authenticate'] ?? ''), `${kein.status}`);
       const tl = await anfrage(port, { token: GUT, body: rpc('tools/list') });
       ok('Prozess: tools/list mit Token -> 11 Lese-Tools', tl.status === 200 && tl.json?.result?.tools?.length === 11, `${tl.status} ${tl.text.slice(0, 200)}`);

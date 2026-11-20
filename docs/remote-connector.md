@@ -20,6 +20,7 @@ Umgebung des Prozesses, nicht ins Repository.
 | `POST /mcp` | MCP über Streamable HTTP, zustandslos, Antwort als JSON. Braucht ein gültiges Bearer-Token. |
 | `GET`, `DELETE` (und alles andere) auf `/mcp` | `405` |
 | `GET /.well-known/oauth-protected-resource` und `…/oauth-protected-resource/mcp` | Öffentliche Metadaten (RFC 9728): `resource`, `authorization_servers`, `bearer_methods_supported` |
+| `GET /healthz` | `200` mit `{"status":"ok"}` – ohne Token, von der Host-Allowlist ausgenommen, ohne Angaben zu Vaults, Version oder Konfiguration. Bei `NEXUS_MCP_ENABLED=0`: `503`. |
 | alles andere | `404` |
 
 **Freigegebene Tools:** `search`, `outline`, `read_note`, `read_bild`, `backlinks`, `list_notes`,
@@ -109,6 +110,10 @@ services:
     volumes:
       - <pfad-zum-vault>:/vault:ro
       - nexus_mcp_data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
     networks: [proxy]          # kein veröffentlichter Port – nur der Reverse-Proxy erreicht :3100
 
 volumes:
@@ -153,6 +158,9 @@ mcp.example.com {
 }
 ```
 
+`/healthz` wird in diesem Beispiel nicht nach außen gereicht (fällt unter `respond 404`); es ist
+für den Healthcheck im Container gedacht.
+
 Der Proxy muss den ursprünglichen `Host`-Header durchreichen (Caddy tut das standardmäßig) –
 sonst weist die Host-Allowlist jede Anfrage ab. Die Adressfilterung ist nur eine zusätzliche
 Schicht: Der Bereich gehört allen Kunden des Dienstes, der Zugang hängt am Token und an der
@@ -193,5 +201,5 @@ Automatische Tests: `node test/mcp-http.test.mjs` (lokal erzeugter Schlüssel, l
 
 ## Nicht enthalten
 
-Schreib-Tools, ein dauerhaftes Audit-Log, Rate-Limiting (Aufgabe des Proxys) und eine
-Health-Route gibt es in diesem Stand nicht.
+Schreib-Tools, ein dauerhaftes Audit-Log und Rate-Limiting (Aufgabe des Proxys) gibt es in
+diesem Stand nicht.
