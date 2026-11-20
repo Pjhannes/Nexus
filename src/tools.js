@@ -230,18 +230,28 @@ export function makeTools(indexer, vaultPath) {
   // (Phrasen, AND/OR/NOT, Klammern, Praefix nur explizit oder am letzten Wort). Kaputte Eingaben
   // laufen dort schon als bereinigte Suche; lehnt SQLite einen geprueften Ausdruck trotzdem ab
   // (fts5: syntax error), greift hier derselbe Rueckfall statt eines Fehlers.
-  function search({ q, limit = 20, offset = 0, tag }) {
+  //
+  // searchDetail liefert zusaetzlich, OB der Rueckfall lief: { results, fallback, match }.
+  //   fallback  true = die Eingabe war syntaktisch nicht auswertbar, gesucht wurde einfach nach
+  //             allen Woertern – der Aufrufer soll das wissen, sonst haelt er die Treffer fuer
+  //             das Ergebnis seiner Operator-Anfrage
+  //   match     der tatsaechlich ausgefuehrte FTS5-Ausdruck (null = nichts Suchbares / Liste ohne q)
+  // search() bleibt die Liste allein (UI, bestehende Aufrufer).
+  function search(args) { return searchDetail(args).results; }
+
+  function searchDetail({ q, limit = 20, offset = 0, tag }) {
     let rows;
     if (q) {
-      const parsed = parseFtsQuery(q);
-      if (!parsed.match) return [];
+      let parsed = parseFtsQuery(q);
+      if (!parsed.match) return { results: [], fallback: parsed.fallback, match: null };
       // offset fuer FTS5: LIMIT + OFFSET direkt in SQL
       const lauf = (m) => offset > 0 ? stmts.searchFtsOff.all(m, limit, offset) : stmts.searchFts.all(m, limit);
       try { rows = lauf(parsed.match); }
       catch (e) {
         const fb = parsed.fallback ? null : fallbackFtsQuery(q);
         if (!fb || !/fts5|syntax/i.test(e?.message || '')) throw e;
-        if (!fb.match) return [];
+        parsed = fb;
+        if (!fb.match) return { results: [], fallback: true, match: null };
         rows = lauf(fb.match);
       }
       if (tag) {
@@ -250,13 +260,13 @@ export function makeTools(indexer, vaultPath) {
           return JSON.parse(nr?.tags ?? '[]').includes(tag);
         });
       }
-      return rows.map(r => ({ path: r.path, title: r.title, snippet: r.snip ?? null }));
+      return { results: rows.map(r => ({ path: r.path, title: r.title, snippet: r.snip ?? null })), fallback: parsed.fallback, match: parsed.match };
     } else {
       rows = offset > 0
         ? stmts.listAllOff.all(limit, offset)
         : stmts.listAll.all(limit);
       if (tag) rows = rows.filter(r => JSON.parse(r.tags ?? '[]').includes(tag));
-      return rows.map(r => ({ path: r.path, title: r.title, snippet: null }));
+      return { results: rows.map(r => ({ path: r.path, title: r.title, snippet: null })), fallback: false, match: null };
     }
   }
 
@@ -1096,6 +1106,6 @@ export function makeTools(indexer, vaultPath) {
     };
   }
 
-  return { search, outline, readNote, writeNote, writeVortrag, writeKarten, karteGliedern, readBild, lernStatus, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, listTrash, restore, vaultCheck };
+  return { search, searchDetail, outline, readNote, writeNote, writeVortrag, writeKarten, karteGliedern, readBild, lernStatus, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, listTrash, restore, vaultCheck };
 }
 // rev: graph() fuer UI-Graph (Session 13)

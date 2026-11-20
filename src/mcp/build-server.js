@@ -159,7 +159,8 @@ export function buildServer({ registry, policy = {}, info = {} } = {}) {
   tool('search', {
     title: 'Volltextsuche',
     description: 'Etwas im Vault finden, ohne Dateien zu lesen: Volltextsuche (FTS5) ueber alle Notizen, liefert Pfad, Titel und Treffer-Snippet. ' +
-      'Ohne q: Notizliste (optional nach Tag gefiltert). Erster Schritt vor read_note.',
+      'Ohne q: Notizliste (optional nach Tag gefiltert). Erster Schritt vor read_note. ' +
+      'War die Suchsyntax nicht auswertbar, lief die einfache Suche nach allen Woertern – das Ergebnis traegt dann fallback:true und einen hinweis.',
     input: {
       q:      z.string().optional().describe('Suchbegriff(e). Einfach: Woerter ohne Sonderzeichen – alle muessen vorkommen, jedes Wort ab 4 Zeichen zaehlt als Wortanfang ' +
         '(Pruefung findet auch Pruefungen; es gibt kein Stemming). Genau: "exaktes Wort" oder "exakte Phrase"; Operatoren GROSS: AND, OR, NOT (a NOT b); Klammern; wortanfang*. ' +
@@ -173,9 +174,25 @@ export function buildServer({ registry, policy = {}, info = {} } = {}) {
     output: {
       results: z.array(offen({ path: z.string(), title: z.string().nullable().optional(), snippet: z.string().nullable().optional() })),
       count: z.number(),
+      fallback: z.boolean().optional().describe('true = Suchsyntax nicht auswertbar, es lief die einfache Suche nach allen Woertern'),
+      hinweis: z.string().optional().describe('nur bei fallback: was stattdessen gesucht wurde'),
     },
     annotations: RO,
-  }, ({ q, limit, offset, tag, vault }) => plain(registry.get(vault).tools.search({ q, limit, offset, tag }), structured));
+  }, ({ q, limit, offset, tag, vault }) => {
+    const d = registry.get(vault).tools.searchDetail({ q, limit, offset, tag });
+    if (!d.fallback) return structured(d.results);
+    // Rueckfall kennzeichnen: im structuredContent (fallback + hinweis) UND als eigener Textblock –
+    // der erste Textblock bleibt das reine Ergebnis-Array wie immer.
+    const hinweis = 'Suchsyntax nicht auswertbar (z. B. offenes Anfuehrungszeichen, offene Klammer, Operator ohne Begriff) – ' +
+      (d.match ? `stattdessen einfache Suche nach allen Woertern: ${d.match}` : 'die Eingabe enthaelt kein suchbares Wort.');
+    return {
+      content: [
+        { type: 'text', text: JSON.stringify(d.results, null, 2) },
+        { type: 'text', text: `[Hinweis: ${hinweis}]` },
+      ],
+      structuredContent: { results: d.results, count: d.results.length, fallback: true, hinweis },
+    };
+  });
 
   tool('outline', {
     title: 'Gliederung einer Notiz',

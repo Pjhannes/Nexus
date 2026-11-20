@@ -2,6 +2,7 @@
 //
 //   A. Parser pur (src/fts-query.js): Eingabe -> MATCH-Ausdruck / positive Suchwoerter / Rueckfall
 //   B. Gegen echtes FTS5 (buildIndexer + makeTools): die Operatoren TUN, was die Tool-Beschreibung sagt
+//   B2. Rueckfall wird gekennzeichnet: tools.searchDetail + MCP search (buildServer, InMemoryTransport)
 //   C. UI-Pfad: /api/search (ui-server) nutzt dieselbe Funktion und liefert "terms";
 //      hitTokens aus public/index.html (R23-Treffermarkierung) markiert damit keine Operatoren.
 // Alles im Temp-Scratch. Lauf: node test/fts-query.test.mjs
@@ -13,6 +14,9 @@ import { fileURLToPath } from 'url';
 import { parseFtsQuery, buildFtsQuery, fallbackFtsQuery, PRAEFIX_AB } from '../src/fts-query.js';
 import { buildIndexer } from '../src/indexer.js';
 import { makeTools } from '../src/tools.js';
+import { buildServer } from '../src/mcp/build-server.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 let pass = 0, fail = 0;
@@ -147,6 +151,50 @@ try {
   // Snippet: Phrase wird als Ganzes markiert, der Treffer beginnt mit dem ersten Suchwort
   const snip = tools.search({ q: '"Custom Connector"' })[0]?.snippet ?? '';
   ok('Snippet markiert die Phrase', /\*\*Custom Connector\*\*/.test(snip), snip);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  console.log('\n── B2. Rueckfall wird gekennzeichnet ──');
+  // ═══════════════════════════════════════════════════════════════════════════
+  const dOk = tools.searchDetail({ q: 'Custom Connector' });
+  ok('searchDetail: gueltige Anfrage -> fallback:false + ausgefuehrter Ausdruck', dOk.fallback === false && dOk.match === '"custom"* AND "connector"*' && dOk.results.length === 2, dOk);
+  const dFb = tools.searchDetail({ q: '"Custom Connector' });
+  ok('searchDetail: kaputte Syntax -> fallback:true, Treffer der einfachen Suche', dFb.fallback === true && dFb.match === '"custom"* AND "connector"*' && gleich(dFb.results.map(r => r.path).sort(), ['Custom.md', 'Getrennt.md']), dFb);
+  ok('searchDetail: kaputte Syntax ohne Woerter -> fallback:true, leer', gleich(tools.searchDetail({ q: '()' }), { results: [], fallback: true, match: null }));
+  ok('searchDetail: nur Sonderzeichen ist KEIN Rueckfall', gleich(tools.searchDetail({ q: '+++' }), { results: [], fallback: false, match: null }));
+  ok('searchDetail ohne q: Liste, kein Rueckfall', tools.searchDetail({}).fallback === false && tools.searchDetail({}).results.length === 7);
+  ok('search() bleibt die reine Liste', Array.isArray(tools.search({ q: '"Custom Connector' })) && gleich(tools.search({ q: '"Custom Connector' }), dFb.results) && !('fallback' in tools.search({ q: '"Custom Connector' })));
+  ok('searchDetail: offset + Rueckfall', tools.searchDetail({ q: '(Wirkungsgrad', limit: 1, offset: 1 }).fallback === true && tools.searchDetail({ q: '(Wirkungsgrad', limit: 1, offset: 1 }).results.length === 1);
+
+  {
+    const registry = { get: () => ({ vault: { name: 'vault', path: vaultDir }, tools }), list: () => ({ activeVault: 'vault', vaults: [] }), config: () => ({}) };
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'fts-test', version: '0.0.0' });
+    await Promise.all([buildServer({ registry }).connect(s), client.connect(c)]);
+    await client.listTools();                                   // Client prueft structuredContent gegen das outputSchema
+    const mcp = (q) => client.callTool({ name: 'search', arguments: q === undefined ? {} : { q } });
+
+    const gut = await mcp('"Remote-MCP" OR "Custom Connector"');
+    ok('MCP search, gueltig: ein Textblock, kein fallback', gut.isError !== true && gut.content.length === 1 && !('fallback' in gut.structuredContent) && !('hinweis' in gut.structuredContent) && gut.structuredContent.count === 2, gut.structuredContent);
+    const einfach = await mcp('Prüfung Termin');
+    ok('MCP search, einfache Anfrage: kein fallback (Wortanfang ist kein Rueckfall)', einfach.content.length === 1 && !('fallback' in einfach.structuredContent) && einfach.structuredContent.results[0]?.path === 'Uni-Deadlines.md', einfach.structuredContent);
+
+    const kaputt = await mcp('"Custom Connector AND (');
+    ok('MCP search, kaputt: kein Fehler, Treffer der einfachen Suche', kaputt.isError !== true && gleich(kaputt.structuredContent.results.map(r => r.path).sort(), ['Custom.md', 'Getrennt.md']), kaputt.structuredContent);
+    ok('MCP search, kaputt: structuredContent traegt fallback:true + hinweis + count', kaputt.structuredContent.fallback === true && kaputt.structuredContent.count === 2 &&
+      kaputt.structuredContent.hinweis === 'Suchsyntax nicht auswertbar (z. B. offenes Anfuehrungszeichen, offene Klammer, Operator ohne Begriff) – stattdessen einfache Suche nach allen Woertern: "custom"* AND "connector"*', kaputt.structuredContent.hinweis);
+    ok('MCP search, kaputt: erster Textblock bleibt das reine Ergebnis-Array', Array.isArray(JSON.parse(kaputt.content[0].text)) && gleich(JSON.parse(kaputt.content[0].text), kaputt.structuredContent.results));
+    ok('MCP search, kaputt: zweiter Textblock ist der Hinweis', kaputt.content.length === 2 && kaputt.content[1].text === `[Hinweis: ${kaputt.structuredContent.hinweis}]`, kaputt.content[1]?.text);
+
+    const nichts = await mcp('()');
+    ok('MCP search, kaputt ohne Woerter: leer + Hinweis', nichts.isError !== true && nichts.structuredContent.fallback === true && nichts.structuredContent.count === 0 && nichts.structuredContent.hinweis.endsWith('die Eingabe enthaelt kein suchbares Wort.') && nichts.content.length === 2, nichts.structuredContent);
+    const zeichen = await mcp('+++');
+    ok('MCP search, nur Sonderzeichen: leer, kein Hinweis', zeichen.content.length === 1 && gleich(zeichen.structuredContent, { results: [], count: 0 }), zeichen.structuredContent);
+    const liste = await mcp(undefined);
+    ok('MCP search ohne q: Liste, kein Hinweis', liste.content.length === 1 && liste.structuredContent.count === 7 && !('fallback' in liste.structuredContent));
+    const schema = (await client.listTools()).tools.find(t => t.name === 'search').outputSchema;
+    ok('outputSchema nennt fallback und hinweis (optional)', !!schema.properties?.fallback && !!schema.properties?.hinweis && !(schema.required || []).includes('fallback'), schema.required);
+    await client.close();
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   console.log('\n── C. UI-Pfad (/api/search + Treffermarkierung) ──');
