@@ -18,12 +18,12 @@
     "prepare": "node scripts/install-hooks.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "~1.29.0",
     "chokidar": "^4.0.0",
     "express": "^4.19.0",
     "multer": "^1.4.5-lts.1",
     "yaml": "^2.4.0",
-    "zod": "^3.0.0 || ^4.0.0"
+    "zod": "~4.4.3"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4"

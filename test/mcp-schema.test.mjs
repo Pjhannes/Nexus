@@ -8,18 +8,22 @@
 //   1. Kein Tool-Schema traegt "$schema" (das SDK schreibt sonst draft-07 hinein; Cowork
 //      validiert mit Ajv 2020-12 und lehnt den Dialekt ab -> "unsupported dialect").
 //   2. Jedes outputSchema kompiliert unter Ajv 2020-12 (Cowork-Dialekt).
+//   1b. (R29/N6) Der Fix dahinter haengt an privaten SDK-Interna – SDK und zod sind gepinnt,
+//      die installierten Versionen passen dazu, der Hook-Punkt existiert, der Server warnt nicht.
 //   3. Jedes Tool mit outputSchema liefert structuredContent, das der Client-Validator
 //      akzeptiert – auch mit Zusatzfeldern (samples, dryRun, retentionDays, ...), weil die
 //      Ausgabe-Schemas offen sind (kein additionalProperties:false).
 // Alles im Temp-Scratch, kein Zugriff auf echte Daten.
 // Lauf: node test/mcp-schema.test.mjs
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv-provider.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const SERVER_JS = join(__dir, '..', 'src', 'server.js');
@@ -57,8 +61,8 @@ const transport = new StdioClientTransport({
   command: process.execPath, args: [SERVER_JS],
   env: { ...process.env, NEXUS_DATA_DIR: scratch }, stderr: 'pipe',
 });
-let stderrTail = '';
-transport.stderr?.on('data', d => { stderrTail = (stderrTail + d.toString()).slice(-2000); });
+let stderrTail = '', stderrAll = '';
+transport.stderr?.on('data', d => { stderrTail = (stderrTail + d.toString()).slice(-2000); stderrAll = (stderrAll + d.toString()).slice(-20000); });
 const clientOpts = Ajv2020
   ? { jsonSchemaValidator: new AjvJsonSchemaValidator(new Ajv2020({ strict: false, validateSchema: false, allErrors: true })) }
   : {};
@@ -72,6 +76,48 @@ try {
 
   const mitSchema = tools.filter(t => '$schema' in (t.inputSchema ?? {}) || '$schema' in (t.outputSchema ?? {})).map(t => t.name);
   ok('kein Tool traegt "$schema" (weder input- noch outputSchema)', mitSchema.length === 0, mitSchema.join(','));
+
+  // ── R29/N6: den "$schema"-Fix absichern ─────────────────────────────────────
+  // Der Fix (src/server.js) greift in PRIVATE SDK-Interna (server.server._requestHandlers).
+  // Ein SDK-Update kann ihn still entfernen – der Server warnt dann nur auf stderr. Deshalb:
+  //   a) Versionen sind gepinnt (kein ^, kein ||) und die installierten passen dazu,
+  //   b) der Hook-Punkt existiert im installierten SDK,
+  //   c) der Server hat die Warnung "Handler nicht gefunden" NICHT ausgegeben.
+  const pkg = JSON.parse(readFileSync(join(__dir, '..', 'package.json'), 'utf8'));
+  const installiert = (name) => JSON.parse(readFileSync(join(__dir, '..', 'node_modules', ...name.split('/'), 'package.json'), 'utf8')).version;
+  // "~X.Y.Z" oder "X.Y.Z" -> erlaubt ist genau X.Y.* ab Z
+  const passt = (range, version) => {
+    const m = /^~?(\d+)\.(\d+)\.(\d+)$/.exec(range || '');
+    const v = /^(\d+)\.(\d+)\.(\d+)/.exec(version || '');
+    return !!m && !!v && m[1] === v[1] && m[2] === v[2] && Number(v[3]) >= Number(m[3]);
+  };
+  for (const dep of ['@modelcontextprotocol/sdk', 'zod']) {
+    const range = pkg.dependencies?.[dep];
+    ok(`${dep} ist gepinnt (Patch-Bereich, kein ^ / ||): ${range}`, /^~?\d+\.\d+\.\d+$/.test(range || ''), range);
+    let v = null; try { v = installiert(dep); } catch (e) { v = 'nicht lesbar: ' + e.message; }
+    ok(`${dep}: installierte Version ${v} liegt im gepinnten Bereich`, passt(range, v), `${range} vs. ${v}`);
+  }
+
+  // Hook-Punkt + Gegenprobe im Prozess: OHNE den Fix schreibt das SDK "$schema" in die Schemas.
+  // Faellt die Gegenprobe weg (SDK liefert von sich aus kein "$schema" mehr), ist der Fix
+  // ueberfluessig geworden und kann raus – das ist nur ein Hinweis, kein Fehler.
+  {
+    const probe = new McpServer({ name: 'probe', version: '0.0.0' });
+    probe.registerTool('p', { description: 'p', inputSchema: { a: z.string() }, outputSchema: z.object({ b: z.string() }) },
+      async () => ({ content: [], structuredContent: { b: '' } }));
+    const roh = probe.server._requestHandlers?.get('tools/list');
+    ok('SDK-Interna: tools/list-Handler ueber server.server._requestHandlers erreichbar (Hook-Punkt des Fix)', typeof roh === 'function');
+    if (typeof roh === 'function') {
+      const r = await roh({ method: 'tools/list', params: {} }, {});
+      const t = r.tools?.[0] ?? {};
+      const sdkSchreibt = '$schema' in (t.inputSchema ?? {}) || '$schema' in (t.outputSchema ?? {});
+      console.log(sdkSchreibt
+        ? '  (Gegenprobe: das SDK schreibt ohne Fix weiterhin "$schema" – der Fix wird gebraucht)'
+        : '  (Hinweis: das SDK schreibt von sich aus kein "$schema" mehr – der Fix in src/ kann entfernt werden)');
+    }
+  }
+  ok('Server meldet NICHT "tools/list-Handler nicht gefunden" (der Fix ist aktiv)',
+    !/tools\/list-Handler nicht gefunden/.test(stderrAll), stderrAll.slice(-300));
 
   const mitOutput = tools.filter(t => t.outputSchema);
   ok('mindestens 7 Tools mit outputSchema', mitOutput.length >= 7, mitOutput.map(t => t.name).join(','));
