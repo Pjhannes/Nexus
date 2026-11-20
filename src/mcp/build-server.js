@@ -337,8 +337,8 @@ export function buildServer({ registry, policy = {}, info = {} } = {}) {
     input: {
       path:    z.string().describe('Relativer Pfad zur Notiz im Vault'),
       patches: z.array(z.object({
-        old_str: z.string().describe('Zu ersetzender Text (erste Fundstelle)'),
-        new_str: z.string().optional().describe('Ersatztext (leer = loeschen)'),
+        old_str: z.string().describe('Zu ersetzender Text (erste Fundstelle). Darf mehrere Zeilen umfassen – Zeilenenden (CRLF/LF) werden beim Vergleich ignoriert'),
+        new_str: z.string().optional().describe('Ersatztext (leer = loeschen); wird mit den Zeilenenden der Datei geschrieben'),
       })).min(1).describe('Liste von Ersetzungen'),
       vault:   vaultParam,
     },

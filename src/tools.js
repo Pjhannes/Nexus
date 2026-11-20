@@ -47,6 +47,24 @@ import {
 // Darueber: truncated + sectionLines, der Aufrufer fordert mit lines=… gezielt nach.
 export const SECTION_MAX_LINES = 200;
 
+// R29/N12: Zeilenenden. Vault-Dateien haben unter Windows oft CRLF, Claude schickt "\n".
+// dateiEol:   Stil der Datei = die Mehrheit ihrer Zeilenumbrueche (ohne Umbruch: LF).
+// inEol:      Text auf GENAU diesen Stil bringen (erst alles auf LF, dann ggf. auf CRLF).
+// eolNeutral: RegExp, in der jedes "\n" des Suchtexts auf "\n" ODER "\r\n" passt.
+export function dateiEol(s) {
+  const crlf = (s.match(/\r\n/g) || []).length;
+  const lf = (s.match(/\n/g) || []).length - crlf;
+  return crlf > lf ? '\r\n' : '\n';
+}
+export function inEol(s, eol) {
+  const lf = String(s ?? '').replace(/\r\n/g, '\n');
+  return eol === '\r\n' ? lf.replace(/\n/g, '\r\n') : lf;
+}
+function eolNeutral(s) {
+  const teile = s.replace(/\r\n/g, '\n').split('\n').map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(teile.join('\\r?\\n'));
+}
+
 // Die Normalisierung wohnt in src/norm.js (damit auch lernen.js sie nutzen kann,
 // ohne Zirkelimport) – hier weiter exportiert, damit bestehende Importe aus
 // tools.js (test/vortrag.test.mjs) gueltig bleiben.
@@ -628,8 +646,19 @@ export function makeTools(indexer, vaultPath) {
       const h = findSection(note.id, section);   // R29/N2: dieselbe Abschnitts-Regel wie read_note
       if (h) insertAt = h.endIdx ?? lines.length;
     }
-    lines.splice(insertAt, 0, '', text);
-    const merged = lines.join('\n');
+    // R29/N12: im Zeilenende-Stil der Datei einfuegen. Vorher kamen die neuen Zeilen mit nacktem
+    // "\n" in eine CRLF-Datei -> gemischte Zeilenenden. Ueber Offsets statt split/join, damit
+    // jedes andere Byte der Datei bleibt, wie es ist (LF-Dateien: Ergebnis wie bisher).
+    const eol = dateiEol(content);
+    const neu = inEol(text, eol);
+    let merged;
+    if (insertAt >= lines.length) {
+      merged = content + eol + eol + neu;
+    } else {
+      let off = 0;
+      for (let i = 0; i < insertAt; i++) off += lines[i].length + 1;
+      merged = content.slice(0, off) + eol + neu + eol + content.slice(off);
+    }
     // R14: append fuegt nur ein – das Ergebnis darf NIE kuerzer als das Original sein.
     // Waere es kuerzer, deutet das auf eine Trunkierung beim Lesen/Zusammenbauen hin
     // (bestehende grosse Notiz wuerde sonst beim Rueckschreiben gekappt -> Datenverlust).
@@ -850,13 +879,26 @@ export function makeTools(indexer, vaultPath) {
     let applied = 0;
     let expectedDelta = 0;   // R14: summierte Laengenaenderung aller angewandten Patches
     const missed = [];
+    // R29/N12: Vergleich zeilenenden-neutral – ein mehrzeiliges old_str mit "\n" findet seine
+    // Stelle auch in einer CRLF-Datei (und umgekehrt). Ersetzt wird NUR die Fundstelle, new_str
+    // kommt im Stil der Datei hinein; alle anderen Bytes bleiben unberuehrt (auch bei gemischten
+    // Zeilenenden). Ersetzen per slice statt String.replace: dort wuerden "$$", "$&", "$1" im
+    // new_str als Ersetzungsmuster gelesen (aus "$$x$$" wurde "$x$" -> Laengen-Invariante schlug an).
+    const eol = dateiEol(content);
     for (const p of patches) {
       if (typeof p.old_str !== 'string') { missed.push('<kein old_str>'); continue; }
-      if (cur.includes(p.old_str)) {
-        // replace() ersetzt nur erste Fundstelle (gewuenscht – analog zu Edit-Tool)
-        const repl = p.new_str ?? '';
-        cur = cur.replace(p.old_str, repl);
-        expectedDelta += repl.length - p.old_str.length;
+      let idx, len;
+      if (p.old_str.includes('\n')) {
+        const m = eolNeutral(p.old_str).exec(cur);
+        idx = m ? m.index : -1; len = m ? m[0].length : 0;
+      } else {
+        idx = cur.indexOf(p.old_str); len = p.old_str.length;
+      }
+      if (idx >= 0) {
+        // nur die erste Fundstelle (gewuenscht – analog zu Edit-Tool)
+        const repl = inEol(p.new_str ?? '', eol);
+        cur = cur.slice(0, idx) + repl + cur.slice(idx + len);
+        expectedDelta += repl.length - len;
         applied++;
       } else {
         missed.push(p.old_str.slice(0, 60));
