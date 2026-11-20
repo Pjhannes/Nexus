@@ -92,7 +92,7 @@ export function createHttpApp({ registry, info = {}, config, log = stdoutLog }) 
     resource: config.resource,
     authorization_servers: [config.issuer],
     bearer_methods_supported: ['header'],
-    ...(config.requiredScopes.length ? { scopes_supported: config.requiredScopes } : {}),
+    ...(config.scopesSupported.length ? { scopes_supported: config.scopesSupported } : {}),
   };
   app.all(config.metadataPaths, (req, res) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.set('Allow', 'GET'); return res.status(405).json({ error: 'method_not_allowed' }); }
@@ -114,13 +114,15 @@ export function createHttpApp({ registry, info = {}, config, log = stdoutLog }) 
   // wo er sich anmelden muss. 403 = Token echt, aber dieser Benutzer darf nicht.
   const pruefeToken = makeTokenVerifier(config);
   const challenge = (zusatz = '') => `Bearer resource_metadata="${config.metadataUrl}"${zusatz}`;
+  // 401: dem Client sagen, welche Scopes er anfragen soll (nur wenn konfiguriert).
+  const scopeHinweis = config.scopesSupported.length ? `, scope="${config.scopesSupported.join(' ')}"` : '';
   async function auth(req, res, next) {
     const r = await pruefeToken(bearerToken(req.headers.authorization));
     if (r.ok) { req.nexusAuth = { sub: r.sub, scopes: r.scopes, clientId: r.clientId }; res.locals.log.sub = r.sub; return next(); }
     res.locals.log.sub = r.sub ?? null; // nur gesetzt, wenn die Signatur echt war (403)
     res.locals.log.ergebnis = r.grund;
     if (r.status === 401) {
-      res.set('WWW-Authenticate', challenge(r.error ? `, error="${r.error}"` : ''));
+      res.set('WWW-Authenticate', challenge(scopeHinweis + (r.error ? `, error="${r.error}"` : '')));
       return res.status(401).json({ error: r.error ?? 'unauthorized', error_description: 'Bearer-Token fehlt oder ist ungueltig.' });
     }
     if (r.status === 403) {

@@ -76,10 +76,19 @@ export function loadHttpConfig(env = {}) {
     // Groessenlimit je Tool-Antwort in Bytes (serialisiertes Ergebnis inkl. Bilddaten).
     config.maxResponseBytes = ganzzahl(env, 'NEXUS_MCP_MAX_RESPONSE_BYTES', 512 * 1024, 1024, 16 * 1024 * 1024, fehler);
     // Optional: Scopes, die im scp-Claim stehen muessen (Standard: keine Scope-Pflicht).
-    config.requiredScopes = liste(String(env.NEXUS_MCP_REQUIRED_SCOPES ?? '').replace(/\s+/g, ','));
+    const scopes = (name) => {
+      const l = [...new Set(liste(String(env[name] ?? '').replace(/\s+/g, ',')))];
+      // scope-token nach RFC 6749 – die Werte landen in einem HTTP-Header (keine Anfuehrungszeichen o. ae.).
+      const kaputt = l.filter(s => !/^[\x21\x23-\x5B\x5D-\x7E]+$/.test(s));
+      if (kaputt.length) fehler.push(`${name} enthaelt ungueltige Scope-Namen: ${kaputt.join(' ')}`);
+      return l;
+    };
+    config.requiredScopes = scopes('NEXUS_MCP_REQUIRED_SCOPES');
+    // Scopes, die der Client beim Anmelden anfragen soll: erscheinen als scopes_supported in den
+    // Metadaten und als scope="…" in der 401-Challenge. Standard: leer – dann fehlen beide Angaben.
+    // Pflicht-Scopes gehoeren immer dazu (sonst koennte der Client sie nie anfragen).
+    config.scopesSupported = [...new Set([...scopes('NEXUS_MCP_SCOPES_SUPPORTED'), ...config.requiredScopes])];
   }
   if (fehler.length) throw new Error('Konfiguration ungueltig: ' + fehler.join('; '));
   return Object.freeze(config);
 }
-
-export { liste as _liste, ganzzahl as _ganzzahl };

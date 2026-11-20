@@ -19,7 +19,7 @@ Umgebung des Prozesses, nicht ins Repository.
 |---|---|
 | `POST /mcp` | MCP über Streamable HTTP, zustandslos, Antwort als JSON. Braucht ein gültiges Bearer-Token. |
 | `GET`, `DELETE` (und alles andere) auf `/mcp` | `405` |
-| `GET /.well-known/oauth-protected-resource` und `…/oauth-protected-resource/mcp` | Öffentliche Metadaten (RFC 9728): `resource`, `authorization_servers`, `bearer_methods_supported` |
+| `GET /.well-known/oauth-protected-resource` und `…/oauth-protected-resource/mcp` | Öffentliche Metadaten (RFC 9728): `resource`, `authorization_servers`, `bearer_methods_supported`, optional `scopes_supported` |
 | `GET /healthz` | `200` mit `{"status":"ok"}` – ohne Token, von der Host-Allowlist ausgenommen, ohne Angaben zu Vaults, Version oder Konfiguration. Bei `NEXUS_MCP_ENABLED=0`: `503`. |
 | alles andere | `404` |
 
@@ -33,7 +33,7 @@ Signatur gegen die JWKS (mit Cache), `iss` zeichengenau, `aud` enthält die Ress
 
 | Fall | Antwort |
 |---|---|
-| Token fehlt oder ist ungültig | `401` mit `WWW-Authenticate: Bearer resource_metadata="…"` |
+| Token fehlt oder ist ungültig | `401` mit `WWW-Authenticate: Bearer resource_metadata="…"` (mit `NEXUS_MCP_SCOPES_SUPPORTED` zusätzlich `scope="…"`) |
 | Token gültig, `sub` nicht freigegeben | `403` |
 | JWKS nicht erreichbar | `503` (der Client behält sein Token) |
 | falscher `Host`-Header oder fremder `Origin` | `403` |
@@ -64,7 +64,8 @@ im Datenordner (`NEXUS_DATA_DIR`).
 | `NEXUS_MCP_ALLOWED_HOSTS` | nein | Host aus der Ressourcen-URL | Erlaubte `Host`-Header, kommagetrennt (mit Port, falls nicht Standard). |
 | `NEXUS_MCP_ALLOWED_ORIGINS` | nein | *(nur der eigene)* | Zusätzlich erlaubte `Origin`-Werte, z. B. für ein Prüfwerkzeug im Browser. |
 | `NEXUS_MCP_MAX_RESPONSE_BYTES` | nein | `524288` | Größenlimit je Tool-Antwort (1024 bis 16777216). Größere Antworten werden zu einem Tool-Fehler mit Hinweis, wie der Aufruf enger zu fassen ist. Bilder aus `read_bild` zählen mit. |
-| `NEXUS_MCP_REQUIRED_SCOPES` | nein | *(keine)* | Scopes, die im Claim `scp` stehen müssen; sonst `403 insufficient_scope`. |
+| `NEXUS_MCP_SCOPES_SUPPORTED` | nein | *(leer)* | Scopes, die der Client bei der Anmeldung anfragen soll (Komma oder Leerzeichen), z. B. `openid offline_access`. Erscheinen als `scopes_supported` in den Metadaten und als `scope="…"` in der 401-Challenge. Leer: beide Angaben fehlen. Reiner Hinweis an den Client – geprüft wird damit nichts. |
+| `NEXUS_MCP_REQUIRED_SCOPES` | nein | *(keine)* | Scopes, die im Claim `scp` stehen müssen; sonst `403 insufficient_scope`. Zählen automatisch zu den angebotenen Scopes. |
 | `NEXUS_MCP_PORT` | nein | `3100` | Port. |
 | `NEXUS_MCP_BIND` | nein | `127.0.0.1` | Bind-Adresse. Im Container `0.0.0.0`. |
 | `NEXUS_MCP_ENABLED` | nein | `1` | Kill-Switch: `0` → der Prozess läuft weiter, öffnet keinen Vault und beantwortet alles mit `503`. |

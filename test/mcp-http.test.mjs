@@ -299,6 +299,31 @@ try {
     const metaScope = await anfrage(pScope, { method: 'GET', path: '/.well-known/oauth-protected-resource' });
     ok('Metadaten nennen den Pflicht-Scope', metaScope.json?.scopes_supported?.join() === 'nexus:read', metaScope.text);
 
+    ok('  und die 401-Challenge ebenfalls (Pflicht-Scopes zaehlen zu den angebotenen)',
+      (await anfrage(pScope, { body: rpc('initialize', INIT) })).headers['www-authenticate'] === `Bearer resource_metadata="${META}", scope="nexus:read"`);
+
+    // Angebotene Scopes (NEXUS_MCP_SCOPES_SUPPORTED): Metadaten + 401-Challenge, ohne Pflicht
+    const std = loadHttpConfig(ENV);
+    ok('Standard: keine Scopes angeboten', std.scopesSupported.length === 0 && std.requiredScopes.length === 0);
+    const metaStd = await anfrage(port, { method: 'GET', path: '/.well-known/oauth-protected-resource' });
+    ok('Standard: Metadaten ohne scopes_supported', metaStd.status === 200 && !('scopes_supported' in metaStd.json), metaStd.text);
+    ok('Standard: 401-Challenge ohne scope=', !/scope=/.test(ohne.headers['www-authenticate']) && !/scope=/.test((await init({ token: 'abc.def.ghi' })).headers['www-authenticate']));
+    const angebot = loadHttpConfig({ ...ENV, NEXUS_MCP_SCOPES_SUPPORTED: 'openid, offline_access  openid' });
+    ok('Liste: Komma oder Leerzeichen, ohne Doppelte, Reihenfolge bleibt', angebot.scopesSupported.join() === 'openid,offline_access', angebot.scopesSupported.join());
+    const pA = await starte(baueApp(angebot));
+    const metaA = await anfrage(pA, { method: 'GET', path: '/.well-known/oauth-protected-resource/mcp' });
+    ok('Metadaten: scopes_supported = konfigurierte Liste', metaA.json?.scopes_supported?.join() === 'openid,offline_access', metaA.text);
+    const a401 = await anfrage(pA, { body: rpc('initialize', INIT) });
+    ok('401 ohne Token: scope="…" in der Challenge', a401.status === 401 && a401.headers['www-authenticate'] === `Bearer resource_metadata="${META}", scope="openid offline_access"`, a401.headers['www-authenticate']);
+    const aUng = await anfrage(pA, { token: await token({ exp: jetzt() - 60 }), body: rpc('initialize', INIT) });
+    ok('401 ungueltiges Token: scope="…" und error="invalid_token"', aUng.headers['www-authenticate'] === `Bearer resource_metadata="${META}", scope="openid offline_access", error="invalid_token"`, aUng.headers['www-authenticate']);
+    const aGut = await anfrage(pA, { token: await token({ scp: [] }), body: rpc('initialize', INIT) });
+    ok('angebotene Scopes sind keine Pflicht: Token ohne sie -> 200', aGut.status === 200, `${aGut.status}`);
+    const beides = loadHttpConfig({ ...ENV, NEXUS_MCP_SCOPES_SUPPORTED: 'openid', NEXUS_MCP_REQUIRED_SCOPES: 'nexus:read' });
+    ok('angeboten + Pflicht: Vereinigung', beides.scopesSupported.join() === 'openid,nexus:read', beides.scopesSupported.join());
+    ok('Scope mit Anfuehrungszeichen -> Start verweigert (landet in einem Header)', /NEXUS_MCP_SCOPES_SUPPORTED enthaelt ungueltige/.test(wirft({ ...ENV, NEXUS_MCP_SCOPES_SUPPORTED: 'a"b' }) ?? ''));
+    ok('Scope mit Backslash -> Start verweigert', /ungueltige Scope-Namen/.test(wirft({ ...ENV, NEXUS_MCP_REQUIRED_SCOPES: 'a\\b' }) ?? ''));
+
     // JWKS nicht erreichbar -> 503, nicht 401 (der Client soll sein Token behalten)
     const tot = loadHttpConfig({ ...ENV, NEXUS_MCP_JWKS_URI: 'http://127.0.0.1:1/jwks.json' });
     const pTot = await starte(baueApp(tot));
