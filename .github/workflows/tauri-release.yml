@@ -36,11 +36,11 @@ jobs:
             name: windows
             triple: x86_64-pc-windows-msvc
             args: ''
-          - os: macos-14
+          - os: macos-15
             name: macos-arm64
             triple: aarch64-apple-darwin
             args: '--target aarch64-apple-darwin'
-          - os: macos-14
+          - os: macos-15
             name: macos-x64
             triple: x86_64-apple-darwin
             args: '--target x86_64-apple-darwin'
