@@ -132,8 +132,10 @@ export function buildServer({ registry, policy = {}, info = {} } = {}) {
     { instructions: NEXUS_INSTRUCTIONS }
   );
 
+  let registriert = 0;
   function tool(name, { description, input = {}, output, annotations, title }, fn) {
     if (!erlaubt(name, { annotations })) return;
+    registriert++;
     server.registerTool(name, {
       title, description,
       inputSchema: input,
@@ -533,7 +535,7 @@ export function buildServer({ registry, policy = {}, info = {} } = {}) {
       }
       return r;
     });
-  } else {
+  } else if (registriert > 0) {
     console.error('[nexus] Warnung: tools/list-Handler nicht gefunden – "$schema" bleibt in den Tool-Schemas.');
   }
 
