@@ -10,6 +10,7 @@ import express from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { buildServer } from './build-server.js';
 import { makeTokenVerifier, bearerToken } from './token.js';
+import { readOnlyPolicy, restrictRegistry, REMOTE_INSTRUCTIONS } from './remote-policy.js';
 
 export const BODY_LIMIT_BYTES = 2 * 1024 * 1024;
 
@@ -30,8 +31,10 @@ export function createHttpApp({ registry, info = {}, config }) {
   }
   if (!registry || typeof registry.get !== 'function') throw new Error('createHttpApp: registry fehlt');
 
-  // Bis die Lese-Policy steht, ist KEIN Tool freigegeben.
-  const policy = { allow: () => false };
+  // Nur lesen, nur freigegebene Vaults (src/mcp/remote-policy.js). Kein Server-Pfad nach aussen.
+  const policy = readOnlyPolicy();
+  const sicht = restrictRegistry(registry, config.allowedVaults);
+  const identitaet = { ...info, dataDir: '' };
 
   // OAuth Protected Resource Metadata (RFC 9728) – oeffentlich, sagt dem Client nur, WO er sich
   // anmelden muss. Enthaelt nichts ausser der eigenen Adresse und der des Autorisierungsservers.
@@ -76,7 +79,7 @@ export function createHttpApp({ registry, info = {}, config }) {
   }
 
   app.post('/mcp', (req, res, next) => auth(req, res, next).catch(next), express.json({ limit: BODY_LIMIT_BYTES, type: () => true }), async (req, res) => {
-    const server = buildServer({ registry, policy, info });
+    const server = buildServer({ registry: sicht, policy, info: identitaet, instructions: REMOTE_INSTRUCTIONS });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on('close', () => {
       transport.close().catch(() => {});

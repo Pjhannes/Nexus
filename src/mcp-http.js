@@ -18,6 +18,9 @@ if (config.enabled) {
   const rt = await import('./mcp/runtime.js');
   info = rt.serverInfo();
   registry = rt.createRegistry({ log });
+  log(config.allowedVaults.length
+    ? 'Freigegebene Vaults: ' + config.allowedVaults.join(', ')
+    : 'WARNUNG: NEXUS_MCP_ALLOWED_VAULTS ist leer – kein Vault ist erreichbar.');
 } else {
   log('NEXUS_MCP_ENABLED=0 – Zugriff abgeschaltet, jede Anfrage bekommt 503.');
 }

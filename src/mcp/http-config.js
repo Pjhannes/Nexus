@@ -63,6 +63,9 @@ export function loadHttpConfig(env = {}) {
     if (jwks) config.jwksUri = jwks.roh;
     config.allowedSubs = liste(env.NEXUS_MCP_ALLOWED_SUBS);
     if (config.allowedSubs.length === 0) fehler.push('NEXUS_MCP_ALLOWED_SUBS fehlt (Pflicht: erlaubte sub-Werte, kommagetrennt)');
+    // Freigegebene Vaults (Namen aus nexus.config.json). Standard: KEINER – ohne diese Variable
+    // laeuft der Server, liefert aber aus keinem Vault etwas.
+    config.allowedVaults = liste(env.NEXUS_MCP_ALLOWED_VAULTS);
     // Optional: Scopes, die im scp-Claim stehen muessen (Standard: keine Scope-Pflicht).
     config.requiredScopes = liste(String(env.NEXUS_MCP_REQUIRED_SCOPES ?? '').replace(/\s+/g, ','));
   }

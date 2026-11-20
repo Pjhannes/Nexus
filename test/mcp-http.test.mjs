@@ -11,6 +11,10 @@ import { fileURLToPath } from 'url';
 import http from 'http';
 import { createHmac, randomUUID } from 'crypto';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { buildServer } from '../src/mcp/build-server.js';
+import { REMOTE_READ_TOOLS } from '../src/mcp/remote-policy.js';
 import { createHttpApp } from '../src/mcp/http-app.js';
 import { loadHttpConfig } from '../src/mcp/http-config.js';
 import { makeVaultRegistry } from '../src/vault-registry.js';
@@ -287,6 +291,97 @@ try {
     ok('JWKS nicht erreichbar -> 503 mit Retry-After', r503.status === 503 && r503.headers['retry-after'] !== undefined, `${r503.status} ${r503.text}`);
     const r401 = await anfrage(pTot, { body: rpc('initialize', INIT) });
     ok('  ohne Token trotzdem 401 (kein JWKS-Abruf noetig)', r401.status === 401, `${r401.status}`);
+  }
+
+  // ── 4. Policy: nur lesen, nur freigegebene Vaults ──────────────────────────
+  console.log('4. Lese-Policy');
+  {
+    const LESEN = ['search', 'outline', 'read_note', 'read_bild', 'backlinks', 'list_notes', 'query', 'dataview', 'lern_status', 'list_vaults', 'list_trash'];
+    ok('REMOTE_READ_TOOLS ist genau die vereinbarte Liste', [...REMOTE_READ_TOOLS].sort().join() === [...LESEN].sort().join(), REMOTE_READ_TOOLS.join());
+
+    // Vollstaendige Tool-Liste des lokalen Servers als Referenz (ohne Policy).
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    const lokal = new Client({ name: 'referenz', version: '0.0.0' });
+    await Promise.all([buildServer({ registry, info }).connect(s), lokal.connect(c)]);
+    const alle = (await lokal.listTools()).tools;
+    await lokal.close();
+    const schreibend = alle.map(t => t.name).filter(n => !LESEN.includes(n));
+    ok('Referenz: 23 Tools lokal, davon 12 nicht freigegeben', alle.length === 23 && schreibend.length === 12, `${alle.length}/${schreibend.length}`);
+    ok('jedes freigegebene Tool ist lokal als readOnly markiert', LESEN.every(n => alle.find(t => t.name === n)?.annotations?.readOnlyHint === true));
+    ok('jedes lokale Tool OHNE readOnlyHint steht nicht auf der Liste', alle.filter(t => t.annotations?.readOnlyHint !== true).every(t => !LESEN.includes(t.name)));
+
+    const config = loadHttpConfig({ ...ENV, NEXUS_MCP_ALLOWED_VAULTS: 'wissen' });
+    const port = await starte(createHttpApp({ registry, info, config }));
+    const ruf = (name, args = {}, p = port) => anfrage(p, { token: GUT, body: rpc('tools/call', { name, arguments: args }) });
+    const text = (r) => (r.json?.result?.content ?? []).filter(x => x.type === 'text').map(x => x.text).join('\n');
+    const abgelehnt = (r) => r.json?.error !== undefined || r.json?.result?.isError === true;
+
+    const liste = await anfrage(port, { token: GUT, body: rpc('tools/list') });
+    const namen = (liste.json?.result?.tools ?? []).map(t => t.name);
+    ok('tools/list (ohne initialize davor): genau die 11 Lese-Tools', liste.status === 200 && [...namen].sort().join() === [...LESEN].sort().join(), `${liste.status} ${namen.join()}`);
+    ok('tools/list: kein Schreib-Tool sichtbar', schreibend.every(n => !namen.includes(n)), namen.join());
+    ok('tools/list: alle gelisteten Tools tragen readOnlyHint', liste.json.result.tools.every(t => t.annotations?.readOnlyHint === true));
+    const hinweise = (await anfrage(port, { token: GUT, body: rpc('initialize', INIT) })).json?.result?.instructions ?? '';
+    ok('initialize: Hinweistext nennt keine Schreib-Tools', hinweise.length > 0 && schreibend.every(n => !new RegExp(`\\b${n}\\b`).test(hinweise)), hinweise);
+
+    // Kein Schreib-Tool aufrufbar – und im Vault aendert sich nichts.
+    const abbild = () => ['wissen', 'privat'].map(v => readdirSync(join(scratch, v), { recursive: true }).sort().join('|') + '#' +
+      readdirSync(join(scratch, v)).filter(f => f.endsWith('.md')).map(f => readFileSync(join(scratch, v, f), 'utf8')).join('')).join('\n');
+    const vorher = abbild();
+    const versuche = {
+      write_note: { path: 'Neu.md', content: '# Neu\n', create: true },
+      append_to_section: { path: 'Notiz.md', section: 'Abschnitt', text: 'angehaengt' },
+      patch: { path: 'Notiz.md', patches: [{ old_str: 'Leuchtturm', new_str: 'X' }] },
+      write_vortrag: { path: 'Notiz.md', segmente: [{ sprich: 'x', art: 'keine' }] },
+      write_karten: { path: 'Notiz.md', karten: [{ typ: 'janein', frage: 'x', antwort: true, quelle: 'Zweiter Teil.' }] },
+      karten_gliedern: { path: 'Notiz.md' },
+      reindex: {},
+      create_folder: { path: 'Ordner' },
+      move: { from: 'Notiz.md', to: 'Weg.md' },
+      delete: { path: 'Notiz.md' },
+      restore: { path: 'Notiz.md' },
+      vault_check: {},
+    };
+    ok('Testfaelle decken alle 12 nicht freigegebenen Tools ab', schreibend.every(n => n in versuche), schreibend.filter(n => !(n in versuche)).join());
+    for (const n of schreibend) {
+      const r = await ruf(n, versuche[n] ?? {});
+      ok(`tools/call ${n} -> abgelehnt`, abgelehnt(r), `${r.status} ${r.text}`);
+    }
+    ok('nach allen Schreibversuchen ist der Vault unveraendert', abbild() === vorher);
+
+    // Lese-Tools arbeiten – nur im freigegebenen Vault.
+    const suche = await ruf('search', { q: 'Leuchtturm' });
+    ok('search findet im freigegebenen Vault (Standard-Vault = erster freigegebener, obwohl "privat" aktiv ist)',
+      suche.json?.result?.isError !== true && suche.json?.result?.structuredContent?.results?.some(x => x.path === 'Notiz.md'), suche.text);
+    const lesen = await ruf('read_note', { path: 'Notiz.md', section: 'Abschnitt' });
+    ok('read_note liest einen Abschnitt', text(lesen).includes('Zweiter Teil') && !text(lesen).includes('Leuchtturm'), text(lesen));
+    const vaults = await ruf('list_vaults');
+    const sc = vaults.json?.result?.structuredContent;
+    ok('list_vaults zeigt nur den freigegebenen Vault', sc?.vaults?.map(v => v.name).join() === 'wissen' && sc?.activeVault === 'wissen', JSON.stringify(sc));
+    ok('list_vaults nennt keine Server-Pfade', sc?.vaults?.every(v => v.path === '') && sc?.server?.dataDir === '' && !vaults.text.includes(scratch.split(/[\\/]/).pop()), vaults.text);
+    for (const [name, args] of [['search', { q: 'Zitronenfalter', vault: 'privat' }], ['read_note', { path: 'Geheim.md', vault: 'privat' }], ['list_notes', { vault: 'privat' }], ['list_trash', { vault: 'privat' }]]) {
+      const r = await ruf(name, args);
+      ok(`${name} im nicht freigegebenen Vault -> Fehler, kein Inhalt`, r.json?.result?.isError === true && !r.text.includes('Zitronenfalter') && !r.text.includes('Geheim'), r.text);
+    }
+    const unbekannt = await ruf('search', { q: 'x', vault: 'gibt-es-nicht' });
+    ok('gleiche Meldung fuer unbekannten und nicht freigegebenen Vault', /Vault nicht verfuegbar: gibt-es-nicht\. Verfuegbar: wissen/.test(text(unbekannt)), text(unbekannt));
+    for (const n of LESEN.filter(x => !['search', 'read_note', 'list_vaults'].includes(x))) {
+      const args = { outline: { path: 'Notiz.md' }, backlinks: { path: 'Notiz.md' }, read_bild: { path: 'fehlt.png' }, query: { field: 'status', op: 'exists' }, dataview: { source: 'LIST LIMIT 5' } }[n] ?? {};
+      const r = await ruf(n, args);
+      ok(`${n} ist aufrufbar (kein Protokollfehler)`, r.status === 200 && r.json?.error === undefined && r.json?.result !== undefined, r.text);
+    }
+    ok('auch die Lese-Tools haben im Vault nichts veraendert', abbild() === vorher);
+
+    // Standard: kein Vault freigegeben.
+    const zu = loadHttpConfig(ENV);
+    ok('Standard: NEXUS_MCP_ALLOWED_VAULTS leer', zu.allowedVaults.length === 0);
+    const pZu = await starte(createHttpApp({ registry, info, config: zu }));
+    const leer = await ruf('list_vaults', {}, pZu);
+    ok('ohne Freigabe: list_vaults ist leer', leer.json?.result?.structuredContent?.vaults?.length === 0 && leer.json?.result?.structuredContent?.activeVault === null, leer.text);
+    for (const v of [undefined, 'wissen', 'privat']) {
+      const r = await ruf('search', { q: 'Leuchtturm', ...(v ? { vault: v } : {}) }, pZu);
+      ok(`ohne Freigabe: search (vault=${v ?? 'Standard'}) -> Fehler`, r.json?.result?.isError === true && !r.text.includes('Notiz.md'), r.text);
+    }
   }
 } catch (e) {
   console.error('  \x1b[31m✗ Testlauf-Fehler:\x1b[0m', e.stack || e.message);
