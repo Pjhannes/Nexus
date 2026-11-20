@@ -11,19 +11,19 @@
     "index": "node src/cli.js reindex",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "test": "node test/smoke.js && node test/karten.test.mjs && node test/bild.test.mjs && node test/vortrag.test.mjs && node test/lernen-api.test.mjs && node test/mcp-launch.test.mjs && node test/mcp-schema.test.mjs && node test/security.test.mjs",
+    "test": "node test/smoke.js && node test/karten.test.mjs && node test/bild.test.mjs && node test/vortrag.test.mjs && node test/lernen-api.test.mjs && node test/mcp-launch.test.mjs && node test/mcp-schema.test.mjs && node test/build-server.test.mjs && node test/fts-query.test.mjs && node test/read-section.test.mjs && node test/crlf.test.mjs && node test/security.test.mjs",
     "test:smoke": "node test/smoke.js",
     "verify:html": "node scripts/verify-html.mjs public/index.html",
     "edit:html": "node scripts/safe-edit.mjs public/index.html",
     "prepare": "node scripts/install-hooks.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "~1.29.0",
     "chokidar": "^4.0.0",
     "express": "^4.19.0",
     "multer": "^1.4.5-lts.1",
     "yaml": "^2.4.0",
-    "zod": "^3.0.0 || ^4.0.0"
+    "zod": "~4.4.3"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4"

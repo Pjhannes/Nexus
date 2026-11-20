@@ -7,6 +7,8 @@ import { runVaultCheck, renderReport, REPORT_REL } from './vault-check.js';
 import { evaluateDataview } from './dataview.js';
 import { vortragNorm, ohneBom, ohneFrontmatter } from './norm.js';
 import { safeFull as safeFullIn, TRASH_DIR, makeIgnore } from './paths.js';
+import { parseFtsQuery, fallbackFtsQuery } from './fts-query.js';
+import { parseNote } from './parse.js';
 
 // R27b: Papierkorb-Eintraege aelter als `days` Tage entfernen (Stempel-Ordner
 // <vault>/.trash/<JJJJ-MM-TT_HHMMSS>). Wird beim Start von UI-Server und MCP-Server
@@ -41,7 +43,46 @@ import {
   lernUebersicht, lernStatistik, heuteISO, LERN_STANDARD, LERN_STUFEN, themenAusGliederung,
 } from './lernen.js';
 
-const SNIPPET_LINES = 30;
+// read_note(section) ohne `lines`: ein Abschnitt wird ganz geliefert, aber hoechstens so viele
+// Zeilen (Prinzip: Information pro Token – ein "# Titel"-Abschnitt kann die ganze Notiz sein).
+// Darueber: truncated + sectionLines, der Aufrufer fordert mit lines=… gezielt nach.
+export const SECTION_MAX_LINES = 200;
+
+// read_note(section) mit unbekanntem Titel: die Fehlermeldung nennt die vorhandenen Ueberschriften,
+// damit der naechste Aufruf sitzt – aber hoechstens so viele. Hat die Notiz mehr, wird die Tiefe
+// reduziert (erst alle Ebenen, dann bis 5, 4, …), statt mitten in der Liste abzuschneiden.
+export const SECTION_LISTE_MAX = 60;
+export function ueberschriftenListe(hs, max = SECTION_LISTE_MAX) {
+  if (!hs.length) return { zeilen: [], hinweis: null };
+  const zeile = (h) => '#'.repeat(h.level) + ' ' + h.text;
+  for (let ebene = 6; ebene >= 1; ebene--) {
+    const sicht = hs.filter(h => h.level <= ebene);
+    if (!sicht.length || sicht.length > max) continue;
+    const rest = hs.length - sicht.length;
+    return { zeilen: sicht.map(zeile), hinweis: rest ? `nur bis Ebene ${ebene}, ${rest} tiefere nicht gezeigt – outline zeigt alle` : null };
+  }
+  const flach = Math.min(...hs.map(h => h.level));
+  const sicht = hs.filter(h => h.level === flach).slice(0, max);
+  return { zeilen: sicht.map(zeile), hinweis: `nur die ersten ${sicht.length} von ${hs.length} – outline zeigt alle` };
+}
+
+// R29/N12: Zeilenenden. Vault-Dateien haben unter Windows oft CRLF, Claude schickt "\n".
+// dateiEol:   Stil der Datei = die Mehrheit ihrer Zeilenumbrueche (ohne Umbruch: LF).
+// inEol:      Text auf GENAU diesen Stil bringen (erst alles auf LF, dann ggf. auf CRLF).
+// eolNeutral: RegExp, in der jedes "\n" des Suchtexts auf "\n" ODER "\r\n" passt.
+export function dateiEol(s) {
+  const crlf = (s.match(/\r\n/g) || []).length;
+  const lf = (s.match(/\n/g) || []).length - crlf;
+  return crlf > lf ? '\r\n' : '\n';
+}
+export function inEol(s, eol) {
+  const lf = String(s ?? '').replace(/\r\n/g, '\n');
+  return eol === '\r\n' ? lf.replace(/\n/g, '\r\n') : lf;
+}
+function eolNeutral(s) {
+  const teile = s.replace(/\r\n/g, '\n').split('\n').map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(teile.join('\\r?\\n'));
+}
 
 // Die Normalisierung wohnt in src/norm.js (damit auch lernen.js sie nutzen kann,
 // ohne Zirkelimport) – hier weiter exportiert, damit bestehende Importe aus
@@ -157,15 +198,18 @@ export function makeTools(indexer, vaultPath) {
       WHERE notes_fts MATCH ?
       ORDER BY rank LIMIT ?
     `),
+    searchFtsOff: db.prepare(`
+      SELECT path, title, snippet(notes_fts, 2, '**', '**', '…', 15) AS snip
+      FROM notes_fts
+      WHERE notes_fts MATCH ?
+      ORDER BY rank LIMIT ? OFFSET ?
+    `),
     noteTags:    db.prepare('SELECT tags FROM notes WHERE path = ?'),
     listAll:     db.prepare('SELECT path, title, tags FROM notes LIMIT ?'),
     listAllOff:  db.prepare('SELECT path, title, tags FROM notes LIMIT ? OFFSET ?'),
     outline:     db.prepare('SELECT id, title FROM notes WHERE path = ?'),
     headings:    db.prepare('SELECT level, text, line FROM headings WHERE note_id = ? ORDER BY line'),
     findNote:    db.prepare('SELECT id FROM notes WHERE path = ?'),
-    findHeading: db.prepare('SELECT line FROM headings WHERE note_id = ? AND text LIKE ? ORDER BY line LIMIT 1'),
-    findNextH:   db.prepare('SELECT line FROM headings WHERE note_id = ? AND line > ? AND level <= ? ORDER BY line LIMIT 1'),
-    findHLevel:  db.prepare('SELECT level FROM headings WHERE note_id = ? AND line = ?'),
     backlinks:   db.prepare(`
       SELECT DISTINCT n.path, n.title FROM links l
       JOIN notes n ON l.src_id = n.id
@@ -182,40 +226,47 @@ export function makeTools(indexer, vaultPath) {
     dvNotes:     db.prepare('SELECT path, title, mtime, size, tags, frontmatter FROM notes'),
   };
 
-  // FTS5-Sanitizer: Sonderzeichen entfernen, je Wort Prefix-Wildcard anhaengen.
-  // Verhindert "SQL logic error" bei Eingaben mit FTS5-Sonderzeichen (+ - " ( ) * ^).
-  function buildFtsQuery(q) {
-    const clean = q.replace(/[^\p{L}\p{N}\s]/gu, ' ').trim().replace(/\s+/g, ' ');
-    if (!clean) return null;
-    return clean.split(' ').map(w => w + '*').join(' ');
-  }
+  // R29/N1: Die Suchanfrage wird von src/fts-query.js in einen FTS5-MATCH-Ausdruck uebersetzt
+  // (Phrasen, AND/OR/NOT, Klammern, Praefix nur explizit oder am letzten Wort). Kaputte Eingaben
+  // laufen dort schon als bereinigte Suche; lehnt SQLite einen geprueften Ausdruck trotzdem ab
+  // (fts5: syntax error), greift hier derselbe Rueckfall statt eines Fehlers.
+  //
+  // searchDetail liefert zusaetzlich, OB der Rueckfall lief: { results, fallback, match }.
+  //   fallback  true = die Eingabe war syntaktisch nicht auswertbar, gesucht wurde einfach nach
+  //             allen Woertern – der Aufrufer soll das wissen, sonst haelt er die Treffer fuer
+  //             das Ergebnis seiner Operator-Anfrage
+  //   match     der tatsaechlich ausgefuehrte FTS5-Ausdruck (null = nichts Suchbares / Liste ohne q)
+  // search() bleibt die Liste allein (UI, bestehende Aufrufer).
+  function search(args) { return searchDetail(args).results; }
 
-  function search({ q, limit = 20, offset = 0, tag }) {
+  function searchDetail({ q, limit = 20, offset = 0, tag }) {
     let rows;
     if (q) {
-      const ftsQ = buildFtsQuery(q);
-      if (!ftsQ) return [];
+      let parsed = parseFtsQuery(q);
+      if (!parsed.match) return { results: [], fallback: parsed.fallback, match: null };
       // offset fuer FTS5: LIMIT + OFFSET direkt in SQL
-      const stmt = offset > 0
-        ? db.prepare(`
-            SELECT path, title, snippet(notes_fts, 2, '**', '**', '…', 15) AS snip
-            FROM notes_fts WHERE notes_fts MATCH ? ORDER BY rank LIMIT ? OFFSET ?
-          `)
-        : stmts.searchFts;
-      rows = offset > 0 ? stmt.all(ftsQ, limit, offset) : stmt.all(ftsQ, limit);
+      const lauf = (m) => offset > 0 ? stmts.searchFtsOff.all(m, limit, offset) : stmts.searchFts.all(m, limit);
+      try { rows = lauf(parsed.match); }
+      catch (e) {
+        const fb = parsed.fallback ? null : fallbackFtsQuery(q);
+        if (!fb || !/fts5|syntax/i.test(e?.message || '')) throw e;
+        parsed = fb;
+        if (!fb.match) return { results: [], fallback: true, match: null };
+        rows = lauf(fb.match);
+      }
       if (tag) {
         rows = rows.filter(r => {
           const nr = stmts.noteTags.get(r.path);
           return JSON.parse(nr?.tags ?? '[]').includes(tag);
         });
       }
-      return rows.map(r => ({ path: r.path, title: r.title, snippet: r.snip ?? null }));
+      return { results: rows.map(r => ({ path: r.path, title: r.title, snippet: r.snip ?? null })), fallback: parsed.fallback, match: parsed.match };
     } else {
       rows = offset > 0
         ? stmts.listAllOff.all(limit, offset)
         : stmts.listAll.all(limit);
       if (tag) rows = rows.filter(r => JSON.parse(r.tags ?? '[]').includes(tag));
-      return rows.map(r => ({ path: r.path, title: r.title, snippet: null }));
+      return { results: rows.map(r => ({ path: r.path, title: r.title, snippet: null })), fallback: false, match: null };
     }
   }
 
@@ -232,23 +283,90 @@ export function makeTools(indexer, vaultPath) {
     try { content = readFileSync(fullPath, 'utf8'); } catch {
       return { error: 'Datei nicht lesbar: ' + path };
     }
+    // R29/N2: Abschnitt = Ueberschrift bis zur naechsten Ueberschrift gleicher/hoeherer Ebene
+    // (vorher: stur 30 Zeilen -> zu wenig, oder der Anfang des Folgeabschnitts hing dran).
+    // `lines` begrenzt; ohne `lines` gilt SECTION_MAX_LINES. Wird gekappt, sagt es truncated
+    // (+ sectionLines = volle Laenge), damit der Aufrufer gezielt nachfordern kann.
+    // Unbekannter Abschnitt = FEHLER mit der Liste der vorhandenen Ueberschriften. Vorher kam
+    // dann still die ganze Notiz – bei einem Tippfehler die teuerste aller Antworten.
     if (section) {
-      const note = stmts.findNote.get(path);
-      if (note) {
-        const h = stmts.findHeading.get(note.id, '%' + section + '%');
-        if (h) {
-          const allLines = content.split('\n');
-          const start = h.line - 1;
-          const end = lines ? start + lines : start + SNIPPET_LINES;
-          return { path, section, content: allLines.slice(start, end).join('\n') };
-        }
+      const allLines = content.split('\n');
+      const { h, hs } = resolveSection(path, content, section);
+      if (h) {
+        const start = h.line - 1;
+        let end = h.endIdx ?? allLines.length;
+        while (end > start + 1 && allLines[end - 1].trim() === '') end--;   // Leerzeilen am Abschnittsende sind kein Inhalt
+        const total = end - start;
+        const max = lines || SECTION_MAX_LINES;
+        const truncated = total > max;
+        return {
+          path, section: h.text, level: h.level, line: h.line,
+          content: allLines.slice(start, truncated ? start + max : end).join('\n').replace(/\r$/, ''),
+          truncated, sectionLines: total,
+        };
       }
+      return { error: abschnittFehlt(path, section, hs, { ohne: 'Die Notiz hat keine Ueberschriften – ohne section lesen (ggf. mit lines).' }) };
     }
     if (lines) {
       const allLines = content.split('\n');
-      return { path, content: allLines.slice(0, lines).join('\n'), truncated: allLines.length > lines };
+      return { path, content: allLines.slice(0, lines).join('\n'), truncated: allLines.length > lines, totalLines: allLines.length };
     }
     return { path, content };
+  }
+
+  // Abschnitt einer Notiz aufloesen – gemeinsam fuer read_note und append_to_section.
+  // Liefert { h } (gefunden) oder { h: null, hs } (nicht gefunden; hs = die vorhandenen
+  // Ueberschriften fuer die Fehlermeldung).
+  function resolveSection(path, content, section) {
+    const fullPath = safeFull(path);
+    const allLines = content.split('\n');
+    const istUeberschrift = (h) => !!h && /^#{1,6}\s/.test(allLines[h.line - 1] ?? '') && allLines[h.line - 1].includes(h.text);
+    let note = stmts.findNote.get(path);
+    // Nicht im Index (z. B. ignorierter Ordner): Ueberschriften direkt aus dem Inhalt –
+    // sonst liesse sich der Abschnitt auch mit dem richtigen Titel nie ansprechen.
+    const ueberschriften = () => note ? stmts.headings.all(note.id) : parseNote(content).headings;
+    let h = findSection(ueberschriften(), section);
+    // Index hinkt der Datei hinterher (Aenderung am Nexus vorbei, Watcher noch nicht durch):
+    // die gemerkte Zeile ist dann keine Ueberschrift mehr -> Datei neu indexieren, einmal neu suchen.
+    // Fuer append_to_section ist das mehr als Kosmetik: die Zeile bestimmt, WO eingefuegt wird.
+    if (note && fullPath && /\.md$/i.test(fullPath) && (!h || !istUeberschrift(h))) {
+      try { indexer.indexFile(fullPath); } catch { /* Index bleibt wie er ist */ }
+      note = stmts.findNote.get(path);
+      h = findSection(ueberschriften(), section);
+      if (!istUeberschrift(h)) h = null;
+    }
+    return h ? { h } : { h: null, hs: ueberschriften() };
+  }
+
+  // Fehlermeldung "Abschnitt nicht gefunden" mit der Liste der vorhandenen Ueberschriften
+  // (jede Zeile ist so wieder als section verwendbar). zusatz: Einschub nach dem Kopf,
+  // ohne: Satz fuer Notizen ganz ohne Ueberschriften.
+  function abschnittFehlt(path, section, hs, { zusatz = '', ohne }) {
+    const leer = !String(section ?? '').replace(/^\s*#+\s*/, '').trim();
+    const kopf = (leer ? `Kein Abschnitt angegeben fuer ${path}` : `Abschnitt "${section}" nicht gefunden in ${path}`) + zusatz + '. ';
+    const { zeilen, hinweis } = ueberschriftenListe(hs);
+    return kopf + (zeilen.length
+      ? `Vorhandene Ueberschriften (${hs.length}${hinweis ? '; ' + hinweis : ''}):\n` + zeilen.join('\n')
+      : ohne);
+  }
+
+  // Abschnitt ueber seinen Titel finden – EINE Regel fuer read_note und append_to_section:
+  // exakter Titel vor Titel ohne Gross/Klein vor Teiltreffer (erster in Dateireihenfolge).
+  // Vorher gewann per LIKE '%x%' der erste Teiltreffer: section "Setup" konnte "Vor-Setup" liefern.
+  // Fuehrende "#" in der Angabe ("## Setup") werden ignoriert.
+  // endIdx: Zeilenindex (0-basiert) der naechsten Ueberschrift gleicher/hoeherer Ebene, null = Dateiende.
+  function findSection(hs, section) {
+    const roh = String(section ?? '').replace(/^\s*#+\s*/, '');
+    const such = roh.trim();
+    if (!such) return null;
+    const klein = such.toLowerCase(), rohKlein = roh.toLowerCase();
+    const h = hs.find(x => x.text === such)
+      ?? hs.find(x => x.text.toLowerCase() === klein)
+      ?? hs.find(x => x.text.toLowerCase().includes(rohKlein))    // wie angegeben (z. B. "Abschnitt 7 " mit Leerzeichen)
+      ?? hs.find(x => x.text.toLowerCase().includes(klein));
+    if (!h) return null;
+    const next = hs.find(x => x.line > h.line && x.level <= h.level);
+    return { level: h.level, text: h.text, line: h.line, endIdx: next ? next.line - 1 : null };
   }
 
   function writeNote({ path, content, create = false }) {
@@ -577,19 +695,29 @@ export function makeTools(indexer, vaultPath) {
     if (error) return { error };
     const originalBytes = Buffer.byteLength(content, 'utf8');
     const lines = content.split('\n');
-    const note = stmts.findNote.get(path);
-    let insertAt = lines.length;
-    if (note && section) {
-      const h = stmts.findHeading.get(note.id, '%' + section + '%');
-      if (h) {
-        const lvlRow = stmts.findHLevel.get(note.id, h.line);
-        const level = lvlRow?.level ?? 1;
-        const next = stmts.findNextH.get(note.id, h.line, level);
-        insertAt = next ? next.line - 1 : lines.length;
-      }
+    // Dieselbe Abschnitts-Aufloesung wie read_note (R29/N2). Unbekannter oder leerer Abschnitt =
+    // FEHLER mit der Liste der vorhandenen Ueberschriften, es wird NICHTS geschrieben. Vorher
+    // landete der Text dann still am Dateiende – ein Tippfehler im Titel (oder eine umbenannte
+    // Ueberschrift) legte Eintraege unbemerkt an der falschen Stelle ab.
+    const { h, hs } = resolveSection(path, content, section);
+    if (!h) return { error: abschnittFehlt(path, section, hs, {
+      zusatz: ' – nichts geschrieben',
+      ohne: 'Die Notiz hat keine Ueberschriften – Text mit patch einfuegen oder die Notiz mit write_note neu schreiben.',
+    }) };
+    const insertAt = h.endIdx ?? lines.length;
+    // R29/N12: im Zeilenende-Stil der Datei einfuegen. Vorher kamen die neuen Zeilen mit nacktem
+    // "\n" in eine CRLF-Datei -> gemischte Zeilenenden. Ueber Offsets statt split/join, damit
+    // jedes andere Byte der Datei bleibt, wie es ist (LF-Dateien: Ergebnis wie bisher).
+    const eol = dateiEol(content);
+    const neu = inEol(text, eol);
+    let merged;
+    if (insertAt >= lines.length) {
+      merged = content + eol + eol + neu;
+    } else {
+      let off = 0;
+      for (let i = 0; i < insertAt; i++) off += lines[i].length + 1;
+      merged = content.slice(0, off) + eol + neu + eol + content.slice(off);
     }
-    lines.splice(insertAt, 0, '', text);
-    const merged = lines.join('\n');
     // R14: append fuegt nur ein – das Ergebnis darf NIE kuerzer als das Original sein.
     // Waere es kuerzer, deutet das auf eine Trunkierung beim Lesen/Zusammenbauen hin
     // (bestehende grosse Notiz wuerde sonst beim Rueckschreiben gekappt -> Datenverlust).
@@ -810,13 +938,26 @@ export function makeTools(indexer, vaultPath) {
     let applied = 0;
     let expectedDelta = 0;   // R14: summierte Laengenaenderung aller angewandten Patches
     const missed = [];
+    // R29/N12: Vergleich zeilenenden-neutral – ein mehrzeiliges old_str mit "\n" findet seine
+    // Stelle auch in einer CRLF-Datei (und umgekehrt). Ersetzt wird NUR die Fundstelle, new_str
+    // kommt im Stil der Datei hinein; alle anderen Bytes bleiben unberuehrt (auch bei gemischten
+    // Zeilenenden). Ersetzen per slice statt String.replace: dort wuerden "$$", "$&", "$1" im
+    // new_str als Ersetzungsmuster gelesen (aus "$$x$$" wurde "$x$" -> Laengen-Invariante schlug an).
+    const eol = dateiEol(content);
     for (const p of patches) {
       if (typeof p.old_str !== 'string') { missed.push('<kein old_str>'); continue; }
-      if (cur.includes(p.old_str)) {
-        // replace() ersetzt nur erste Fundstelle (gewuenscht – analog zu Edit-Tool)
-        const repl = p.new_str ?? '';
-        cur = cur.replace(p.old_str, repl);
-        expectedDelta += repl.length - p.old_str.length;
+      let idx, len;
+      if (p.old_str.includes('\n')) {
+        const m = eolNeutral(p.old_str).exec(cur);
+        idx = m ? m.index : -1; len = m ? m[0].length : 0;
+      } else {
+        idx = cur.indexOf(p.old_str); len = p.old_str.length;
+      }
+      if (idx >= 0) {
+        // nur die erste Fundstelle (gewuenscht – analog zu Edit-Tool)
+        const repl = inEol(p.new_str ?? '', eol);
+        cur = cur.slice(0, idx) + repl + cur.slice(idx + len);
+        expectedDelta += repl.length - len;
         applied++;
       } else {
         missed.push(p.old_str.slice(0, 60));
@@ -986,6 +1127,6 @@ export function makeTools(indexer, vaultPath) {
     };
   }
 
-  return { search, outline, readNote, writeNote, writeVortrag, writeKarten, karteGliedern, readBild, lernStatus, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, listTrash, restore, vaultCheck };
+  return { search, searchDetail, outline, readNote, writeNote, writeVortrag, writeKarten, karteGliedern, readBild, lernStatus, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, listTrash, restore, vaultCheck };
 }
 // rev: graph() fuer UI-Graph (Session 13)

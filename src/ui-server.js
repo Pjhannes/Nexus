@@ -11,6 +11,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { buildIndexer } from './indexer.js';
 import { makeTools, SIDECAR_SUFFIXES, cleanupNexusTmp, emptyOldTrash } from './tools.js';
+import { parseFtsQuery } from './fts-query.js';
 import { loadConfig, resolveDbPath, dataPath, CONFIG_PATH, safeFull, writeConfigAtomic, makeIgnore } from './paths.js';
 // R26: Lernmodus – Karteikarten-Sidecars, Review-Log und Faecher liegen im Vault,
 // die Auswertung (Faelligkeit, Pruefungs-Planung) ist pure Logik in lernen.js.
@@ -372,8 +373,13 @@ app.get('/api/tree', (req, res) => {
 app.get('/api/search', (req, res) => {
   try {
     const { tools } = getVault(req.query.vault);
-    const r = tools.search({ q: req.query.q, limit: Number(req.query.limit) || 20, tag: req.query.tag });
-    res.json(r);
+    const q = typeof req.query.q === 'string' ? req.query.q : '';
+    const r = tools.search({ q, limit: Number(req.query.limit) || 20, tag: req.query.tag });
+    // R29/N1: die positiven Suchwoerter aus DEMSELBEN Parser mitgeben (src/fts-query.js) – die
+    // Treffermarkierung (R23, hitTokens in index.html) soll weder "OR" noch NOT-Begriffe markieren
+    // und muss dafuer die Query-Syntax nicht ein zweites Mal im Browser nachbauen.
+    const terms = q ? parseFtsQuery(q).terms : [];
+    res.json(terms.length ? r.map(x => ({ ...x, terms })) : r);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

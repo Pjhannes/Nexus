@@ -4747,7 +4747,7 @@ async function doSearch(q){
   // R23: Treffer-Kontext mitgeben (Query + ROHES Snippet mit **-Markern) -> Notiz oeffnet an der Fundstelle.
   area.querySelectorAll('.result-card').forEach(it=>it.addEventListener('click',()=>{
     const r=results[+it.dataset.idx]||{};
-    openFile(it.dataset.path,{searchHit:{q:q,snippet:r.snippet}});
+    openFile(it.dataset.path,{searchHit:{q:q,snippet:r.snippet,terms:r.terms}});
   }));
   logActivity('#7ec8e3',`search → ${results.length} Treffer`);
 }
@@ -4779,7 +4779,7 @@ async function onPalInput(){
   palDebounce=setTimeout(async()=>{
     const res=await api(`/api/search?vault=${encodeURIComponent(activeVault)}&q=${encodeURIComponent(q)}&limit=12`);
     palItems=[{group:'',icon:'🔍',tile:palTint('var(--accent)'),label:`Alle Ergebnisse für „${q}"`,sub:'Volltextsuche im Vault öffnen',hint:'↵',fn:()=>{closePalette();doSearch(q);}}];
-    for(const r of res)palItems.push(noteItem(r.path,r.title,{q:q,snippet:r.snippet}));   // R23: gleiche Geste wie die Ergebnis-Karte -> gleicher Sprung
+    for(const r of res)palItems.push(noteItem(r.path,r.title,{q:q,snippet:r.snippet,terms:r.terms}));   // R23: gleiche Geste wie die Ergebnis-Karte -> gleicher Sprung
     palSel=0;renderPalItems();
   },180);
 }
@@ -5304,11 +5304,18 @@ const HIT_FADE=650;           // muss zur .fade-Transition (.6s) im CSS passen
 const HIT_CTX=40;             // +/- Zeichen Umgebung fuers Snippet-Scoring
 let _hitState=null;           // {area,marks,block,tFade,tGone,onUser} der aktiven Markierung
 
-// Treffer-Woerter bestimmen. buildFtsQuery (src/tools.js) haengt an JEDES Query-Wort ein '*' ->
-// ein echter Treffer beginnt immer mit einem Query-Wort. Damit fallen **fett**-Marker aus dem
+// Treffer-Woerter bestimmen. Ein echter Treffer beginnt immer mit einem Suchwort (exakt, als
+// Wortanfang oder als erstes Wort einer Phrase). Damit fallen **fett**-Marker aus dem
 // Roh-Markdown raus, die snippet() faelschlich mitliefert (indexiert wird die Rohdatei).
+// R29/N1: Die Suchwoerter liefert /api/search als hit.terms aus demselben Parser, der auch die
+// Suche baut (src/fts-query.js) – ohne Operatoren (AND/OR/NOT) und ohne NOT-Begriffe. Fehlt
+// terms (alter Server), gelten wie frueher alle Woerter der Eingabe.
+// Einfache Anfragen suchen jedes Wort ab 4 Zeichen als Wortanfang ("Prüfung" trifft "Prüfungen"):
+// markiert wird deshalb das GANZE Trefferwort aus dem Snippet, nicht nur das getippte Stueck.
+// Liefert das Snippet nichts (Treffer nur im Titel/Pfad), gelten die Suchwoerter selbst.
+//__HIT_START__
 function hitTokens(hit){
-  const qw=(hit.q||'').toLowerCase().match(/[\p{L}\p{N}]+/gu)||[];
+  const qw=Array.isArray(hit.terms)?hit.terms:((hit.q||'').toLowerCase().match(/[\p{L}\p{N}]+/gu)||[]);
   const out=[];
   const add=t=>{t=(t||'').trim().toLowerCase();if(t.length>=2&&out.indexOf(t)<0)out.push(t);};
   const re=/\*\*([^*\r\n]+)\*\*/g;
@@ -5320,6 +5327,7 @@ function hitTokens(hit){
   if(!out.length)for(const w of qw)add(w);   // kein/leeres Snippet -> Query-Woerter direkt (erste Fundstelle gewinnt)
   return out;
 }
+//__HIT_END__
 function hitSnippetText(hit){return (hit.snippet||'').split('**').join('').split('…').join(' ').toLowerCase();}
 
 // Flache Textfassung der Leseansicht + Ruecklandkarte auf die Textknoten.
