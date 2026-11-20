@@ -16,6 +16,13 @@
 //                      Palette: "therm" findet "Thermodynamik"); nicht hinter NOT
 //   Rest-Zeichen       innerhalb eines Worts trennen (Remote-MCP -> Phrase "remote mcp")
 //
+// EINFACHE Anfragen (keine Operatoren, keine Anfuehrungszeichen, keine Klammern, kein *):
+//   jedes Wort ab PRAEFIX_AB Zeichen ist Wortanfang. FTS5 (unicode61) kennt kein Stemming –
+//   "Prüfung Termin" faende sonst weder "Prüfungen" noch "Termine". Kurze Woerter (der, im, an)
+//   bleiben exakt, sonst traefen sie halbe Woerterbuecher. Wer exakt suchen will, setzt
+//   Anfuehrungszeichen – ab dem ersten Syntaxzeichen gilt nur noch, was dasteht.
+//   Dieselbe Regel gilt fuer die bereinigte Suche nach einem Syntaxfehler.
+//
 // Jeder Suchbegriff wird in "…" ausgegeben und enthaelt nur Buchstaben/Ziffern – FTS5-
 // Sonderzeichen aus der Eingabe (^ : + - NEAR …) koennen den Ausdruck nicht mehr brechen.
 // Ist die Eingabe syntaktisch kaputt (offenes ", offene Klammer, Operator ohne Operand),
@@ -24,6 +31,9 @@
 const WORT = /[\p{L}\p{N}]+/gu;
 const OPERATOREN = new Set(['AND', 'OR', 'NOT']);
 const woerter = (s) => (String(s).match(WORT) || []).map(w => w.toLowerCase());
+// Ab so vielen Zeichen ist ein Wort einer einfachen Anfrage automatisch Wortanfang.
+export const PRAEFIX_AB = 4;
+const langGenug = (w) => [...w].length >= PRAEFIX_AB;
 
 // Eingabe in Tokens zerlegen. null = Syntaxfehler (offenes Anfuehrungszeichen).
 // Token: { t: 'term', words, prefix, quoted } | { t: 'op', op } | { t: '(' } | { t: ')' }
@@ -71,11 +81,12 @@ function gueltig(tokens) {
 const alsTerm = (t) => `"${t.words.join(' ')}"${t.prefix ? '*' : ''}`;
 
 // Bereinigte Suche: alle Woerter der Eingabe (ohne die Operator-Woerter), mit AND verknuepft,
-// letztes Wort als Wortanfang. Dient als Rueckfall bei Syntaxfehlern.
+// Wortanfang wie bei einer einfachen Anfrage (ab PRAEFIX_AB Zeichen + letztes Wort).
+// Dient als Rueckfall bei Syntaxfehlern.
 export function fallbackFtsQuery(q) {
   const ws = (String(q ?? '').match(WORT) || []).filter(w => !OPERATOREN.has(w)).map(w => w.toLowerCase());
   if (!ws.length) return { match: null, terms: [], fallback: true };
-  const match = ws.map((w, i) => `"${w}"${i === ws.length - 1 ? '*' : ''}`).join(' AND ');
+  const match = ws.map((w, i) => `"${w}"${i === ws.length - 1 || langGenug(w) ? '*' : ''}`).join(' AND ');
   return { match, terms: [...new Set(ws)], fallback: true };
 }
 
@@ -92,6 +103,12 @@ export function parseFtsQuery(q) {
   const tokens = tokenize(s);
   if (!tokens || (tokens.length && !gueltig(tokens))) return fallbackFtsQuery(s);
   if (!tokens.length) return { match: null, terms: [], fallback: false };
+
+  // Einfache Anfrage (nur Woerter): jedes Wort ab PRAEFIX_AB Zeichen ist Wortanfang. Bei einem
+  // Bindestrich-Wort (Phrase) entscheidet das letzte Teilwort – nur das kann FTS5 als Praefix nehmen.
+  if (!/["()*]/.test(s) && tokens.every(t => t.t === 'term')) {
+    for (const t of tokens) if (langGenug(t.words[t.words.length - 1])) t.prefix = true;
+  }
 
   // Letztes Wort ohne Anfuehrungszeichen = Wortanfang (nicht als NOT-Operand: das schloesse zu viel aus).
   const last = tokens[tokens.length - 1], vor = tokens[tokens.length - 2];

@@ -161,8 +161,9 @@ export function buildServer({ registry, policy = {}, info = {} } = {}) {
     description: 'Etwas im Vault finden, ohne Dateien zu lesen: Volltextsuche (FTS5) ueber alle Notizen, liefert Pfad, Titel und Treffer-Snippet. ' +
       'Ohne q: Notizliste (optional nach Tag gefiltert). Erster Schritt vor read_note.',
     input: {
-      q:      z.string().optional().describe('Suchbegriff(e). Mehrere Woerter = alle muessen vorkommen. Operatoren GROSS: AND, OR, NOT (a NOT b); ' +
-        '"exakte Phrase"; wortanfang*; Klammern. Das letzte Wort ohne Anfuehrungszeichen zaehlt als Wortanfang. ' +
+      q:      z.string().optional().describe('Suchbegriff(e). Einfach: Woerter ohne Sonderzeichen – alle muessen vorkommen, jedes Wort ab 4 Zeichen zaehlt als Wortanfang ' +
+        '(Pruefung findet auch Pruefungen; es gibt kein Stemming). Genau: "exaktes Wort" oder "exakte Phrase"; Operatoren GROSS: AND, OR, NOT (a NOT b); Klammern; wortanfang*. ' +
+        'Sobald Anfuehrungszeichen, Operatoren, Klammern oder * vorkommen, gilt nur noch, was dasteht (Wortanfang dann nur bei * und am letzten unquotierten Wort). ' +
         'Kaputte Syntax fuehrt nicht zum Fehler, sondern zur einfachen Suche nach allen Woertern.'),
       limit:  limitParam(20),
       offset: offsetParam,

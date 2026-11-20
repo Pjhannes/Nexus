@@ -10,7 +10,7 @@ import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
-import { parseFtsQuery, buildFtsQuery, fallbackFtsQuery } from '../src/fts-query.js';
+import { parseFtsQuery, buildFtsQuery, fallbackFtsQuery, PRAEFIX_AB } from '../src/fts-query.js';
 import { buildIndexer } from '../src/indexer.js';
 import { makeTools } from '../src/tools.js';
 
@@ -28,7 +28,7 @@ console.log('\n── A. Parser ──');
 const faelle = [
   // [Eingabe, MATCH, terms, fallback]
   ['Carnot',                         '"carnot"*',                                   ['carnot'], false],
-  ['Erster Hauptsatz',               '"erster" AND "hauptsatz"*',                   ['erster', 'hauptsatz'], false],
+  ['Erster Hauptsatz',               '"erster"* AND "hauptsatz"*',                  ['erster', 'hauptsatz'], false],
   ['"Custom Connector"',             '"custom connector"',                          ['custom', 'connector'], false],
   ['"Remote-MCP" OR "Custom Connector"', '"remote mcp" OR "custom connector"',      ['remote', 'mcp', 'custom', 'connector'], false],
   ['Carnot AND Wirkungsgrad',        '"carnot" AND "wirkungsgrad"*',                ['carnot', 'wirkungsgrad'], false],
@@ -41,17 +41,29 @@ const faelle = [
   ['Motor (Carnot OR Otto)',         '"motor" AND ("carnot" OR "otto")',            ['motor', 'carnot', 'otto'], false],
   ['Motor NOT (Carnot OR Otto) Diesel', '"motor" NOT ("carnot" OR "otto") AND "diesel"*', ['motor', 'diesel'], false],
   ['a or b',                         '"a" AND "or" AND "b"*',                       ['a', 'or', 'b'], false],   // klein = Suchwort
-  ['NEAR title:foo ^bar',            '"near" AND "title foo" AND "bar"*',           ['near', 'title', 'foo', 'bar'], false],
-  ['  Übung   Größe  ',              '"übung" AND "größe"*',                        ['übung', 'größe'], false],
+  ['NEAR title:foo ^bar',            '"near"* AND "title foo" AND "bar"*',          ['near', 'title', 'foo', 'bar'], false],
+  ['  Übung   Größe  ',              '"übung"* AND "größe"*',                       ['übung', 'größe'], false],
   ['"" Carnot',                      '"carnot"*',                                   ['carnot'], false],
+  // einfache Anfrage (nur Woerter): jedes Wort ab 4 Zeichen ist Wortanfang – FTS5 hat kein Stemming
+  ['Prüfung Termin',                 '"prüfung"* AND "termin"*',                    ['prüfung', 'termin'], false],
+  ['der Termin im Mai',              '"der" AND "termin"* AND "im" AND "mai"*',     ['der', 'termin', 'im', 'mai'], false],
+  ['Carnot-Wirkungsgrad Otto',       '"carnot wirkungsgrad"* AND "otto"*',          ['carnot', 'wirkungsgrad', 'otto'], false],
+  ['2026 Plan',                      '"2026"* AND "plan"*',                         ['2026', 'plan'], false],
+  ['and or not',                     '"and" AND "or" AND "not"*',                   ['and', 'or', 'not'], false],
+  // ab dem ersten Syntaxzeichen gilt nur noch, was dasteht
+  ['"Prüfung" Termin',               '"prüfung" AND "termin"*',                     ['prüfung', 'termin'], false],
+  ['"Prüfung" "Termin"',             '"prüfung" AND "termin"',                      ['prüfung', 'termin'], false],
+  ['Prüfung AND Termin',             '"prüfung" AND "termin"*',                     ['prüfung', 'termin'], false],
+  ['Prüf* Termin Plan',              '"prüf"* AND "termin" AND "plan"*',            ['prüf', 'termin', 'plan'], false],
+  ['(Prüfung Termin)',               '("prüfung" AND "termin")',                    ['prüfung', 'termin'], false],
   // Syntaxfehler -> bereinigte Suche
-  ['"offen Carnot',                  '"offen" AND "carnot"*',                       ['offen', 'carnot'], true],
+  ['"offen Carnot',                  '"offen"* AND "carnot"*',                      ['offen', 'carnot'], true],
   ['Carnot AND',                     '"carnot"*',                                   ['carnot'], true],
   ['OR Carnot',                      '"carnot"*',                                   ['carnot'], true],
   ['NOT Carnot',                     '"carnot"*',                                   ['carnot'], true],
-  ['Carnot AND OR Otto',             '"carnot" AND "otto"*',                        ['carnot', 'otto'], true],
-  ['(Carnot OR Otto',                '"carnot" AND "otto"*',                        ['carnot', 'otto'], true],
-  ['Carnot) Otto',                   '"carnot" AND "otto"*',                        ['carnot', 'otto'], true],
+  ['Carnot AND OR Otto',             '"carnot"* AND "otto"*',                       ['carnot', 'otto'], true],
+  ['(Carnot OR Otto',                '"carnot"* AND "otto"*',                       ['carnot', 'otto'], true],
+  ['Carnot) Otto',                   '"carnot"* AND "otto"*',                       ['carnot', 'otto'], true],
   ['()',                             null,                                          [], true],
   ['Carnot++-"()',                   '"carnot"*',                                   ['carnot'], true],
   // nichts Suchbares
@@ -67,6 +79,8 @@ for (const [q, match, terms, fallback] of faelle) {
 ok('buildFtsQuery liefert nur den MATCH-Ausdruck', buildFtsQuery('a OR b') === '"a" OR "b"*');
 ok('parseFtsQuery vertraegt undefined/null/Zahl', parseFtsQuery(undefined).match === null && parseFtsQuery(null).match === null && parseFtsQuery(42).match === '"42"*');
 ok('fallbackFtsQuery: Operator-Woerter fliegen raus', fallbackFtsQuery('a AND OR NOT b').match === '"a" AND "b"*');
+ok('fallbackFtsQuery: Wortanfang wie bei einfachen Anfragen', fallbackFtsQuery('der Termin "Prüfung im').match === '"der" AND "termin"* AND "prüfung"* AND "im"*');
+ok('PRAEFIX_AB = 4', PRAEFIX_AB === 4 && buildFtsQuery('abc abcd x') === '"abc" AND "abcd"* AND "x"*');
 ok('der alte Fehler ist weg: kein "OR*" im Ausdruck', !/OR\*/.test(buildFtsQuery('"Remote-MCP" OR "Custom Connector"')));
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -82,6 +96,7 @@ notiz('Getrennt.md', '# Getrennt\n\nDer Connector kennt eigene Felder, Custom is
 notiz('Waerme.md',   '# Thermodynamik\n\nErster Hauptsatz und der Carnot-Wirkungsgrad.\n');
 notiz('Otto.md',     '# Otto\n\nDer Otto Motor hat einen Wirkungsgrad, aber keinen Namen aus Frankreich.\n');
 notiz('Oder.md',     '# Oder\n\nDie Stadt an der OR liegt nicht an der Oder.\n');
+notiz('Uni-Deadlines.md', '# Uni-Deadlines\n\nAlle Prüfungen und ihre Termine im Sommersemester.\n');
 
 const indexer = buildIndexer(vaultDir, join(scratch, 'fts.db'), []);
 indexer.reindex();
@@ -102,7 +117,17 @@ try {
   sucht('Wort neben Klammer (implizites AND)', 'Motor (Carnot OR Otto)', ['Otto.md']);
   sucht('letztes Wort ist Wortanfang', 'Thermo', ['Waerme.md']);
   sucht('letztes Wort ist Wortanfang (zwei Woerter)', 'Erster Haupt', ['Waerme.md']);
-  sucht('KEIN Praefix mitten in der Anfrage (vorher: jedes Wort mit *)', 'Thermo Carnot', []);
+  // Einfache Anfragen: Wortanfang fuer jedes Wort ab 4 Zeichen (kein Stemming in FTS5)
+  sucht('der gemeldete Fall: Mehrzahl wird gefunden', 'Prüfung Termin', ['Uni-Deadlines.md']);
+  sucht('einfache Anfrage: Wortanfang auch mitten in der Anfrage', 'Thermo Carnot', ['Waerme.md']);
+  sucht('einfache Anfrage: kurze Woerter (< 4 Zeichen) bleiben exakt', 'Ott Motor', []);
+  sucht('einfache Anfrage: Gegenprobe mit 4 Zeichen', 'Moto Wirkungsgrad', ['Otto.md']);
+  // Sobald Syntax im Spiel ist, gilt nur noch, was dasteht
+  sucht('exakt mit Anfuehrungszeichen: Einzahl findet die Mehrzahl nicht', '"Prüfung" "Termin"', []);
+  sucht('exakt mit Anfuehrungszeichen: genaue Form trifft', '"Prüfungen" "Termine"', ['Uni-Deadlines.md']);
+  sucht('ein Anfuehrungszeichen schaltet den automatischen Wortanfang ab', '"Prüfung" Termin', []);
+  sucht('mit Operator: kein automatischer Wortanfang mitten in der Anfrage', 'Thermo AND Carnot', []);
+  sucht('mit Operator: letztes Wort bleibt Wortanfang', 'Prüfungen AND Termin', ['Uni-Deadlines.md']);
   sucht('expliziter Praefix mitten in der Anfrage', 'Thermo* Carnot', ['Waerme.md']);
   sucht('Phrase am Ende ist KEIN Wortanfang', '"Thermo"', []);
   sucht('Phrasen-Praefix', '"Erster Haupt"*', ['Waerme.md']);
@@ -179,12 +204,18 @@ try {
   const tkTipp = hitTokens(Object.assign({ q: 'Therm' }, tipp.json.find(r => r.path === 'Waerme.md')));
   ok('Markierung beim Tippen: ganzes Trefferwort', tkTipp.includes('thermodynamik'), tkTipp);
 
+  const mehrzahl = await api('Prüfung Termin');
+  ok('/api/search: einfache Anfrage findet die Mehrzahl-Formen', gleich(mehrzahl.json.map(r => r.path), ['Uni-Deadlines.md']) && gleich(mehrzahl.json[0].terms, ['prüfung', 'termin']), mehrzahl.json);
+  const tkMehrzahl = hitTokens(Object.assign({ q: 'Prüfung Termin' }, mehrzahl.json[0]));
+  ok('Markierung: ganzes Trefferwort ("prüfungen", "termine"), nicht nur das getippte Stueck', gleich([...tkMehrzahl].sort(), ['prüfungen', 'termine']), tkMehrzahl);
+  ok('Markierung ohne Snippet-Treffer: die Suchwoerter selbst', gleich(hitTokens({ q: 'Prüfung Termin', snippet: '', terms: mehrzahl.json[0].terms }), ['prüfung', 'termin']));
+
   const kaputt = await api('"offen Carnot AND (');
   ok('/api/search: kaputte Syntax -> 200 + Treffer der bereinigten Suche', kaputt.status === 200 && Array.isArray(kaputt.json), kaputt);
   const leer = await api('+++');
   ok('/api/search: nur Sonderzeichen -> leere Liste', leer.status === 200 && gleich(leer.json, []), leer);
   const ohneQ = await (await fetch(`http://127.0.0.1:${PORT}/api/search?vault=vault`, { headers: H })).json();
-  ok('/api/search ohne q: Notizliste wie bisher (ohne terms)', Array.isArray(ohneQ) && ohneQ.length === 6 && ohneQ.every(r => !('terms' in r)), ohneQ);
+  ok('/api/search ohne q: Notizliste wie bisher (ohne terms)', Array.isArray(ohneQ) && ohneQ.length === 7 && ohneQ.every(r => !('terms' in r)), ohneQ);
 } catch (e) {
   console.error('  \x1b[31m✗ Testlauf-Fehler:\x1b[0m', e.stack || e.message);
   fail++;

@@ -5310,6 +5310,9 @@ let _hitState=null;           // {area,marks,block,tFade,tGone,onUser} der aktiv
 // R29/N1: Die Suchwoerter liefert /api/search als hit.terms aus demselben Parser, der auch die
 // Suche baut (src/fts-query.js) – ohne Operatoren (AND/OR/NOT) und ohne NOT-Begriffe. Fehlt
 // terms (alter Server), gelten wie frueher alle Woerter der Eingabe.
+// Einfache Anfragen suchen jedes Wort ab 4 Zeichen als Wortanfang ("Prüfung" trifft "Prüfungen"):
+// markiert wird deshalb das GANZE Trefferwort aus dem Snippet, nicht nur das getippte Stueck.
+// Liefert das Snippet nichts (Treffer nur im Titel/Pfad), gelten die Suchwoerter selbst.
 //__HIT_START__
 function hitTokens(hit){
   const qw=Array.isArray(hit.terms)?hit.terms:((hit.q||'').toLowerCase().match(/[\p{L}\p{N}]+/gu)||[]);
