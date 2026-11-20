@@ -615,6 +615,14 @@ try {
       for (const m of inhalt.matchAll(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi)) if (!m[0].startsWith('00000000-0000-')) funde.push(`${f}: ${m[0]}`);
     }
     ok(`keine echten Domains, Adressbereiche oder Benutzer-IDs in ${dateien.length} Connector-Dateien`, funde.length === 0, funde.join(' | '));
+
+    // 6d. Doku: jede Umgebungsvariable aus dem Code ist beschrieben (und keine, die es nicht gibt).
+    const doku = existsSync(join(ROOT, 'docs', 'remote-connector.md')) ? readFileSync(join(ROOT, 'docs', 'remote-connector.md'), 'utf8') : '';
+    const imCode = new Set([...readFileSync(join(ROOT, 'src', 'mcp', 'http-config.js'), 'utf8').matchAll(/NEXUS_MCP_[A-Z_]+/g)].map(m => m[0]));
+    const inDoku = new Set([...doku.matchAll(/NEXUS_MCP_[A-Z_]+/g)].map(m => m[0]));
+    ok('docs/remote-connector.md beschreibt alle Variablen aus http-config.js', doku.length > 0 && [...imCode].every(v => inDoku.has(v)), [...imCode].filter(v => !inDoku.has(v)).join());
+    ok('die Doku nennt keine Variable, die der Code nicht kennt', [...inDoku].every(v => imCode.has(v)), [...inDoku].filter(v => !imCode.has(v)).join());
+    ok('die Doku nennt alle freigegebenen Tools', REMOTE_READ_TOOLS.every(t => doku.includes('`' + t + '`')));
   }
 } catch (e) {
   console.error('  \x1b[31m✗ Testlauf-Fehler:\x1b[0m', e.stack || e.message);
