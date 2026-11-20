@@ -22,6 +22,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
+import { SECTION_MAX_LINES } from '../tools.js';
 
 // Optionaler Vault-Parameter, den jedes Tool versteht.
 const vaultParam = z.string().optional()
@@ -188,14 +189,23 @@ export function buildServer({ registry, policy = {}, info = {} } = {}) {
       'Bevorzugt abschnittsweise (maximale Information pro Token).',
     input: {
       path:    z.string().describe('Relativer Pfad zur Notiz im Vault'),
-      section: z.string().optional().describe('Abschnittstitel (optional) – liefert nur diesen Abschnitt'),
-      lines:   z.number().int().min(1).max(2000).optional().describe('Zeilenlimit (optional, 1..2000)'),
+      section: z.string().optional().describe('Abschnittstitel (optional) – liefert diesen Abschnitt bis zur naechsten Ueberschrift gleicher oder hoeherer Ebene (Unterabschnitte inklusive). Exakter Titel gewinnt vor Teiltreffer'),
+      lines:   z.number().int().min(1).max(2000).optional().describe(`Zeilenlimit (optional, 1..2000). Ohne Angabe: ganze Notiz bzw. hoechstens ${SECTION_MAX_LINES} Zeilen eines Abschnitts; Kuerzungen werden am Ende gemeldet`),
       vault:   vaultParam,
     },
     annotations: RO,
   }, ({ path, section, lines, vault }) => {
     const r = registry.get(vault).tools.readNote({ path, section, lines });
-    return r.error ? fail(r.error) : text(r.content);
+    if (r.error) return fail(r.error);
+    // R29/N2: Kuerzung und "Abschnitt nicht gefunden" stehen im Text – read_note liefert nur Text,
+    // ein Flag im Ergebnisobjekt saehe der Aufrufer nie.
+    if (section && r.sectionFound === false)
+      return text(`[Hinweis: Abschnitt "${section}" nicht gefunden – ${r.truncated ? `die ersten ${lines} von ${r.totalLines} Zeilen` : 'die ganze Notiz'} geliefert. Ueberschriften zeigt outline.]\n\n${r.content}`);
+    if (r.truncated && r.sectionLines)
+      return text(`${r.content}\n\n[gekuerzt: ${lines || SECTION_MAX_LINES} von ${r.sectionLines} Zeilen des Abschnitts "${r.section}" – mehr mit lines=${Math.min(r.sectionLines, 2000)} oder ueber einen Unterabschnitt (outline).]`);
+    if (r.truncated)
+      return text(`${r.content}\n\n[gekuerzt: ${lines} von ${r.totalLines} Zeilen der Notiz – mehr mit groesserem lines oder gezielt mit section.]`);
+    return text(r.content);
   });
 
   tool('read_bild', {

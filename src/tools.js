@@ -42,7 +42,10 @@ import {
   lernUebersicht, lernStatistik, heuteISO, LERN_STANDARD, LERN_STUFEN, themenAusGliederung,
 } from './lernen.js';
 
-const SNIPPET_LINES = 30;
+// read_note(section) ohne `lines`: ein Abschnitt wird ganz geliefert, aber hoechstens so viele
+// Zeilen (Prinzip: Information pro Token – ein "# Titel"-Abschnitt kann die ganze Notiz sein).
+// Darueber: truncated + sectionLines, der Aufrufer fordert mit lines=… gezielt nach.
+export const SECTION_MAX_LINES = 200;
 
 // Die Normalisierung wohnt in src/norm.js (damit auch lernen.js sie nutzen kann,
 // ohne Zirkelimport) – hier weiter exportiert, damit bestehende Importe aus
@@ -170,9 +173,6 @@ export function makeTools(indexer, vaultPath) {
     outline:     db.prepare('SELECT id, title FROM notes WHERE path = ?'),
     headings:    db.prepare('SELECT level, text, line FROM headings WHERE note_id = ? ORDER BY line'),
     findNote:    db.prepare('SELECT id FROM notes WHERE path = ?'),
-    findHeading: db.prepare('SELECT line FROM headings WHERE note_id = ? AND text LIKE ? ORDER BY line LIMIT 1'),
-    findNextH:   db.prepare('SELECT line FROM headings WHERE note_id = ? AND line > ? AND level <= ? ORDER BY line LIMIT 1'),
-    findHLevel:  db.prepare('SELECT level FROM headings WHERE note_id = ? AND line = ?'),
     backlinks:   db.prepare(`
       SELECT DISTINCT n.path, n.title FROM links l
       JOIN notes n ON l.src_id = n.id
@@ -236,23 +236,64 @@ export function makeTools(indexer, vaultPath) {
     try { content = readFileSync(fullPath, 'utf8'); } catch {
       return { error: 'Datei nicht lesbar: ' + path };
     }
+    // R29/N2: Abschnitt = Ueberschrift bis zur naechsten Ueberschrift gleicher/hoeherer Ebene
+    // (vorher: stur 30 Zeilen -> zu wenig, oder der Anfang des Folgeabschnitts hing dran).
+    // `lines` begrenzt; ohne `lines` gilt SECTION_MAX_LINES. Wird gekappt, sagt es truncated
+    // (+ sectionLines = volle Laenge), damit der Aufrufer gezielt nachfordern kann.
+    let sectionFound;
     if (section) {
-      const note = stmts.findNote.get(path);
-      if (note) {
-        const h = stmts.findHeading.get(note.id, '%' + section + '%');
-        if (h) {
-          const allLines = content.split('\n');
-          const start = h.line - 1;
-          const end = lines ? start + lines : start + SNIPPET_LINES;
-          return { path, section, content: allLines.slice(start, end).join('\n') };
-        }
+      const allLines = content.split('\n');
+      const istUeberschrift = (h) => !!h && /^#{1,6}\s/.test(allLines[h.line - 1] ?? '') && allLines[h.line - 1].includes(h.text);
+      let note = stmts.findNote.get(path);
+      let h = note ? findSection(note.id, section) : null;
+      // Index hinkt der Datei hinterher (Aenderung am Nexus vorbei, Watcher noch nicht durch):
+      // die gemerkte Zeile ist dann keine Ueberschrift mehr -> Datei neu indexieren, einmal neu suchen.
+      if (note && /\.md$/i.test(fullPath) && (!h || !istUeberschrift(h))) {
+        try { indexer.indexFile(fullPath); } catch { /* Index bleibt wie er ist */ }
+        note = stmts.findNote.get(path);
+        h = note ? findSection(note.id, section) : null;
+        if (!istUeberschrift(h)) h = null;
       }
+      if (h) {
+        const start = h.line - 1;
+        let end = h.endIdx ?? allLines.length;
+        while (end > start + 1 && allLines[end - 1].trim() === '') end--;   // Leerzeilen am Abschnittsende sind kein Inhalt
+        const total = end - start;
+        const max = lines || SECTION_MAX_LINES;
+        const truncated = total > max;
+        return {
+          path, section: h.text, level: h.level, line: h.line,
+          content: allLines.slice(start, truncated ? start + max : end).join('\n').replace(/\r$/, ''),
+          truncated, sectionLines: total,
+        };
+      }
+      sectionFound = false;   // Verhalten wie bisher (Notiz ab Anfang), aber fuer den Aufrufer erkennbar
     }
     if (lines) {
       const allLines = content.split('\n');
-      return { path, content: allLines.slice(0, lines).join('\n'), truncated: allLines.length > lines };
+      return { path, content: allLines.slice(0, lines).join('\n'), truncated: allLines.length > lines, totalLines: allLines.length, ...(section ? { sectionFound } : {}) };
     }
-    return { path, content };
+    return { path, content, ...(section ? { sectionFound } : {}) };
+  }
+
+  // Abschnitt ueber seinen Titel finden – EINE Regel fuer read_note und append_to_section:
+  // exakter Titel vor Titel ohne Gross/Klein vor Teiltreffer (erster in Dateireihenfolge).
+  // Vorher gewann per LIKE '%x%' der erste Teiltreffer: section "Setup" konnte "Vor-Setup" liefern.
+  // Fuehrende "#" in der Angabe ("## Setup") werden ignoriert.
+  // endIdx: Zeilenindex (0-basiert) der naechsten Ueberschrift gleicher/hoeherer Ebene, null = Dateiende.
+  function findSection(noteId, section) {
+    const roh = String(section ?? '').replace(/^\s*#+\s*/, '');
+    const such = roh.trim();
+    if (!such) return null;
+    const hs = stmts.headings.all(noteId);
+    const klein = such.toLowerCase(), rohKlein = roh.toLowerCase();
+    const h = hs.find(x => x.text === such)
+      ?? hs.find(x => x.text.toLowerCase() === klein)
+      ?? hs.find(x => x.text.toLowerCase().includes(rohKlein))    // wie angegeben (z. B. "Abschnitt 7 " mit Leerzeichen)
+      ?? hs.find(x => x.text.toLowerCase().includes(klein));
+    if (!h) return null;
+    const next = hs.find(x => x.line > h.line && x.level <= h.level);
+    return { level: h.level, text: h.text, line: h.line, endIdx: next ? next.line - 1 : null };
   }
 
   function writeNote({ path, content, create = false }) {
@@ -584,13 +625,8 @@ export function makeTools(indexer, vaultPath) {
     const note = stmts.findNote.get(path);
     let insertAt = lines.length;
     if (note && section) {
-      const h = stmts.findHeading.get(note.id, '%' + section + '%');
-      if (h) {
-        const lvlRow = stmts.findHLevel.get(note.id, h.line);
-        const level = lvlRow?.level ?? 1;
-        const next = stmts.findNextH.get(note.id, h.line, level);
-        insertAt = next ? next.line - 1 : lines.length;
-      }
+      const h = findSection(note.id, section);   // R29/N2: dieselbe Abschnitts-Regel wie read_note
+      if (h) insertAt = h.endIdx ?? lines.length;
     }
     lines.splice(insertAt, 0, '', text);
     const merged = lines.join('\n');
