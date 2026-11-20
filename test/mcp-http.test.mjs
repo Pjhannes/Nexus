@@ -9,6 +9,8 @@ import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import http from 'http';
+import { createHmac, randomUUID } from 'crypto';
+import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { createHttpApp } from '../src/mcp/http-app.js';
 import { loadHttpConfig } from '../src/mcp/http-config.js';
 import { makeVaultRegistry } from '../src/vault-registry.js';
@@ -58,11 +60,11 @@ async function starte(app) {
 }
 
 // Rohe Anfrage. body: Objekt (wird JSON) oder String/Buffer (unveraendert).
-function anfrage(port, { method = 'POST', path = '/mcp', headers = {}, body } = {}) {
+function anfrage(port, { method = 'POST', path = '/mcp', headers = {}, body, token } = {}) {
   return new Promise((resolve, reject) => {
     const daten = body === undefined ? null : (typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
     const h = { ...(daten !== null ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(daten) } : {}),
-      accept: 'application/json, text/event-stream', ...headers };
+      accept: 'application/json, text/event-stream', ...(token ? { authorization: 'Bearer ' + token } : {}), ...headers };
     const rq = http.request({ host: '127.0.0.1', port, method, path, headers: h }, (res) => {
       let text = '';
       res.setEncoding('utf8');
@@ -81,8 +83,47 @@ const INIT = { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { na
 // Basis-Umgebung fuer alle Tests – nur Platzhalter.
 const RESOURCE = 'https://mcp.example.com/mcp';
 const ISSUER = 'https://auth.example.com';
-const ENV = { NEXUS_MCP_RESOURCE_URL: RESOURCE, NEXUS_MCP_ISSUER: ISSUER };
-const wirft = (env) => { try { loadHttpConfig(env); return null; } catch (e) { return e.message; } };
+const SUB = '00000000-0000-4000-8000-000000000001';       // erlaubter Benutzer
+const SUB_FREMD = '00000000-0000-4000-8000-000000000002'; // echtes Token, aber nicht freigegeben
+const KID = 'test-rs256';
+
+// Lokal erzeugtes Schluesselpaar + lokale JWKS (zaehlt die Abrufe -> Cache-Nachweis).
+const { publicKey, privateKey } = await generateKeyPair('RS256', { extractable: true });
+const fremd = await generateKeyPair('RS256', { extractable: true }); // gleicher kid, anderer Schluessel
+const jwk = { ...(await exportJWK(publicKey)), kid: KID, alg: 'RS256', use: 'sig' };
+let jwksAbrufe = 0;
+const jwksServer = http.createServer((req, res) => {
+  if (req.url !== '/jwks.json') { res.statusCode = 404; return res.end(); }
+  jwksAbrufe++;
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify({ keys: [jwk] }));
+});
+await new Promise(r => jwksServer.listen(0, '127.0.0.1', r));
+aufraeumen.push(() => new Promise(r => { jwksServer.closeAllConnections?.(); jwksServer.close(r); }));
+const JWKS_URI = `http://127.0.0.1:${jwksServer.address().port}/jwks.json`;
+
+const ENV = {
+  NEXUS_MCP_RESOURCE_URL: RESOURCE, NEXUS_MCP_ISSUER: ISSUER,
+  NEXUS_MCP_JWKS_URI: JWKS_URI, NEXUS_MCP_ALLOWED_SUBS: SUB,
+};
+
+// Access-Token wie vom Aussteller (RFC 9068): typ at+jwt, RS256, aud als Array, Scopes in scp.
+// Jeder Parameter laesst sich fuer einen Negativtest einzeln verbiegen.
+const jetzt = () => Math.floor(Date.now() / 1000);
+function token({ sub = SUB, iss = ISSUER, aud = [RESOURCE], typ = 'at+jwt', key = privateKey, kid = KID,
+                 exp = jetzt() + 300, nbf = jetzt() - 10, scp = ['openid', 'offline_access'], claims = {} } = {}) {
+  const j = new SignJWT({ scp, client_id: 'test-client', ...claims })
+    .setProtectedHeader({ alg: 'RS256', kid, ...(typ ? { typ } : {}) })
+    .setIssuedAt(jetzt() - 10).setJti(randomUUID());
+  if (iss !== null) j.setIssuer(iss);
+  if (aud !== null) j.setAudience(aud);
+  if (sub !== null) j.setSubject(sub);
+  if (exp !== null) j.setExpirationTime(exp);
+  if (nbf !== null) j.setNotBefore(nbf);
+  return j.sign(key);
+}
+const GUT = await token();
+const wirft =(env) => { try { loadHttpConfig(env); return null; } catch (e) { return e.message; } };
 
 const info = { name: 'nexus-test', version: '9.9.9', gitCommit: null, buildDate: null, dataDir: scratch, dev: true };
 
@@ -98,11 +139,11 @@ try {
 
     const port = await starte(createHttpApp({ registry, info, config }));
     const vorher = registry.size();
-    const init = await anfrage(port, { body: rpc('initialize', INIT) });
+    const init = await anfrage(port, { token: GUT, body: rpc('initialize', INIT) });
     ok('POST /mcp initialize -> 200 JSON', init.status === 200 && /application\/json/.test(init.headers['content-type'] ?? '') && init.json?.result?.serverInfo?.name === 'nexus-test',
       `${init.status} ${init.text}`);
     ok('zustandslos: keine Mcp-Session-Id in der Antwort', init.headers['mcp-session-id'] === undefined);
-    const init2 = await anfrage(port, { body: rpc('initialize', INIT) });
+    const init2 = await anfrage(port, { token: GUT, body: rpc('initialize', INIT) });
     ok('zweite Anfrage ohne Sitzung funktioniert genauso', init2.status === 200 && init2.json?.result?.serverInfo?.version === '9.9.9', init2.text);
     ok('Registry bleibt dieselbe (einmal pro Prozess)', registry.size() === vorher && vorher === 2, `${vorher} -> ${registry.size()}`);
 
@@ -114,7 +155,7 @@ try {
     ok('PUT /mcp -> 405', put.status === 405, `${put.status}`);
     const fremd = await anfrage(port, { method: 'GET', path: '/' });
     ok('anderer Pfad -> 404', fremd.status === 404, `${fremd.status}`);
-    const kaputt = await anfrage(port, { body: '{kein json' });
+    const kaputt = await anfrage(port, { token: GUT, body: '{kein json' });
     ok('kaputtes JSON -> 400, kein Stacktrace', kaputt.status === 400 && !/at .*\.js/.test(kaputt.text), `${kaputt.status} ${kaputt.text}`);
     ok('kein X-Powered-By', init.headers['x-powered-by'] === undefined);
 
@@ -122,7 +163,7 @@ try {
     for (const wert of ['0', 'false', 'off']) {
       const aus = loadHttpConfig({ NEXUS_MCP_ENABLED: wert });
       const p = await starte(createHttpApp({ registry: null, info, config: aus }));
-      const a = await anfrage(p, { body: rpc('initialize', INIT) });
+      const a = await anfrage(p, { token: GUT, body: rpc('initialize', INIT) });
       const b = await anfrage(p, { method: 'GET', path: '/.well-known/oauth-protected-resource' });
       ok(`Kill-Switch NEXUS_MCP_ENABLED=${wert}: alles 503, ohne Registry`, aus.enabled === false && a.status === 503 && b.status === 503, `${a.status} ${b.status}`);
     }
@@ -166,6 +207,87 @@ try {
     ok('http auf 127.0.0.1 ist erlaubt (lokale Tests)', wirft({ ...ENV, NEXUS_MCP_RESOURCE_URL: 'http://127.0.0.1:3100/mcp' }) === null);
     ok('Kill-Switch braucht keine weitere Konfiguration', wirft({ NEXUS_MCP_ENABLED: '0' }) === null);
   }
+
+  // ── 3. Token-Pruefung ──────────────────────────────────────────────────────
+  console.log('3. Token-Pruefung');
+  {
+    const config = loadHttpConfig(ENV);
+    const port = await starte(createHttpApp({ registry, info, config }));
+    const init = (opt) => anfrage(port, { body: rpc('initialize', INIT), ...opt });
+    const META = 'https://mcp.example.com/.well-known/oauth-protected-resource/mcp';
+    const ist401 = (r) => r.status === 401 && (r.headers['www-authenticate'] ?? '').startsWith(`Bearer resource_metadata="${META}"`) && !r.json?.result;
+
+    const ohne = await init();
+    ok('ohne Token -> 401 + WWW-Authenticate: Bearer resource_metadata="…"', ohne.status === 401 && ohne.headers['www-authenticate'] === `Bearer resource_metadata="${META}"`,
+      `${ohne.status} ${ohne.headers['www-authenticate']}`);
+    const gut = await init({ token: GUT });
+    ok('gueltiges Token -> 200', gut.status === 200 && gut.json?.result?.serverInfo?.name === 'nexus-test', `${gut.status} ${gut.text}`);
+
+    const faelle = [
+      ['falsches aud', await token({ aud: ['https://anders.example.com/mcp'] })],
+      ['aud nur der Host, ohne Pfad', await token({ aud: ['https://mcp.example.com'] })],
+      ['aud fehlt', await token({ aud: null })],
+      ['falscher iss', await token({ iss: 'https://boese.example.com' })],
+      ['iss mit Schraegstrich am Ende (nicht exakt)', await token({ iss: ISSUER + '/' })],
+      ['abgelaufen', await token({ exp: jetzt() - 60 })],
+      ['exp fehlt', await token({ exp: null })],
+      ['nbf in der Zukunft', await token({ nbf: jetzt() + 600 })],
+      ['falsche Signatur (fremder Schluessel, gleiche kid)', await token({ key: fremd.privateKey })],
+      ['unbekannte kid', await token({ kid: 'gibt-es-nicht' })],
+      ['typ JWT statt at+jwt (z. B. ein ID-Token)', await token({ typ: 'JWT' })],
+      ['typ fehlt', await token({ typ: null })],
+      ['sub fehlt', await token({ sub: null })],
+      ['kein JWT', 'abc.def.ghi'],
+    ];
+    // alg-Verwechslung: HS256, "signiert" mit dem oeffentlichen Schluessel als Geheimnis.
+    const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    const kopf = b64({ alg: 'HS256', typ: 'at+jwt', kid: KID });
+    const rumpf = b64({ iss: ISSUER, aud: [RESOURCE], sub: SUB, exp: jetzt() + 300, scp: [] });
+    faelle.push(['alg HS256 statt RS256', `${kopf}.${rumpf}.${createHmac('sha256', JSON.stringify(jwk)).update(`${kopf}.${rumpf}`).digest('base64url')}`]);
+    faelle.push(['alg none', `${b64({ alg: 'none', typ: 'at+jwt' })}.${rumpf}.`]);
+    // manipulierte Nutzlast: gueltige Signatur, anderer sub
+    const [k, , sig] = GUT.split('.');
+    faelle.push(['Nutzlast nach dem Signieren geaendert', `${k}.${b64({ iss: ISSUER, aud: [RESOURCE], sub: SUB_FREMD, exp: jetzt() + 300 })}.${sig}`]);
+    for (const [name, t] of faelle) {
+      const r = await init({ token: t });
+      ok(`${name} -> 401 invalid_token`, ist401(r) && /error="invalid_token"/.test(r.headers['www-authenticate']), `${r.status} ${r.headers['www-authenticate']} ${r.text}`);
+    }
+    const basic = await init({ headers: { authorization: 'Basic dXNlcjpwdw==' } });
+    ok('Basic statt Bearer -> 401', ist401(basic), `${basic.status}`);
+    const query = await anfrage(port, { path: '/mcp?access_token=' + GUT, body: rpc('initialize', INIT) });
+    ok('Token in der URL zaehlt nicht -> 401', ist401(query), `${query.status}`);
+
+    const verboten = await init({ token: await token({ sub: SUB_FREMD }) });
+    ok('gueltiges Token, sub nicht in der Allowlist -> 403 (kein 401, kein Ergebnis)', verboten.status === 403 && !verboten.json?.result && verboten.headers['www-authenticate'] === undefined,
+      `${verboten.status} ${verboten.text}`);
+    ok('Fehlerantworten nennen weder Token noch Claims', ![ohne, verboten].some(r => r.text.includes(SUB_FREMD) || r.text.includes('eyJ')), verboten.text);
+
+    ok('JWKS wird gecacht (ein Abruf fuer alle Pruefungen mit bekannter kid)', jwksAbrufe >= 1 && jwksAbrufe <= 2, `Abrufe: ${jwksAbrufe}`);
+
+    // Pflicht-Allowlist + Scopes aus scp
+    ok('ohne NEXUS_MCP_ALLOWED_SUBS startet der Server nicht', /NEXUS_MCP_ALLOWED_SUBS fehlt/.test(wirft({ ...ENV, NEXUS_MCP_ALLOWED_SUBS: '' }) ?? ''));
+    ok('Allowlist nur aus Kommas/Leerzeichen zaehlt als leer', /NEXUS_MCP_ALLOWED_SUBS fehlt/.test(wirft({ ...ENV, NEXUS_MCP_ALLOWED_SUBS: ' , ,' }) ?? ''));
+    ok('ohne NEXUS_MCP_JWKS_URI startet der Server nicht', /NEXUS_MCP_JWKS_URI fehlt/.test(wirft({ ...ENV, NEXUS_MCP_JWKS_URI: '' }) ?? ''));
+    const mitScope = loadHttpConfig({ ...ENV, NEXUS_MCP_REQUIRED_SCOPES: 'nexus:read' });
+    const pScope = await starte(createHttpApp({ registry, info, config: mitScope }));
+    const ohneScope = await anfrage(pScope, { token: GUT, body: rpc('initialize', INIT) });
+    ok('Pflicht-Scope fehlt in scp -> 403 insufficient_scope', ohneScope.status === 403 && /error="insufficient_scope", scope="nexus:read"/.test(ohneScope.headers['www-authenticate'] ?? ''),
+      `${ohneScope.status} ${ohneScope.headers['www-authenticate']}`);
+    const scopeString = await anfrage(pScope, { token: await token({ scp: [], claims: { scope: 'nexus:read' } }), body: rpc('initialize', INIT) });
+    ok('scope-String zaehlt nicht – nur der Claim scp (Array)', scopeString.status === 403, `${scopeString.status}`);
+    const mitScp = await anfrage(pScope, { token: await token({ scp: ['openid', 'nexus:read'] }), body: rpc('initialize', INIT) });
+    ok('Pflicht-Scope in scp -> 200', mitScp.status === 200, `${mitScp.status} ${mitScp.text}`);
+    const metaScope = await anfrage(pScope, { method: 'GET', path: '/.well-known/oauth-protected-resource' });
+    ok('Metadaten nennen den Pflicht-Scope', metaScope.json?.scopes_supported?.join() === 'nexus:read', metaScope.text);
+
+    // JWKS nicht erreichbar -> 503, nicht 401 (der Client soll sein Token behalten)
+    const tot = loadHttpConfig({ ...ENV, NEXUS_MCP_JWKS_URI: 'http://127.0.0.1:1/jwks.json' });
+    const pTot = await starte(createHttpApp({ registry, info, config: tot }));
+    const r503 = await anfrage(pTot, { token: GUT, body: rpc('initialize', INIT) });
+    ok('JWKS nicht erreichbar -> 503 mit Retry-After', r503.status === 503 && r503.headers['retry-after'] !== undefined, `${r503.status} ${r503.text}`);
+    const r401 = await anfrage(pTot, { body: rpc('initialize', INIT) });
+    ok('  ohne Token trotzdem 401 (kein JWKS-Abruf noetig)', r401.status === 401, `${r401.status}`);
+  }
 } catch (e) {
   console.error('  \x1b[31m✗ Testlauf-Fehler:\x1b[0m', e.stack || e.message);
   fail++;
@@ -176,4 +298,6 @@ try {
 }
 
 console.log(`\n${fail === 0 ? '\x1b[32m' : '\x1b[31m'}${pass} bestanden, ${fail} Fehler\x1b[0m`);
-process.exit(fail === 0 ? 0 : 1);
+// Kein process.exit(): unter Windows bricht Node sonst mit einer libuv-Assertion ab, solange
+// fetch (JWKS-Abruf) noch Verbindungen schliesst. Server und Registry sind zu -> der Prozess endet von selbst.
+process.exitCode = fail === 0 ? 0 : 1;

@@ -56,6 +56,15 @@ export function loadHttpConfig(env = {}) {
       config.metadataUrl = resource.u.origin + WELL_KNOWN + suffix;
     }
     if (issuer) config.issuer = issuer.roh; // unveraendert: iss wird zeichengenau verglichen
+
+    // Token-Pruefung: JWKS des Issuers + Pflicht-Allowlist der Benutzer (sub-Claim).
+    // Ohne Allowlist kein Start – "jeder mit gueltigem Token" ist nie die Absicht.
+    const jwks = url(env, 'NEXUS_MCP_JWKS_URI', fehler);
+    if (jwks) config.jwksUri = jwks.roh;
+    config.allowedSubs = liste(env.NEXUS_MCP_ALLOWED_SUBS);
+    if (config.allowedSubs.length === 0) fehler.push('NEXUS_MCP_ALLOWED_SUBS fehlt (Pflicht: erlaubte sub-Werte, kommagetrennt)');
+    // Optional: Scopes, die im scp-Claim stehen muessen (Standard: keine Scope-Pflicht).
+    config.requiredScopes = liste(String(env.NEXUS_MCP_REQUIRED_SCOPES ?? '').replace(/\s+/g, ','));
   }
   if (fehler.length) throw new Error('Konfiguration ungueltig: ' + fehler.join('; '));
   return Object.freeze(config);

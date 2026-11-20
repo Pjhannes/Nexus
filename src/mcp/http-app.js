@@ -9,6 +9,7 @@
 import express from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { buildServer } from './build-server.js';
+import { makeTokenVerifier, bearerToken } from './token.js';
 
 export const BODY_LIMIT_BYTES = 2 * 1024 * 1024;
 
@@ -38,6 +39,7 @@ export function createHttpApp({ registry, info = {}, config }) {
     resource: config.resource,
     authorization_servers: [config.issuer],
     bearer_methods_supported: ['header'],
+    ...(config.requiredScopes.length ? { scopes_supported: config.requiredScopes } : {}),
   };
   app.all(config.metadataPaths, (req, res) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.set('Allow', 'GET'); return res.status(405).json({ error: 'method_not_allowed' }); }
@@ -52,7 +54,28 @@ export function createHttpApp({ registry, info = {}, config }) {
     return rpcFehler(res, 405, 'Method not allowed – dieser Server ist zustandslos und nimmt nur POST an.');
   });
 
-  app.post('/mcp', express.json({ limit: BODY_LIMIT_BYTES, type: () => true }), async (req, res) => {
+  // Token-Pruefung VOR dem Body-Parser: ohne gueltiges Token wird kein Byte der Anfrage gelesen.
+  // 401 nennt per WWW-Authenticate die Metadaten-URL (RFC 9728) – daran erkennt der Client,
+  // wo er sich anmelden muss. 403 = Token echt, aber dieser Benutzer darf nicht.
+  const pruefeToken = makeTokenVerifier(config);
+  const challenge = (zusatz = '') => `Bearer resource_metadata="${config.metadataUrl}"${zusatz}`;
+  async function auth(req, res, next) {
+    const r = await pruefeToken(bearerToken(req.headers.authorization));
+    if (r.ok) { req.nexusAuth = { sub: r.sub, scopes: r.scopes, clientId: r.clientId }; return next(); }
+    res.set('Cache-Control', 'no-store');
+    if (r.status === 401) {
+      res.set('WWW-Authenticate', challenge(r.error ? `, error="${r.error}"` : ''));
+      return res.status(401).json({ error: r.error ?? 'unauthorized', error_description: 'Bearer-Token fehlt oder ist ungueltig.' });
+    }
+    if (r.status === 403) {
+      if (r.error === 'insufficient_scope') res.set('WWW-Authenticate', challenge(`, error="insufficient_scope", scope="${config.requiredScopes.join(' ')}"`));
+      return res.status(403).json({ error: r.error, error_description: 'Dieses Konto ist fuer den Zugriff nicht freigegeben.' });
+    }
+    res.set('Retry-After', '30');
+    return res.status(503).json({ error: r.error, error_description: 'Token-Pruefung derzeit nicht moeglich.' });
+  }
+
+  app.post('/mcp', (req, res, next) => auth(req, res, next).catch(next), express.json({ limit: BODY_LIMIT_BYTES, type: () => true }), async (req, res) => {
     const server = buildServer({ registry, policy, info });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on('close', () => {
