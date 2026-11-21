@@ -37,8 +37,9 @@ try {
   {
     ok('Standard: nur "read"', loadHttpConfig(ENV).levels.join() === 'read');
     ok('"write" einschalten', loadHttpConfig(schreibEnv('write')).levels.join() === 'read,write');
-    ok('"admin" getrennt schaltbar, Reihenfolge und Gross/Klein egal', loadHttpConfig(schreibEnv(' Admin , WRITE')).levels.join() === 'read,write,admin'
-      && loadHttpConfig(schreibEnv('admin')).levels.join() === 'read,admin');
+    ok('"admin" zusaetzlich zu "write", Reihenfolge und Gross/Klein egal', loadHttpConfig(schreibEnv(' Admin , WRITE')).levels.join() === 'read,write,admin'
+      && loadHttpConfig(schreibEnv('read,write,admin')).levels.join() === 'read,write,admin');
+    ok('"admin" ohne "write" -> Konfigurationsfehler', /admin setzt write voraus/.test(wirft(schreibEnv('admin')) ?? '') && /admin setzt write voraus/.test(wirft(schreibEnv('read, ADMIN')) ?? ''));
     ok('"read" laesst sich nicht abwaehlen', loadHttpConfig(schreibEnv('write')).levels.includes('read'));
     ok('unbekannte Stufe -> Konfigurationsfehler', /NEXUS_MCP_LEVELS/.test(wirft(schreibEnv('write,root')) ?? ''));
     ok('Tool-Listen der Stufen ueberschneiden sich nicht', new Set([...REMOTE_READ_TOOLS, ...REMOTE_WRITE_TOOLS, ...REMOTE_ADMIN_TOOLS]).size
@@ -174,7 +175,7 @@ try {
   console.log('5. Audit-Log');
   {
     ok('Schreibstufe ohne NEXUS_MCP_AUDIT_LOG -> Konfigurationsfehler', /NEXUS_MCP_AUDIT_LOG fehlt/.test(wirft({ ...ENV, NEXUS_MCP_LEVELS: 'write' }) ?? '')
-      && /NEXUS_MCP_AUDIT_LOG fehlt/.test(wirft({ ...ENV, NEXUS_MCP_LEVELS: 'admin' }) ?? ''));
+      && /NEXUS_MCP_AUDIT_LOG fehlt/.test(wirft({ ...ENV, NEXUS_MCP_LEVELS: 'write,admin' }) ?? ''));
     ok('nur lesen braucht kein Audit-Log', loadHttpConfig(ENV).auditLog === null);
     ok('relativer Pfad -> Konfigurationsfehler', /absoluter Pfad/.test(wirft(schreibEnv('write', { NEXUS_MCP_AUDIT_LOG: 'audit.jsonl' })) ?? ''));
     let imVault = null;

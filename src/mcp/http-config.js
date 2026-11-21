@@ -74,6 +74,9 @@ export function loadHttpConfig(env = {}) {
     const stufen = [...new Set(liste(env.NEXUS_MCP_LEVELS).map(x => x.toLowerCase()))];
     const fremd = stufen.filter(x => !REMOTE_LEVELS.includes(x));
     if (fremd.length) fehler.push(`NEXUS_MCP_LEVELS kennt nur ${REMOTE_LEVELS.join(', ')} (unbekannt: ${fremd.join(', ')})`);
+    // "admin" baut auf "write" auf (vault_check gehoert zu write, restore als Gegenstueck zu delete
+    // auch) – admin allein waere eine halbe Stufe und ist deshalb ein Konfigurationsfehler.
+    if (stufen.includes('admin') && !stufen.includes('write')) fehler.push('NEXUS_MCP_LEVELS: admin setzt write voraus (write,admin)');
     config.levels = Object.freeze(REMOTE_LEVELS.filter(x => x === 'read' || stufen.includes(x)));
     // Audit-Log (R31): Datei AUSSERHALB der Vaults, eine JSON-Zeile je Schreibaufruf. Pflicht, sobald
     // eine Schreibstufe eingeschaltet ist – ohne Audit-Log startet der Server dann nicht.

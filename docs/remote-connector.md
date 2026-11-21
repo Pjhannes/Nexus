@@ -36,7 +36,7 @@ gehört, wird nicht registriert – es steht nicht in `tools/list` und ist nicht
 |---|---|
 | `read` (immer) | `search`, `outline`, `read_note`, `read_bild`, `backlinks`, `list_notes`, `query`, `dataview`, `lern_status`, `list_vaults`, `list_trash` |
 | `write` | `write_note`, `append_to_section`, `patch`, `write_karten`, `write_vortrag`, `karten_gliedern`, `create_folder`, `move`, `restore`, `capture`, `vault_check` (nur Trockenlauf) |
-| `admin` | `delete`, `reindex`; `vault_check` schreibt seinen Bericht in den Vault |
+| `admin` (nur zusammen mit `write`) | `delete`, `reindex`; `vault_check` schreibt seinen Bericht in den Vault |
 
 Zusätzlich gelten für den Remote-Zugriff feste Regeln, unabhängig von der Stufe:
 
@@ -90,7 +90,7 @@ im Datenordner (`NEXUS_DATA_DIR`).
 | `NEXUS_MCP_JWKS_URI` | ja | – | Adresse der öffentlichen Schlüssel des Issuers, z. B. `https://auth.example.com/jwks.json` (steht als `jwks_uri` in dessen Discovery-Dokument). |
 | `NEXUS_MCP_ALLOWED_SUBS` | ja | – | Erlaubte Benutzer als `sub`-Werte, kommagetrennt. Fehlt die Liste, startet der Server nicht. |
 | `NEXUS_MCP_ALLOWED_VAULTS` | nein | *(keiner)* | Freigegebene Vault-Namen aus `nexus.config.json`, kommagetrennt. Ohne Angabe ist kein Vault erreichbar. |
-| `NEXUS_MCP_LEVELS` | nein | `read` | Freigegebene Stufen, kommagetrennt: `read` (gilt immer), `write`, `admin`. Welche Tools dazugehören, steht unter „Stufen“. Unbekannte Werte verhindern den Start. |
+| `NEXUS_MCP_LEVELS` | nein | `read` | Freigegebene Stufen, kommagetrennt: `read` (gilt immer), `write`, `admin`. Welche Tools dazugehören, steht unter „Stufen“. `admin` setzt `write` voraus (`write,admin`); `admin` allein und unbekannte Werte verhindern den Start. |
 | `NEXUS_MCP_AUDIT_LOG` | bei `write`/`admin` | – | Absoluter Pfad der Audit-Datei (JSON-Zeilen), außerhalb der Vaults. Pflicht, sobald `NEXUS_MCP_LEVELS` eine Schreibstufe enthält; ist die Datei nicht beschreibbar, startet der Server nicht bzw. lehnt Änderungen ab. |
 | `NEXUS_MCP_DOWNLOAD_SECRET` | nein | *(aus)* | Schaltet Download-Links ein (Tool `datei_link`, Route `/dl/…`). Zufälliges Geheimnis, mindestens 32 Zeichen, z. B. aus `openssl rand -base64 48`. Wer es kennt, kann Links für jede Datei der freigegebenen Vaults erzeugen. |
 | `NEXUS_MCP_DOWNLOAD_TTL_S` | nein | `300` | Gültigkeit eines Download-Links in Sekunden (30 bis 3600). |
