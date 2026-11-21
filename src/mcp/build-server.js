@@ -35,6 +35,9 @@ const vaultParam = z.string().optional()
 // R27b: Zod-Bounds statt nackter Zahlen.
 const limitParam  = (def, max = 200) => z.number().int().min(1).max(max).optional().describe(`Max. Ergebnisse (Standard: ${def}, hoechstens ${max})`);
 const offsetParam = z.number().int().min(0).optional().describe('Ergebnisse ueberspringen (Pagination, Standard: 0)');
+// R31: Kollisionsschutz fuer Schreib-Tools.
+const hashParam = z.string().max(80).optional()
+  .describe('Optional: Hash des Stands, auf dem die Aenderung beruht (hash aus outline, read_note mit hash:true oder dem letzten Schreib-Ergebnis). Wurde die Notiz seither geaendert, wird NICHT geschrieben (Fehler nennt den aktuellen Hash)');
 
 // Wird dem Client (z.B. Claude Desktop) beim Verbinden mitgegeben. Stoesst die
 // Pflichtlektuere an, ohne dass jemand ans Lesen erinnern muss (Arbeitsweise-Regel 12).
@@ -206,7 +209,7 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
 
   tool('outline', {
     title: 'Gliederung einer Notiz',
-    description: 'Struktur einer Notiz erfassen, bevor man sie liest: Ueberschriften mit Ebene und Zeile. Spart Tokens gegenueber read_note der ganzen Datei.',
+    description: 'Struktur einer Notiz erfassen, bevor man sie liest: Ueberschriften mit Ebene und Zeile, dazu der hash des aktuellen Stands (fuer expected_hash). Spart Tokens gegenueber read_note der ganzen Datei.',
     input: { path: z.string().describe('Relativer Pfad zur Notiz im Vault'), vault: vaultParam },
     annotations: RO,
   }, ({ path, vault }) => plain(registry.get(vault).tools.outline({ path })));
@@ -219,12 +222,15 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
       path:    z.string().describe('Relativer Pfad zur Notiz im Vault'),
       section: z.string().optional().describe('Abschnittstitel (optional) – liefert diesen Abschnitt bis zur naechsten Ueberschrift gleicher oder hoeherer Ebene (Unterabschnitte inklusive). Exakter Titel gewinnt vor Teiltreffer. Unbekannter Titel = Fehler mit der Liste der vorhandenen Ueberschriften'),
       lines:   z.number().int().min(1).max(2000).optional().describe(`Zeilenlimit (optional, 1..2000). Ohne Angabe: ganze Notiz bzw. hoechstens ${SECTION_MAX_LINES} Zeilen eines Abschnitts; Kuerzungen werden am Ende gemeldet`),
+      hash:    z.boolean().optional().describe('true = am Ende eine Zeile "[hash: sha256:…]" anhaengen (Hash der ganzen Datei, als expected_hash fuer write_note/patch/append_to_section)'),
       vault:   vaultParam,
     },
     annotations: RO,
-  }, ({ path, section, lines, vault }) => {
-    const r = registry.get(vault).tools.readNote({ path, section, lines });
+  }, ({ path, section, lines, hash, vault }) => {
+    const r = registry.get(vault).tools.readNote({ path, section, lines, withHash: !!hash });
     if (r.error) return fail(r.error);
+    // R31: der Hash steht – wie die Kuerzung – im Text, weil read_note nur Text liefert.
+    if (hash && r.hash) r.content = `${r.content}\n\n[hash: ${r.hash}]`;
     // R29/N2: Eine Kuerzung steht im Text – read_note liefert nur Text, ein Flag im Ergebnisobjekt
     // saehe der Aufrufer nie. (Unbekannter Abschnitt ist ein Fehler: r.error mit Ueberschriftenliste.)
     if (r.truncated && r.sectionLines)
@@ -339,10 +345,11 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
       path:    z.string().describe('Relativer Pfad der .md-Notiz'),
       content: z.string().describe('Vollstaendiger neuer Inhalt'),
       create:  z.boolean().optional().describe('true = neue Datei erlaubt'),
+      expected_hash: hashParam,
       vault:   vaultParam,
     },
     annotations: DESTI,
-  }, ({ path, content, create, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.writeNote({ path, content, create })); });
+  }, ({ path, content, create, expected_hash, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.writeNote({ path, content, create, expectedHash: expected_hash })); });
 
   tool('append_to_section', {
     title: 'An Abschnitt anhaengen',
@@ -351,10 +358,11 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
       path:    z.string().describe('Relativer Pfad der Notiz'),
       section: z.string().describe('Ueberschrift des Abschnitts (exakter Titel gewinnt vor Teiltreffer). Unbekannter Titel = Fehler mit der Liste der vorhandenen Ueberschriften, es wird nichts geschrieben'),
       text:    z.string().describe('Anzuhaengender Text'),
+      expected_hash: hashParam,
       vault:   vaultParam,
     },
     annotations: ADD,
-  }, ({ path, section, text: t, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.appendToSection({ path, section, text: t })); });
+  }, ({ path, section, text: t, expected_hash, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.appendToSection({ path, section, text: t, expectedHash: expected_hash })); });
 
   tool('patch', {
     title: 'Textstellen ersetzen',
@@ -366,10 +374,11 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
         old_str: z.string().describe('Zu ersetzender Text (erste Fundstelle). Darf mehrere Zeilen umfassen – Zeilenenden (CRLF/LF) werden beim Vergleich ignoriert'),
         new_str: z.string().optional().describe('Ersatztext (leer = loeschen); wird mit den Zeilenenden der Datei geschrieben'),
       })).min(1).describe('Liste von Ersetzungen'),
+      expected_hash: hashParam,
       vault:   vaultParam,
     },
     annotations: DEST,
-  }, ({ path, patches, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.patch({ path, patches })); });
+  }, ({ path, patches, expected_hash, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.patch({ path, patches, expectedHash: expected_hash })); });
 
   tool('write_vortrag', {
     title: 'Vortragsskript schreiben',
