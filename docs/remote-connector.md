@@ -131,7 +131,7 @@ eines ändernden Tools schreibt eine JSON-Zeile – auch abgelehnte Aufrufe:
 
 `nach` nennt bei `move` das Ziel und bei `delete` den Pfad im Papierkorb, `fehler` den Grund einer
 Ablehnung. Inhalte (Notiztext, Patches) stehen nicht im Log. Download-Links und Abrufe stehen als
-`datei_link` und `download` darin.
+`datei_link` und `download` darin (ein Abruf ist ein `GET`; ein `HEAD` steht nur im Aufruf-Log).
 
 Die Datei liegt außerhalb der Vaults; ein Pfad in einem Vault verhindert den Start. Ist sie nicht
 beschreibbar, startet der Server nicht bzw. lehnt Änderungen ab, bevor etwas geschrieben wird.
@@ -148,6 +148,7 @@ liefert `url`, `bytes` und `gueltigBis`; den Link öffnet der Nutzer im Browser.
 - Der Token ist signiert (HMAC-SHA256), nicht verschlüsselt: Vault-Name und Pfad sind darin lesbar.
 - Bei jedem Abruf wird neu geprüft: Signatur, Ablauf, Vault freigegeben, Pfad im Vault (auch über
   Symlinks), Größe. Dateien in versteckten Ordnern (`.trash`, `.nexus`, …) werden nie ausgeliefert.
+  Ausgeliefert werden höchstens die dabei geprüften Bytes, auch wenn die Datei währenddessen wächst.
 - Ausgeliefert wird immer als Anhang mit `application/octet-stream` – eine HTML-Datei aus dem Vault
   wird unter dieser Adresse nicht ausgeführt.
 - Antworten: `200` Datei · `404` Link ungültig oder Datei nicht (mehr) verfügbar · `410` Link abgelaufen.

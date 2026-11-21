@@ -13,7 +13,7 @@ import { join } from 'path';
 import { aufbau } from './mcp-http-helfer.mjs';
 import { loadHttpConfig } from '../src/mcp/http-config.js';
 import { REMOTE_READ_TOOLS, REMOTE_WRITE_TOOLS, REMOTE_ADMIN_TOOLS, remotePolicy, remoteGuard } from '../src/mcp/remote-policy.js';
-import { makeDownloads, contentDisposition } from '../src/mcp/download.js';
+import { makeDownloads, contentDisposition, dateiStrom } from '../src/mcp/download.js';
 
 let pass = 0, fail = 0;
 function ok(label, cond, extra) {
@@ -287,6 +287,17 @@ try {
     ok('POST auf den Link -> 405', (await holen(l.json.url, { method: 'POST', body: {} })).status === 405);
     ok('falscher Host -> 403 (Host-Allowlist gilt auch hier)', (await holen(l.json.url, { headers: { host: 'boese.example.com' } })).status === 403);
 
+    // Leere Datei und Begrenzung auf die gepruefte Groesse
+    writeFileSync(vaultPfad('wissen', 'Dateien', 'leer.txt'), '');
+    const leer = await ruf('datei_link', { path: 'Dateien/leer.txt' });
+    const ld = await holen(leer.json?.url ?? 'https://x/dl/x');
+    ok('leere Datei: Link mit 0 Bytes, Abruf 200 ohne Inhalt', !leer.fehler && leer.json?.bytes === 0 && ld.status === 200 && ld.buffer.length === 0 && ld.headers['content-length'] === '0', `${leer.text} ${ld.status}`);
+    const lesen = (strom) => new Promise((res, rej) => { const teile = []; strom.on('data', x => teile.push(x)); strom.on('end', () => res(Buffer.concat(teile))); strom.on('error', rej); });
+    writeFileSync(vaultPfad('wissen', 'Dateien', 'zehn.txt'), '0123456789', 'utf8');
+    ok('dateiStrom liefert nur die gepruefte Groesse, auch wenn die Datei laenger (gewachsen) ist', (await lesen(dateiStrom(vaultPfad('wissen', 'Dateien', 'zehn.txt'), 4))).toString() === '0123'
+      && (await lesen(dateiStrom(vaultPfad('wissen', 'Dateien', 'zehn.txt'), 10))).toString() === '0123456789');
+    ok('dateiStrom: 0 Bytes -> kein Strom', dateiStrom(vaultPfad('wissen', 'Dateien', 'leer.txt'), 0) === null);
+
     const h = await ruf('datei_link', { path: 'Dateien/Bericht – Übersicht.html' });
     const hd = await holen(h.json.url);
     ok('HTML mit Umlaut im Namen: Inhalt gleich, wird als Anhang und nicht als text/html ausgeliefert', hd.status === 200 && hd.text === HTML && hd.headers['content-type'] === 'application/octet-stream'
@@ -357,8 +368,11 @@ try {
     const eigenesAudit = join(t.scratch, 'audit-dl', 'a.jsonl');
     const mitAudit = await t.starte(t.baueApp(loadHttpConfig(dlEnv({ NEXUS_MCP_AUDIT_LOG: eigenesAudit }))));
     const la = await t.rufer(mitAudit)('datei_link', { path: 'Notiz.md' });
+    const nurKopf = await t.anfrage(mitAudit, { method: 'HEAD', path: pfadVon(la.json.url) });
+    ok('HEAD schreibt keine Audit-Zeile', nurKopf.status === 200 && !auditZeilen(eigenesAudit).some(z => z.tool === 'download'), auditZeilen(eigenesAudit));
     await t.anfrage(mitAudit, { method: 'GET', path: pfadVon(la.json.url) });
     const az = auditZeilen(eigenesAudit);
+    ok('GET schreibt genau eine Audit-Zeile', az.filter(z => z.tool === 'download').length === 1, az);
     ok('mit Audit-Log: je eine Zeile fuer den Link und fuer den Abruf', az.some(z => z.tool === 'datei_link' && z.pfad === 'Notiz.md' && z.ergebnis === 'ok') && az.some(z => z.tool === 'download' && z.pfad === 'Notiz.md' && z.vault === 'wissen'), az);
     ok('kein Token im Audit-Log', !readFileSync(eigenesAudit, 'utf8').includes('/dl/'));
 

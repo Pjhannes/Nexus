@@ -15,8 +15,7 @@ import { buildServer } from './build-server.js';
 import { makeTokenVerifier, bearerToken } from './token.js';
 import { remotePolicy, remoteGuard, restrictRegistry, remoteInstructions, REMOTE_READ_TOOLS } from './remote-policy.js';
 import { makeAudit, liegtIn, auditFelder } from './audit.js';
-import { makeDownloads, dateiPruefen, contentDisposition } from './download.js';
-import { createReadStream } from 'fs';
+import { makeDownloads, dateiPruefen, dateiStrom, contentDisposition } from './download.js';
 
 export const BODY_LIMIT_BYTES = 2 * 1024 * 1024;
 
@@ -160,9 +159,12 @@ export function createHttpApp({ registry, info = {}, config, log = stdoutLog }) 
         'Content-Security-Policy': "sandbox; default-src 'none'",
       });
       e.ergebnis = 'ok';
-      if (audit) { try { audit.schreibe({ sub: t.sub, tool: 'download', vault: t.vault, pfad: t.path, ergebnis: 'ok' }); } catch (err) { console.error('[Nexus-MCP-HTTP] Audit-Zeile nicht geschrieben: ' + (err?.message || err)); } }
+      // HEAD liefert nur Kopfzeilen: kein Abruf, also keine Audit-Zeile (im Aufruf-Log steht er).
       if (req.method === 'HEAD') return res.end();
-      const strom = createReadStream(d.full);
+      if (audit) { try { audit.schreibe({ sub: t.sub, tool: 'download', vault: t.vault, pfad: t.path, ergebnis: 'ok' }); } catch (err) { console.error('[Nexus-MCP-HTTP] Audit-Zeile nicht geschrieben: ' + (err?.message || err)); } }
+      // Nur die geprueften Bytes (d.bytes = Content-Length); eine leere Datei hat keinen Strom.
+      const strom = dateiStrom(d.full, d.bytes);
+      if (!strom) return res.end();
       strom.on('error', () => { e.ergebnis = 'lese_fehler'; res.destroy(); });
       strom.pipe(res);
     });

@@ -9,7 +9,7 @@
 // Ablauf abrufen (auch mehrfach) – nichts sonst. Vault und Pfad stehen lesbar im Token.
 // Bei jedem Abruf wird neu geprueft: Signatur, Ablauf, Vault freigegeben, Pfad im Vault, Groesse.
 import { createHmac, timingSafeEqual } from 'crypto';
-import { statSync, realpathSync } from 'fs';
+import { statSync, realpathSync, createReadStream } from 'fs';
 import { basename, sep } from 'path';
 import { safeFull } from '../paths.js';
 
@@ -58,6 +58,14 @@ export function dateiPruefen(vaultPath, rel, maxBytes) {
   if (echt !== wurzel && !echt.startsWith(wurzel + sep)) return { error: 'Pfad ausserhalb des Vaults oder ungueltig: ' + rel };
   if (st.size > maxBytes) return { error: `Datei zu gross fuer einen Download-Link (${st.size} Bytes, Limit ${maxBytes}): ${rel}` };
   return { full, bytes: st.size, name: basename(full) };
+}
+
+// Lesestrom ueber GENAU die gepruefte Groesse: waechst die Datei zwischen Pruefung und Auslieferung,
+// gehen trotzdem nur die geprueften Bytes hinaus (passend zu Content-Length und zum Limit).
+// Leere Datei -> null (createReadStream kennt kein Ende vor dem Anfang); der Aufrufer beendet
+// die Antwort dann ohne Inhalt.
+export function dateiStrom(full, bytes) {
+  return bytes > 0 ? createReadStream(full, { start: 0, end: bytes - 1 }) : null;
 }
 
 // Content-Disposition mit ASCII-Rueckfall und UTF-8-Namen (RFC 6266 / RFC 5987).
