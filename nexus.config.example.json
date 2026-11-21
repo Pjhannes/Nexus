@@ -24,6 +24,10 @@
     "_comment": "R27b: delete verschiebt nach <Vault>/.trash/<Datum_Uhrzeit>/...; Eintraege aelter als retentionDays werden beim Start entfernt (0 = nie).",
     "retentionDays": 30
   },
+  "capture": {
+    "_comment": "R31: Ordner, in dem das Tool capture neue Notizen ablegt (relativ zum Vault).",
+    "folder": "_Eingang"
+  },
   "vaultCheck": {
     "_comment": "R27b: persoenliche Regeln fuer vault_check. inactiveAreas = Pfad-Praefixe ohne Checks; ignoreNames = Ordner-/Dateinamen (Segment, '*' am Ende = Praefix), die als Backup-Kopie gelten; deadPrefixes/deadNames = Link-Ziele, die als Karteileichen zaehlen.",
     "inactiveAreas": ["Projekt Vault-App/"],

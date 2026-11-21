@@ -49,7 +49,7 @@ const hashParam = z.string().max(80).optional()
 // Die eigentlichen Regeln leben editierbar im Vault unter _System/ – Scaffold im App-Ordner unter rules/.
 const NEXUS_INSTRUCTIONS = [
   'Du arbeitest auf persoenlichen Wissens-Vaults ueber die Nexus-Tools',
-  '(list_vaults, search, outline, read_note, read_bild, write_note, write_vortrag, write_karten, karten_gliedern,',
+  '(list_vaults, search, outline, read_note, read_bild, write_note, capture, write_vortrag, write_karten, karten_gliedern,',
   'lern_status, append_to_section, patch, backlinks, list_notes, query, dataview, reindex, create_folder, move,',
   'delete, list_trash, restore, vault_check).',
   'Der Server bedient ALLE Vaults der Nexus-App: list_vaults zeigt sie (und nennt Version/Datenordner',
@@ -393,6 +393,22 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
     },
     annotations: DEST,
   }, ({ path, patches, expected_hash, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.patch({ path, patches, expectedHash: expected_hash })); });
+
+  tool('capture', {
+    title: 'Schnell ablegen',
+    description: 'Einen Gedanken, eine Aufgabe oder einen Fund SOFORT ablegen, ohne einen Ort zu waehlen: legt eine neue Notiz im Eingangsordner an ' +
+      '("JJJJ-MM-TT HHMM – Titel.md", Standard-Ordner _Eingang). Ueberschreibt nie etwas. Einsortiert wird spaeter (move).',
+    input: {
+      text:  z.string().describe('Inhalt der Notiz (Markdown)'),
+      titel: z.string().max(120).optional().describe('Titel (Standard: die erste Zeile des Textes)'),
+      vault: vaultParam,
+    },
+    annotations: ADD,
+  }, ({ text: t, titel, vault }) => {
+    const e = registry.get(vault);
+    const ordner = registry.config().capture?.folder;
+    return withVault(e, e.tools.capture({ text: t, titel, ...(typeof ordner === 'string' && ordner ? { ordner } : {}) }));
+  });
 
   tool('write_vortrag', {
     title: 'Vortragsskript schreiben',

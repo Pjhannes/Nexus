@@ -22,7 +22,7 @@ export const REMOTE_READ_TOOLS = Object.freeze([
 ]);
 export const REMOTE_WRITE_TOOLS = Object.freeze([
   'write_note', 'append_to_section', 'patch', 'write_karten', 'write_vortrag', 'karten_gliedern',
-  'create_folder', 'move', 'restore', 'vault_check',
+  'create_folder', 'move', 'restore', 'capture', 'vault_check',
 ]);
 export const REMOTE_ADMIN_TOOLS = Object.freeze(['delete', 'reindex']);
 export const REMOTE_LEVELS = Object.freeze(['read', 'write', 'admin']);

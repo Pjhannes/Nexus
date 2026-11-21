@@ -74,6 +74,9 @@ try {
     const mv = await ruf('move', { from: 'Remote/Neu.md', to: 'Remote/Ordner/Neu.md' });
     ok('move', !mv.fehler && existsSync(vaultPfad('wissen', 'Remote', 'Ordner', 'Neu.md')) && !existsSync(vaultPfad('wissen', 'Remote', 'Neu.md')), mv.text);
 
+    const cap = await ruf('capture', { text: 'Schnell notiert am Handy', titel: 'Handy-Gedanke' });
+    ok('capture legt eine Notiz im Eingangsordner an', !cap.fehler && /^_Eingang\/.+ – Handy-Gedanke\.md$/.test(cap.json?.path ?? '') && existsSync(vaultPfad('wissen', cap.json.path)), cap.text);
+
     const fremd = await ruf('write_note', { path: 'Neu.md', content: 'x', create: true, vault: 'privat' });
     ok('Schreiben in einen nicht freigegebenen Vault -> Fehler, nichts angelegt', fremd.fehler && !existsSync(vaultPfad('privat', 'Neu.md')), fremd.text);
     const raus = await ruf('write_note', { path: '../privat/Raus.md', content: 'x', create: true });
@@ -158,8 +161,10 @@ try {
     ok('delete: Papierkorb-Pfad als Ziel; die abgelehnten Versuche stehen als Fehler drin', d.some(z => z.ergebnis === 'ok' && /^\.trash\//.test(z.nach ?? ''))
       && d.some(z => z.ergebnis === 'fehler' && /gesperrt/.test(z.fehler)) && d.some(z => z.ergebnis === 'fehler' && /_System/.test(z.fehler)), d);
     ok('Schreibversuch in den nicht freigegebenen Vault steht als Fehler drin', von('write_note').some(z => z.ergebnis === 'fehler' && z.vault === 'privat'));
+    const cz = von('capture')[0];
+    ok('capture: der angelegte Pfad steht im Audit-Log', cz?.ergebnis === 'ok' && /^_Eingang\//.test(cz.pfad ?? '') && cz.hashVorher === null, cz);
     const roh = readFileSync(AUDIT, 'utf8');
-    ok('kein Notiztext im Audit-Log', !roh.includes('Vom Handy') && !roh.includes('Angehaengt') && !roh.includes('Leuchtturm'));
+    ok('kein Notiztext im Audit-Log', !roh.includes('Vom Handy') && !roh.includes('Schnell notiert') && !roh.includes('Angehaengt') && !roh.includes('Leuchtturm'));
     ok('eine Zeile je Aufruf, jede gueltiges JSON', roh.endsWith('\n') && roh.trim().split('\n').length === alle.length);
 
     // Fail-closed: Log nicht beschreibbar -> Aenderung abgelehnt, nichts geschrieben; Lesen geht weiter.

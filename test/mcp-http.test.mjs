@@ -346,7 +346,7 @@ try {
     const alle = (await lokal.listTools()).tools;
     await lokal.close();
     const schreibend = alle.map(t => t.name).filter(n => !LESEN.includes(n));
-    ok('Referenz: 23 Tools lokal, davon 12 nicht freigegeben', alle.length === 23 && schreibend.length === 12, `${alle.length}/${schreibend.length}`);
+    ok('Referenz: 24 Tools lokal, davon 13 nicht freigegeben', alle.length === 24 && schreibend.length === 13, `${alle.length}/${schreibend.length}`);
     ok('jedes freigegebene Tool ist lokal als readOnly markiert', LESEN.every(n => alle.find(t => t.name === n)?.annotations?.readOnlyHint === true));
     ok('jedes lokale Tool OHNE readOnlyHint steht nicht auf der Liste', alle.filter(t => t.annotations?.readOnlyHint !== true).every(t => !LESEN.includes(t.name)));
 
@@ -381,8 +381,9 @@ try {
       delete: { path: 'Notiz.md' },
       restore: { path: 'Notiz.md' },
       vault_check: {},
+      capture: { text: 'schnell notiert' },
     };
-    ok('Testfaelle decken alle 12 nicht freigegebenen Tools ab', schreibend.every(n => n in versuche), schreibend.filter(n => !(n in versuche)).join());
+    ok('Testfaelle decken alle 13 nicht freigegebenen Tools ab', schreibend.every(n => n in versuche), schreibend.filter(n => !(n in versuche)).join());
     for (const n of schreibend) {
       const r = await ruf(n, versuche[n] ?? {});
       ok(`tools/call ${n} -> abgelehnt`, abgelehnt(r), `${r.status} ${r.text}`);

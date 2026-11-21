@@ -102,6 +102,17 @@ function eolNeutral(s) {
   return new RegExp(teile.join('\\r?\\n'));
 }
 
+// R31: capture – Dateiname aus einem Titel. Entfernt, was Windows/macOS/Syncthing in Dateinamen
+// nicht moegen (\ / : * ? " < > | und Steuerzeichen), fasst Leerraum zusammen, keine Punkte/Leerzeichen
+// am Rand, hoechstens `max` Zeichen. Leer -> "Notiz".
+export const CAPTURE_ORDNER = '_Eingang';
+export const CAPTURE_MAX_ZEICHEN = 20000;
+export function captureName(titel, max = 60) {
+  const sauber = String(titel ?? '').replace(/[\\/:*?"<>|\u0000-\u001f#^[\]]/g, ' ').replace(/\s+/g, ' ').trim()
+    .slice(0, max).replace(/[. ]+$/, '').replace(/^[. ]+/, '');
+  return sauber || 'Notiz';
+}
+
 // Die Normalisierung wohnt in src/norm.js (damit auch lernen.js sie nutzen kann,
 // ohne Zirkelimport) – hier weiter exportiert, damit bestehende Importe aus
 // tools.js (test/vortrag.test.mjs) gueltig bleiben.
@@ -765,6 +776,28 @@ export function makeTools(indexer, vaultPath) {
     return writeNote({ path, content: merged, expectedHash: inhaltHash(content) });
   }
 
+  // R31: capture – schnelle Notiz in den Eingangsordner, ohne ein Ziel zu waehlen (vom Handy).
+  // Jeder Aufruf legt eine NEUE Datei an ("JJJJ-MM-TT HHMM – Titel.md"): nichts wird ueberschrieben,
+  // und zwei Geraete koennen gleichzeitig ablegen, ohne dieselbe Datei zu aendern.
+  // ordner: aus nexus.config.json (capture.folder), Standard "_Eingang". now: fuer Tests.
+  function capture({ text, titel, ordner = CAPTURE_ORDNER, now = new Date() } = {}) {
+    if (typeof text !== 'string' || !text.trim()) return { error: 'text fehlt' };
+    if (text.length > CAPTURE_MAX_ZEICHEN) return { error: `text zu lang (${text.length} Zeichen, hoechstens ${CAPTURE_MAX_ZEICHEN}) – fuer laengere Inhalte write_note verwenden.` };
+    const dir = String(ordner || CAPTURE_ORDNER).replace(/\\/g, '/').replace(/\/+$/, '');
+    const dirFull = dir ? safeFull(dir) : null;
+    if (!dirFull || dirFull === resolve(vaultPath) || inTrash(relOf(dirFull))) return { error: 'Eingangsordner ungueltig: ' + ordner };
+    const p = (n) => String(n).padStart(2, '0');
+    const tag = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+    const zeit = `${p(now.getHours())}${p(now.getMinutes())}`;
+    const kopf = (typeof titel === 'string' && titel.trim()) ? titel.trim() : text.trim().split(/\r?\n/)[0].replace(/^#+\s*/, '');
+    const name = captureName(kopf);
+    let path = `${dir}/${tag} ${zeit} – ${name}.md`;
+    for (let i = 2; existsSync(safeFull(path)); i++) path = `${dir}/${tag} ${zeit} – ${name} (${i}).md`;
+    const content = ['---', 'typ: eingang', `erstellt: ${tag}T${p(now.getHours())}:${p(now.getMinutes())}`, 'tags: [eingang]', '---', '',
+      `# ${kopf.replace(/\s+/g, ' ').slice(0, 120)}`, '', text.replace(/\r\n/g, '\n').trim(), ''].join('\n');
+    return writeNote({ path, content, create: true });
+  }
+
   function backlinks({ path }) {
     const title  = stmts.noteTitle.get(path)?.title;
     const name   = path.replace(/\.md$/, '').split('/').pop();
@@ -1168,6 +1201,6 @@ export function makeTools(indexer, vaultPath) {
     };
   }
 
-  return { search, searchDetail, outline, readNote, writeNote, writeVortrag, writeKarten, karteGliedern, readBild, lernStatus, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, listTrash, restore, vaultCheck };
+  return { search, searchDetail, outline, readNote, writeNote, writeVortrag, writeKarten, karteGliedern, readBild, lernStatus, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, listTrash, restore, vaultCheck, capture };
 }
 // rev: graph() fuer UI-Graph (Session 13)

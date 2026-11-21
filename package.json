@@ -12,7 +12,7 @@
     "index": "node src/cli.js reindex",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "test": "node test/smoke.js && node test/karten.test.mjs && node test/bild.test.mjs && node test/vortrag.test.mjs && node test/lernen-api.test.mjs && node test/mcp-launch.test.mjs && node test/mcp-schema.test.mjs && node test/build-server.test.mjs && node test/fts-query.test.mjs && node test/read-section.test.mjs && node test/crlf.test.mjs && node test/expected-hash.test.mjs && node test/security.test.mjs && node test/mcp-http.test.mjs && node test/mcp-http-write.test.mjs",
+    "test": "node test/smoke.js && node test/karten.test.mjs && node test/bild.test.mjs && node test/vortrag.test.mjs && node test/lernen-api.test.mjs && node test/mcp-launch.test.mjs && node test/mcp-schema.test.mjs && node test/build-server.test.mjs && node test/fts-query.test.mjs && node test/read-section.test.mjs && node test/crlf.test.mjs && node test/expected-hash.test.mjs && node test/capture.test.mjs && node test/security.test.mjs && node test/mcp-http.test.mjs && node test/mcp-http-write.test.mjs",
     "test:smoke": "node test/smoke.js",
     "verify:html": "node scripts/verify-html.mjs public/index.html",
     "edit:html": "node scripts/safe-edit.mjs public/index.html",
