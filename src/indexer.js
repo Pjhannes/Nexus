@@ -25,7 +25,7 @@ export function buildIndexer(vaultPath, dbPath, ignoreList = []) {
   }
 
   const stmts = {
-    get:    db.prepare('SELECT id, mtime FROM notes WHERE path = ?'),
+    get:    db.prepare('SELECT id, mtime, size FROM notes WHERE path = ?'),
     upsert: db.prepare(`
       INSERT INTO notes (path, title, mtime, size, tags, frontmatter)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -63,7 +63,10 @@ export function buildIndexer(vaultPath, dbPath, ignoreList = []) {
     const size  = stat.size;
 
     const existing = stmts.get.get(relPath);
-    if (existing && existing.mtime === mtime) return;
+    // Unveraendert = gleiche mtime UND gleiche Groesse. Die mtime allein reicht nicht: zwei
+    // Aenderungen in derselben Millisekunde (oder ein Sync, der die mtime setzt) blieben sonst
+    // unbemerkt, und der Index zeigte auf alte Zeilennummern.
+    if (existing && existing.mtime === mtime && existing.size === size) return;
 
     let content = '';
     try { content = readFileSync(fullPath, 'utf8'); } catch { return; }
