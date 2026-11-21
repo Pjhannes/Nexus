@@ -116,7 +116,13 @@ try {
       ok(`${n} auf verstecktem Pfad ${JSON.stringify(a.path)} -> abgelehnt`, /Versteckte Pfade/.test(g(n, a)?.error ?? ''));
     ok('move von/nach versteckten Pfaden -> abgelehnt', /Versteckte Pfade/.test(g('move', { from: '.stignore', to: 'x.md' })?.error ?? '') && /Versteckte Pfade/.test(g('move', { from: 'x.md', to: 'A/.b/x.md' })?.error ?? ''));
     ok('normale Pfade mit Punkt im Namen bleiben schreibbar', g('write_note', { path: 'Uni/v1.2 Notiz.md', content: 'x' }) === undefined && g('write_note', { path: 'a.b/c.md', content: 'x' }) === undefined);
-    ok('restore aus dem Papierkorb bleibt erlaubt', g('restore', { path: '.trash/2026-01-01_000000/x.md' }) === undefined);
+    for (const p of ['.stignore', '.stfolder', './.stignore', 'Uni/.versteckt/x.md', '.trash/2026-01-01_000000/x.md', '.TRASH\\2026-01-01_000000', '.git'])
+      ok(`delete auf verstecktem Pfad ${JSON.stringify(p)} -> abgelehnt`, /Versteckte Pfade/.test(g('delete', { path: p })?.error ?? ''));
+    ok('delete: normale Pfade mit Punkt im Namen bleiben loeschbar', g('delete', { path: 'Uni/v1.2 Notiz.md' }) === undefined && g('delete', { path: 'a.b/c.md' }) === undefined);
+    ok('restore aus dem Papierkorb bleibt erlaubt', g('restore', { path: '.trash/2026-01-01_000000/x.md' }) === undefined
+      && g('restore', { path: '.trash/2026-01-01_000000/Uni/v1.2 Notiz.md' }) === undefined && g('restore', { path: 'Uni/x.md' }) === undefined);
+    for (const p of ['.trash/2026-01-01_000000/.stignore', '.trash/2026-01-01_000000/Uni/.versteckt/x.md', '.TRASH\\2026-01-01_000000\\.git\\config', '.stignore', 'Uni/.versteckt/x.md', '.trash'])
+      ok(`restore mit verstecktem Ziel ${JSON.stringify(p)} -> abgelehnt`, /Versteckte Pfade/.test(g('restore', { path: p })?.error ?? ''));
     ok('vault_check mit admin: unveraendert', g('vault_check', {}) === undefined);
     ok('vault_check ohne admin: dry_run erzwungen', remoteGuard({ levels: ['read', 'write'] })('vault_check', { dry_run: false })?.args?.dry_run === true);
     ok('andere Tools: keine Regel', g('write_note', { path: '_System/Regeln.md', content: 'x' }) === undefined && g('search', { q: 'x' }) === undefined);
@@ -136,6 +142,22 @@ try {
     ok('delete unter _System -> Fehler, Datei bleibt', sys.fehler && existsSync(vaultPfad('wissen', '_System', 'Regeln.md')), sys.text);
     const st = await ruf('write_note', { path: '.stignore', content: '*', create: true });
     ok('write_note auf .stignore -> Fehler, nichts angelegt', st.fehler && !existsSync(vaultPfad('wissen', '.stignore')), st.text);
+    // Steuerdateien der Synchronisation: liegen im Vault, duerfen remote nicht in den Papierkorb.
+    writeFileSync(vaultPfad('wissen', '.stignore'), '// Muster\n', 'utf8');
+    mkdirSync(vaultPfad('wissen', '.stfolder'), { recursive: true });
+    const papierkorbVorher = sortiert(readdirSync(vaultPfad('wissen', '.trash')));
+    for (const p of ['.stignore', '.stfolder']) {
+      const r = await ruf('delete', { path: p });
+      ok(`delete ${p} -> Fehler, bleibt liegen`, r.fehler && /Versteckte Pfade/.test(r.text) && existsSync(vaultPfad('wissen', p)), r.text);
+    }
+    const imKorb = await ruf('delete', { path: weg.json.trashed });
+    ok('delete auf einen Papierkorb-Eintrag (ohne permanent) -> Fehler, Eintrag bleibt', imKorb.fehler && existsSync(vaultPfad('wissen', weg.json.trashed)), imKorb.text);
+    ok('im Papierkorb ist dabei nichts dazugekommen', sortiert(readdirSync(vaultPfad('wissen', '.trash'))) === papierkorbVorher);
+    mkdirSync(vaultPfad('wissen', '.trash', '2026-01-01_000000', '.stversions'), { recursive: true });
+    writeFileSync(vaultPfad('wissen', '.trash', '2026-01-01_000000', '.stversions', 'x.md'), 'alt', 'utf8');
+    const rv = await ruf('restore', { path: '.trash/2026-01-01_000000/.stversions/x.md' });
+    ok('restore mit verstecktem Ziel -> Fehler, nichts zurueckgeholt', rv.fehler && /Versteckte Pfade/.test(rv.text) && !existsSync(vaultPfad('wissen', '.stversions'))
+      && existsSync(vaultPfad('wissen', '.trash', '2026-01-01_000000', '.stversions', 'x.md')), rv.text);
     const hinaus = await ruf('move', { from: '_System/Regeln.md', to: 'Regeln.md' });
     ok('move aus _System heraus -> Fehler, Datei bleibt', hinaus.fehler && existsSync(vaultPfad('wissen', '_System', 'Regeln.md')) && !existsSync(vaultPfad('wissen', 'Regeln.md')), hinaus.text);
     const trick = await ruf('move', { from: '_System/Regeln.md', to: '.trash/Regeln.md' });

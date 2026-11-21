@@ -10,7 +10,8 @@
 //              Tools nicht (auch nicht als Standard-Vault und nicht in list_vaults).
 //   3. Regeln: remoteGuard() prueft die Argumente einzelner Aufrufe (kein endgueltiges Loeschen,
 //              _System nicht loeschbar und nicht herausverschiebbar, versteckte Pfade nicht
-//              schreibbar, vault_check ohne Stufe "admin" nur als Trockenlauf).
+//              schreibbar, nicht loeschbar und kein Ziel fuer restore, vault_check ohne Stufe
+//              "admin" nur als Trockenlauf).
 //
 // Stufen (NEXUS_MCP_LEVELS, Standard: nur "read"):
 //   read   immer an – die Lese-Tools
@@ -55,7 +56,8 @@ const innerhalb = (rel, ordner) => rel === ordner || rel.startsWith(ordner + '/'
 // Versteckt = ein Segment beginnt mit "." (.trash, .stignore, .stfolder, .git, .obsidian ...).
 const versteckt = (rel) => rel.split('/').some(s => s.startsWith('.'));
 // Tools, die unter einem Pfad schreiben. restore und delete fehlen bewusst: sie arbeiten mit dem
-// Papierkorb (.trash) und haben eigene Regeln.
+// Papierkorb (.trash) und haben eigene Regeln (remoteGuard: delete nie auf versteckten Pfaden,
+// restore nie mit verstecktem Ziel).
 const SCHREIBT_PFAD = new Set(['write_note', 'append_to_section', 'patch', 'write_karten', 'write_vortrag', 'karten_gliedern', 'create_folder']);
 
 // Regeln fuer einzelne Aufrufe. Rueckgabe: undefined = unveraendert weiter, { error } = ablehnen
@@ -65,8 +67,16 @@ export function remoteGuard({ levels = [] } = {}) {
   return (name, args = {}) => {
     if (name === 'delete') {
       if (args.permanent) return { error: 'Endgueltiges Loeschen ist ueber den Remote-Zugriff gesperrt – delete ohne permanent verschiebt in den Papierkorb.' };
+      // Auch delete ist eine Aenderung an einem versteckten Pfad: eine .stignore im Papierkorb
+      // verbiegt die Synchronisation genauso wie eine ueberschriebene. Gilt auch fuer .trash/…
+      // (ein Papierkorb-Eintrag wuerde sonst in einen zweiten Stempel-Ordner wandern).
+      if (versteckt(normRel(args.path))) return { error: 'Versteckte Pfade (Segment beginnt mit ".") werden ueber den Remote-Zugriff nicht geloescht.' };
       if (innerhalb(normRel(args.path), '_system')) return { error: 'Geschuetzt: unter _System wird ueber den Remote-Zugriff nichts geloescht.' };
     }
+    // restore: das ZIEL ist der Pfad ohne ".trash/<Stempel>/" (bzw. der Pfad selbst, wenn der
+    // Original-Pfad angegeben ist). Ein verstecktes Ziel waere ein Schreiben an der Regel vorbei.
+    if (name === 'restore' && versteckt(normRel(args.path).replace(/^\.trash\/[^/]+\/?/, '')))
+      return { error: 'Versteckte Pfade (Segment beginnt mit ".") werden ueber den Remote-Zugriff nicht wiederhergestellt.' };
     // Versteckte Pfade sind remote nicht schreibbar: dort liegen Papierkorb und Steuerdateien der
     // Synchronisation (.stignore) – eine Aenderung daran wirkt weit ueber eine Notiz hinaus.
     if (SCHREIBT_PFAD.has(name) && versteckt(normRel(args.path)))

@@ -42,8 +42,9 @@ Zusätzlich gelten für den Remote-Zugriff feste Regeln, unabhängig von der Stu
 
 - `delete` verschiebt in den Papierkorb. Endgültiges Löschen (`permanent`) ist gesperrt.
 - Unter `_System` wird nichts gelöscht und nichts herausverschoben (Umbenennen innerhalb geht).
-- Versteckte Pfade (ein Segment beginnt mit `.`: `.trash`, `.stignore`, `.git`, …) sind nicht
-  schreibbar und nicht verschiebbar; aus dem Papierkorb holt `restore` zurück.
+- Versteckte Pfade (ein Segment beginnt mit `.`: `.trash`, `.stignore`, `.stfolder`, `.git`, …)
+  sind nicht schreibbar, nicht verschiebbar und nicht löschbar – auch nicht in den Papierkorb.
+  Aus dem Papierkorb holt `restore` zurück, aber nur an ein Ziel, das nicht versteckt ist.
 - Nur freigegebene Vaults (`NEXUS_MCP_ALLOWED_VAULTS`) sind erreichbar.
 
 **Kollisionsschutz:** `write_note`, `patch` und `append_to_section` nehmen `expected_hash` an – den
