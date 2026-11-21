@@ -28,7 +28,8 @@ if (config.enabled) {
 let app;
 try { app = createHttpApp({ registry, info, config }); }
 catch (e) { log('Start abgebrochen – ' + e.message); process.exit(1); }
-if (config.enabled) log('Stufen: ' + config.levels.join(', ') + (config.auditLog ? ' · Audit-Log: ' + config.auditLog : ''));
+if (config.enabled) log('Stufen: ' + config.levels.join(', ') + (config.auditLog ? ' · Audit-Log: ' + config.auditLog : '')
+  + (config.download ? ` · Download-Links: an (${config.download.ttlS} s, max. ${config.download.maxBytes} Bytes)` : ''));
 
 const http = app.listen(config.port, config.bind, () => {
   log(`v${info.version ?? '?'} lauscht auf ${config.bind}:${http.address().port}`);

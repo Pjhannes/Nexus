@@ -89,6 +89,27 @@ export function loadHttpConfig(env = {}) {
     config.allowedOrigins = [...new Set([...(resource ? [resource.u.origin] : []), ...klein(env.NEXUS_MCP_ALLOWED_ORIGINS)])];
     // Groessenlimit je Tool-Antwort in Bytes (serialisiertes Ergebnis inkl. Bilddaten).
     config.maxResponseBytes = ganzzahl(env, 'NEXUS_MCP_MAX_RESPONSE_BYTES', 512 * 1024, 1024, 16 * 1024 * 1024, fehler);
+    // Download-Links (R31): eingeschaltet, sobald ein Geheimnis gesetzt ist. Der Link fuehrt auf
+    // /dl/<token>/<name> an der Basis-URL (Standard: Ursprung der Ressourcen-URL); deren Host
+    // zaehlt automatisch zu den erlaubten Hosts.
+    const geheim = String(env.NEXUS_MCP_DOWNLOAD_SECRET ?? '');
+    config.download = null;
+    if (geheim) {
+      if (geheim.length < 32) fehler.push('NEXUS_MCP_DOWNLOAD_SECRET ist zu kurz (mindestens 32 Zeichen)');
+      let basis = resource ? resource.u.origin : null;
+      if (String(env.NEXUS_MCP_DOWNLOAD_BASE_URL ?? '').trim()) {
+        const b = url(env, 'NEXUS_MCP_DOWNLOAD_BASE_URL', fehler);
+        if (b) {
+          basis = b.u.origin + b.u.pathname.replace(/\/+$/, '');
+          if (!config.allowedHosts.includes(b.u.host)) config.allowedHosts.push(b.u.host);
+        }
+      }
+      config.download = Object.freeze({
+        secret: geheim, baseUrl: basis,
+        ttlS: ganzzahl(env, 'NEXUS_MCP_DOWNLOAD_TTL_S', 300, 30, 3600, fehler),
+        maxBytes: ganzzahl(env, 'NEXUS_MCP_DOWNLOAD_MAX_BYTES', 50 * 1024 * 1024, 1024, 1024 * 1024 * 1024, fehler),
+      });
+    }
     // Optional: Scopes, die im scp-Claim stehen muessen (Standard: keine Scope-Pflicht).
     const scopes = (name) => {
       const l = [...new Set(liste(String(env[name] ?? '').replace(/\s+/g, ',')))];

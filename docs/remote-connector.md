@@ -63,6 +63,10 @@ im Datenordner (`NEXUS_DATA_DIR`).
 | `NEXUS_MCP_ALLOWED_VAULTS` | nein | *(keiner)* | Freigegebene Vault-Namen aus `nexus.config.json`, kommagetrennt. Ohne Angabe ist kein Vault erreichbar. |
 | `NEXUS_MCP_LEVELS` | nein | `read` | Freigegebene Stufen, kommagetrennt: `read` (gilt immer), `write`, `admin`. Welche Tools dazugehören, steht unter „Stufen“. Unbekannte Werte verhindern den Start. |
 | `NEXUS_MCP_AUDIT_LOG` | bei `write`/`admin` | – | Absoluter Pfad der Audit-Datei (JSON-Zeilen), außerhalb der Vaults. Pflicht, sobald `NEXUS_MCP_LEVELS` eine Schreibstufe enthält; ist die Datei nicht beschreibbar, startet der Server nicht bzw. lehnt Änderungen ab. |
+| `NEXUS_MCP_DOWNLOAD_SECRET` | nein | *(aus)* | Schaltet Download-Links ein (Tool `datei_link`, Route `/dl/…`). Zufälliges Geheimnis, mindestens 32 Zeichen, z. B. aus `openssl rand -base64 48`. Wer es kennt, kann Links für jede Datei der freigegebenen Vaults erzeugen. |
+| `NEXUS_MCP_DOWNLOAD_TTL_S` | nein | `300` | Gültigkeit eines Download-Links in Sekunden (30 bis 3600). |
+| `NEXUS_MCP_DOWNLOAD_MAX_BYTES` | nein | `52428800` | Größte Datei, für die ein Link erzeugt und ausgeliefert wird (1024 bis 1073741824). |
+| `NEXUS_MCP_DOWNLOAD_BASE_URL` | nein | Ursprung der Ressourcen-URL | Öffentliche Basis-Adresse der Download-Links, z. B. `https://mcp.example.com`. Ihr Host zählt automatisch zu den erlaubten Hosts. |
 | `NEXUS_MCP_ALLOWED_HOSTS` | nein | Host aus der Ressourcen-URL | Erlaubte `Host`-Header, kommagetrennt (mit Port, falls nicht Standard). |
 | `NEXUS_MCP_ALLOWED_ORIGINS` | nein | *(nur der eigene)* | Zusätzlich erlaubte `Origin`-Werte, z. B. für ein Prüfwerkzeug im Browser. |
 | `NEXUS_MCP_MAX_RESPONSE_BYTES` | nein | `524288` | Größenlimit je Tool-Antwort (1024 bis 16777216). Größere Antworten werden zu einem Tool-Fehler mit Hinweis, wie der Aufruf enger zu fassen ist. Bilder aus `read_bild` zählen mit. |

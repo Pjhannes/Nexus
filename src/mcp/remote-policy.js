@@ -103,7 +103,7 @@ export function restrictRegistry(registry, allowedVaults = []) {
 
 // Server-Hinweise fuer den Remote-Zugriff, passend zu den tatsaechlich freigegebenen Tools
 // (die lokale Fassung nennt alle Tools und die Pflichtlektuere).
-export function remoteInstructions({ tools = REMOTE_READ_TOOLS, levels = [] } = {}) {
+export function remoteInstructions({ tools = REMOTE_READ_TOOLS, levels = [], download = false } = {}) {
   const schreiben = levels.includes('write') || levels.includes('admin');
   return [
     schreiben ? 'Zugriff auf persoenliche Wissens-Vaults ueber die Nexus-Tools' : 'Lesezugriff auf persoenliche Wissens-Vaults ueber die Nexus-Tools',
@@ -113,6 +113,7 @@ export function remoteInstructions({ tools = REMOTE_READ_TOOLS, levels = [] } = 
       : 'Schreiben ist ueber diese Verbindung nicht moeglich.',
     ...(levels.includes('admin') ? ['delete verschiebt in den Papierkorb (restore holt zurueck); endgueltiges Loeschen gibt es hier nicht.'] : []),
     ...(schreiben && !levels.includes('admin') ? ['vault_check prueft nur (Trockenlauf), Loeschen ist nicht freigegeben.'] : []),
+    ...(download ? ['Will der Nutzer eine Datei HABEN (herunterladen, weitergeben) statt ihren Inhalt lesen: datei_link aufrufen und ihm die url unveraendert als Link geben – sie gilt nur wenige Minuten.'] : []),
     'list_vaults zeigt die freigegebenen Vaults; jedes Tool hat einen optionalen vault-Parameter.',
     'Prinzip: maximale Information pro Token – erst search oder outline, dann read_note mit section',
     'oder lines; nicht blind ganze Notizen lesen. Listen mit limit/offset blaettern.',

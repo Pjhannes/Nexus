@@ -5,12 +5,15 @@
 //   3. Regeln je Aufruf: kein endgueltiges Loeschen, _System geschuetzt, vault_check als Trockenlauf
 //   4. Stufe "admin": delete landet im Papierkorb, reindex, vault_check mit Bericht
 //   5. Audit-Log: Pflicht bei Schreibstufen, eine Zeile je aenderndem Aufruf, fail-closed
+//   6. Download-Links: datei_link + GET /dl/<token>/<name>, Signatur, Ablauf, Grenzen
 // Aufbau: test/mcp-http-helfer.mjs. Lauf: node test/mcp-http-write.test.mjs
-import { existsSync, readFileSync, readdirSync, rmSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, rmSync, mkdirSync, writeFileSync, symlinkSync } from 'fs';
+import { randomBytes } from 'crypto';
 import { join } from 'path';
 import { aufbau } from './mcp-http-helfer.mjs';
 import { loadHttpConfig } from '../src/mcp/http-config.js';
 import { REMOTE_READ_TOOLS, REMOTE_WRITE_TOOLS, REMOTE_ADMIN_TOOLS, remotePolicy, remoteGuard } from '../src/mcp/remote-policy.js';
+import { makeDownloads, contentDisposition } from '../src/mcp/download.js';
 
 let pass = 0, fail = 0;
 function ok(label, cond, extra) {
@@ -181,6 +184,150 @@ try {
     mkdirSync(join(t.scratch, 'audit2'), { recursive: true });
     const wieder = await ruf('write_note', { path: 'MitAudit.md', content: 'x', create: true });
     ok('Audit-Log wieder da -> Schreiben geht, Zeile steht drin', !wieder.fehler && auditZeilen(eigenes).some(z => z.tool === 'write_note' && z.pfad === 'MitAudit.md'), wieder.text);
+  }
+
+  // ── 6. Download-Links ──────────────────────────────────────────────────────
+  console.log('6. Download-Links');
+  {
+    const GEHEIM = 'test-geheimnis-nur-fuer-diesen-lauf-0123456789';
+    const dlEnv = (extra = {}) => ({ ...ENV, NEXUS_MCP_DOWNLOAD_SECRET: GEHEIM, ...extra });
+    ok('Standard: Download-Links aus', loadHttpConfig(ENV).download === null);
+    ok('zu kurzes Geheimnis -> Konfigurationsfehler', /NEXUS_MCP_DOWNLOAD_SECRET/.test(wirft(dlEnv({ NEXUS_MCP_DOWNLOAD_SECRET: 'kurz' })) ?? ''));
+    const cfg = loadHttpConfig(dlEnv());
+    ok('Standardwerte: 300 s, 50 MB, Basis = Ursprung der Ressourcen-URL', cfg.download.ttlS === 300 && cfg.download.maxBytes === 50 * 1024 * 1024 && cfg.download.baseUrl === 'https://mcp.example.com', cfg.download);
+    ok('TTL ausserhalb 30..3600 -> Konfigurationsfehler', /NEXUS_MCP_DOWNLOAD_TTL_S/.test(wirft(dlEnv({ NEXUS_MCP_DOWNLOAD_TTL_S: '5' })) ?? ''));
+    const andere = loadHttpConfig(dlEnv({ NEXUS_MCP_DOWNLOAD_BASE_URL: 'https://dl.example.com/' }));
+    ok('eigene Basis-URL: ohne Schraegstrich am Ende, ihr Host ist automatisch erlaubt', andere.download.baseUrl === 'https://dl.example.com' && andere.allowedHosts.includes('dl.example.com') && andere.allowedHosts.includes('mcp.example.com'), andere.allowedHosts);
+
+    // Helfer-Ebene
+    const dl = makeDownloads({ secret: GEHEIM, ttlS: 300, maxBytes: 1000, baseUrl: 'https://mcp.example.com' });
+    const frisch = dl.token({ vault: 'wissen', path: 'Notiz.md', sub: 'u1' });
+    const p0 = dl.pruefe(frisch.token);
+    ok('Token: gueltig, nennt Vault, Pfad, sub, Ablauf', p0.ok && p0.vault === 'wissen' && p0.path === 'Notiz.md' && p0.sub === 'u1' && p0.exp === frisch.exp, p0);
+    ok('Token nach Ablauf -> "abgelaufen"', dl.pruefe(frisch.token, Date.now() + 301_000).grund === 'abgelaufen');
+    const [teil, sig] = frisch.token.split('.');
+    const andererPfad = Buffer.from(JSON.stringify({ v: 'wissen', p: '_System/Regeln.md', e: frisch.exp, s: 'u1' })).toString('base64url');
+    ok('anderer Pfad mit alter Signatur -> "signatur"', dl.pruefe(andererPfad + '.' + sig).grund === 'signatur');
+    ok('verlaengerter Ablauf mit alter Signatur -> "signatur"', dl.pruefe(Buffer.from(JSON.stringify({ v: 'wissen', p: 'Notiz.md', e: frisch.exp + 9999, s: 'u1' })).toString('base64url') + '.' + sig).grund === 'signatur');
+    ok('anderes Geheimnis -> "signatur"', makeDownloads({ secret: GEHEIM + 'x', ttlS: 300, maxBytes: 1000, baseUrl: 'x' }).pruefe(frisch.token).grund === 'signatur');
+    ok('Muell -> "form"', dl.pruefe('abc').grund === 'form' && dl.pruefe('').grund === 'form' && dl.pruefe(undefined).grund === 'form' && dl.pruefe(teil + '.' + 'A'.repeat(42)).grund === 'form');
+    ok('Content-Disposition: ASCII-Rueckfall + UTF-8-Name', contentDisposition('Bericht – Übersicht "final".html')
+      === `attachment; filename="Bericht _ _bersicht _final_.html"; filename*=UTF-8''Bericht%20%E2%80%93%20%C3%9Cbersicht%20%22final%22.html`, contentDisposition('Bericht – Übersicht "final".html'));
+
+    // Dateien: Binaerdatei (3 MB) und HTML mit Umlaut im Namen
+    mkdirSync(vaultPfad('wissen', 'Dateien'), { recursive: true });
+    const gross = randomBytes(3 * 1024 * 1024);
+    writeFileSync(vaultPfad('wissen', 'Dateien', 'gross.bin'), gross);
+    const HTML = '<!DOCTYPE html><html><body><script>document.title="x"</script>Übersicht</body></html>';
+    writeFileSync(vaultPfad('wissen', 'Dateien', 'Bericht – Übersicht.html'), HTML, 'utf8');
+    mkdirSync(vaultPfad('wissen', '.trash', 'x'), { recursive: true });
+    writeFileSync(vaultPfad('wissen', '.trash', 'x', 'Alt.md'), 'weg', 'utf8');
+
+    const aus = await t.starte(t.baueApp(loadHttpConfig(ENV)));
+    ok('ohne Geheimnis: kein Tool datei_link', !(await t.toolNamen(aus)).includes('datei_link') && (await t.rufer(aus)('datei_link', { path: 'Notiz.md' })).fehler);
+    ok('ohne Geheimnis: /dl/... -> 404', (await t.anfrage(aus, { method: 'GET', path: '/dl/' + frisch.token + '/Notiz.md' })).status === 404);
+
+    const port = await t.starte(t.baueApp(cfg));
+    const ruf = t.rufer(port);
+    const namen = await t.toolNamen(port);
+    ok('mit Geheimnis (nur lesen): Lese-Tools + datei_link', sortiert(namen) === sortiert([...REMOTE_READ_TOOLS, 'datei_link']), namen.join());
+    const init = await t.anfrage(port, { token: t.GUT, body: t.rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'x', version: '0' } }) });
+    ok('initialize: Hinweistext erklaert datei_link', /datei_link/.test(init.json?.result?.instructions ?? ''));
+
+    const l = await ruf('datei_link', { path: 'Dateien/gross.bin' });
+    ok('datei_link: url, Groesse, Ablauf', !l.fehler && l.json?.bytes === gross.length && /^https:\/\/mcp\.example\.com\/dl\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}\/gross\.bin$/.test(l.json?.url ?? '')
+      && Math.abs(Date.parse(l.json.gueltigBis) - Date.now() - 300_000) < 5000, l.text);
+    ok('das Geheimnis steht in keinem Tool-Ergebnis', !l.text.includes(GEHEIM));
+    const pfadVon = (u) => new URL(u).pathname;
+    const holen = (u, opt = {}) => t.anfrage(port, { method: 'GET', path: pfadVon(u), ...opt });
+    const d = await holen(l.json.url);
+    ok('GET ohne Bearer-Token liefert die Datei bytegenau (3 MB)', d.status === 200 && d.buffer.equals(gross), `${d.status} ${d.buffer.length}`);
+    ok('Kopfzeilen: Anhang, Binaerdaten, Laenge, nosniff, no-store, CSP sandbox', /^attachment; filename="gross\.bin"/.test(d.headers['content-disposition'] ?? '')
+      && d.headers['content-type'] === 'application/octet-stream' && d.headers['content-length'] === String(gross.length) && d.headers['x-content-type-options'] === 'nosniff'
+      && d.headers['cache-control'] === 'no-store' && /sandbox/.test(d.headers['content-security-policy'] ?? ''), d.headers);
+    ok('zweiter Abruf innerhalb der Laufzeit geht ebenfalls', (await holen(l.json.url)).status === 200);
+    const kopf = await holen(l.json.url, { method: 'HEAD' });
+    ok('HEAD: Kopfzeilen ohne Inhalt', kopf.status === 200 && kopf.buffer.length === 0 && kopf.headers['content-length'] === String(gross.length));
+    ok('POST auf den Link -> 405', (await holen(l.json.url, { method: 'POST', body: {} })).status === 405);
+    ok('falscher Host -> 403 (Host-Allowlist gilt auch hier)', (await holen(l.json.url, { headers: { host: 'boese.example.com' } })).status === 403);
+
+    const h = await ruf('datei_link', { path: 'Dateien/Bericht – Übersicht.html' });
+    const hd = await holen(h.json.url);
+    ok('HTML mit Umlaut im Namen: Inhalt gleich, wird als Anhang und nicht als text/html ausgeliefert', hd.status === 200 && hd.text === HTML && hd.headers['content-type'] === 'application/octet-stream'
+      && (hd.headers['content-disposition'] ?? '').includes("filename*=UTF-8''Bericht%20%E2%80%93%20%C3%9Cbersicht.html"), hd.headers);
+    const nurToken = await t.anfrage(port, { method: 'GET', path: pfadVon(h.json.url).split('/').slice(0, 3).join('/') });
+    ok('der Dateiname im Link ist Zierde: /dl/<token> allein liefert dieselbe Datei', nurToken.status === 200 && nurToken.text === HTML);
+    const falscherName = await t.anfrage(port, { method: 'GET', path: pfadVon(h.json.url).split('/').slice(0, 3).join('/') + '/Notiz.md' });
+    ok('ein anderer Name im Link aendert nicht, WAS ausgeliefert wird', falscherName.status === 200 && falscherName.text === HTML);
+
+    // Ungueltige Links
+    const tok = pfadVon(l.json.url).split('/')[2];
+    const [tt, ss] = tok.split('.');
+    const kipp = (x) => x.slice(0, -1) + (x.endsWith('A') ? 'B' : 'A');
+    for (const [name, kaputt] of [['Signatur veraendert', tt + '.' + kipp(ss)], ['Inhalt veraendert', kipp(tt) + '.' + ss], ['ohne Signatur', tt], ['leer', 'x']]) {
+      const r = await t.anfrage(port, { method: 'GET', path: '/dl/' + kaputt + '/gross.bin' });
+      ok(`${name} -> 404 ohne Inhalt`, r.status === 404 && r.buffer.length < 200, `${r.status} ${r.buffer.length}`);
+    }
+    const eigene = makeDownloads({ ...cfg.download });
+    const alt = eigene.token({ vault: 'wissen', path: 'Notiz.md', now: Date.now() - 301_000 });
+    const abg = await t.anfrage(port, { method: 'GET', path: '/dl/' + alt.token + '/Notiz.md' });
+    ok('abgelaufener Link -> 410 mit Klartext, ohne Datei', abg.status === 410 && /abgelaufen/.test(abg.text) && !abg.text.includes('Leuchtturm'), `${abg.status} ${abg.text}`);
+    const priv = await t.anfrage(port, { method: 'GET', path: '/dl/' + eigene.token({ vault: 'privat', path: 'Geheim.md' }).token + '/Geheim.md' });
+    ok('echte Signatur, aber nicht freigegebener Vault -> 404, kein Inhalt', priv.status === 404 && !priv.text.includes('Zitronenfalter'), `${priv.status} ${priv.text}`);
+    const versteckt = await t.anfrage(port, { method: 'GET', path: '/dl/' + eigene.token({ vault: 'wissen', path: '.trash/x/Alt.md' }).token + '/Alt.md' });
+    ok('echte Signatur, aber versteckter Ordner -> 404', versteckt.status === 404 && versteckt.text !== 'weg');
+    const raus = await t.anfrage(port, { method: 'GET', path: '/dl/' + eigene.token({ vault: 'wissen', path: '../privat/Geheim.md' }).token + '/Geheim.md' });
+    ok('echte Signatur, aber Pfad aus dem Vault heraus -> 404', raus.status === 404 && !raus.text.includes('Zitronenfalter'));
+
+    // datei_link lehnt ab, was nicht ausgeliefert werden darf
+    for (const [name, args] of [['versteckter Ordner', { path: '.trash/x/Alt.md' }], ['Pfad aus dem Vault heraus', { path: '../privat/Geheim.md' }], ['Ordner', { path: 'Dateien' }],
+      ['fehlende Datei', { path: 'Dateien/fehlt.pdf' }], ['nicht freigegebener Vault', { path: 'Geheim.md', vault: 'privat' }], ['absoluter Pfad', { path: '/etc/hostname' }]]) {
+      const r = await ruf('datei_link', args);
+      ok(`datei_link: ${name} -> Fehler, kein Link`, r.fehler && !/\/dl\//.test(r.text), r.text);
+    }
+    let link = false;
+    try { symlinkSync(vaultPfad('privat', 'Geheim.md'), vaultPfad('wissen', 'Dateien', 'verknuepft.md')); link = true; } catch { /* z. B. Windows ohne Entwicklermodus */ }
+    if (link) {
+      const r = await ruf('datei_link', { path: 'Dateien/verknuepft.md' });
+      ok('Symlink aus dem Vault heraus -> Fehler, kein Link', r.fehler && !/\/dl\//.test(r.text), r.text);
+      const s2 = await t.anfrage(port, { method: 'GET', path: '/dl/' + eigene.token({ vault: 'wissen', path: 'Dateien/verknuepft.md' }).token + '/v.md' });
+      ok('Symlink aus dem Vault heraus mit echter Signatur -> 404', s2.status === 404 && !s2.text.includes('Zitronenfalter'));
+      rmSync(vaultPfad('wissen', 'Dateien', 'verknuepft.md'), { force: true });
+    } else console.log('  (Symlink-Fall uebersprungen: Symlinks hier nicht moeglich)');
+
+    // Groessengrenze und Datei, die sich nach dem Link aendert
+    const klein = await t.starte(t.baueApp(loadHttpConfig(dlEnv({ NEXUS_MCP_DOWNLOAD_MAX_BYTES: '2048' }))));
+    const zuGross = await t.rufer(klein)('datei_link', { path: 'Dateien/gross.bin' });
+    ok('ueber der Groessengrenze: Fehler nennt Groesse und Limit', zuGross.fehler && /3145728 Bytes, Limit 2048/.test(zuGross.text), zuGross.text);
+    const n = await t.rufer(klein)('datei_link', { path: 'Notiz.md' });
+    writeFileSync(vaultPfad('wissen', 'Wachsend.md'), 'klein', 'utf8');
+    const w = await t.rufer(klein)('datei_link', { path: 'Wachsend.md' });
+    writeFileSync(vaultPfad('wissen', 'Wachsend.md'), 'x'.repeat(5000), 'utf8');
+    ok('Datei nach dem Link ueber das Limit gewachsen -> 404', !w.fehler && (await t.anfrage(klein, { method: 'GET', path: pfadVon(w.json.url) })).status === 404);
+    rmSync(vaultPfad('wissen', 'Wachsend.md'), { force: true });
+    ok('Datei nach dem Link geloescht -> 404', (await t.anfrage(klein, { method: 'GET', path: pfadVon(w.json.url) })).status === 404);
+    ok('kleine Datei unter dem Limit: Link funktioniert', !n.fehler && (await t.anfrage(klein, { method: 'GET', path: pfadVon(n.json.url) })).status === 200);
+    const fremderServer = await t.starte(t.baueApp(loadHttpConfig(dlEnv({ NEXUS_MCP_DOWNLOAD_SECRET: GEHEIM + '-anders' }))));
+    ok('anderes Geheimnis am Server -> 404', (await t.anfrage(fremderServer, { method: 'GET', path: pfadVon(n.json.url) })).status === 404);
+
+    // Aufruf-Log und Audit-Log
+    const logs = t.logZeilen.map(z => JSON.parse(z));
+    const dz = logs.filter(z => z.tool === 'download');
+    ok('Aufruf-Log: Download mit sub, Vault, Pfad, Ergebnis', dz.some(z => z.ergebnis === 'ok' && z.pfad === 'Dateien/gross.bin' && z.vault === 'wissen' && z.sub === '00000000-0000-4000-8000-000000000001' && z.status === 200), dz[0]);
+    ok('Aufruf-Log: Gruende fuer abgelehnte Links', ['link_signatur', 'link_form', 'link_abgelaufen', 'datei_fehlt'].every(g => dz.some(z => z.ergebnis === g)), [...new Set(dz.map(z => z.ergebnis))].join());
+    ok('weder Geheimnis noch Token stehen im Aufruf-Log', !t.logZeilen.some(z => z.includes(GEHEIM) || z.includes(ss)));
+    const eigenesAudit = join(t.scratch, 'audit-dl', 'a.jsonl');
+    const mitAudit = await t.starte(t.baueApp(loadHttpConfig(dlEnv({ NEXUS_MCP_AUDIT_LOG: eigenesAudit }))));
+    const la = await t.rufer(mitAudit)('datei_link', { path: 'Notiz.md' });
+    await t.anfrage(mitAudit, { method: 'GET', path: pfadVon(la.json.url) });
+    const az = auditZeilen(eigenesAudit);
+    ok('mit Audit-Log: je eine Zeile fuer den Link und fuer den Abruf', az.some(z => z.tool === 'datei_link' && z.pfad === 'Notiz.md' && z.ergebnis === 'ok') && az.some(z => z.tool === 'download' && z.pfad === 'Notiz.md' && z.vault === 'wissen'), az);
+    ok('kein Token im Audit-Log', !readFileSync(eigenesAudit, 'utf8').includes('/dl/'));
+
+    const fremdBasis = await t.starte(t.baueApp(andere));
+    const fb = await t.rufer(fremdBasis)('datei_link', { path: 'Notiz.md' });
+    ok('eigene Basis-URL steht im Link und ihr Host wird angenommen', /^https:\/\/dl\.example\.com\/dl\//.test(fb.json?.url ?? '')
+      && (await t.anfrage(fremdBasis, { method: 'GET', path: pfadVon(fb.json.url), headers: { host: 'dl.example.com' } })).status === 200, fb.text);
   }
 } catch (e) {
   console.error('  \x1b[31m✗ Testlauf-Fehler:\x1b[0m', e.stack || e.message);
