@@ -13,6 +13,11 @@
 //   onResult  optional: (name, args, result) => result – laeuft nach JEDEM Tool-Aufruf ueber das
 //             fertige Ergebnis (auch Fehler). Der HTTP-Einstieg begrenzt damit die Antwortgroesse
 //             und fuehrt sein Aufruf-Log; ohne Hook bleibt alles wie bisher.
+//   onCall    optional: (name, args) => undefined | { error } | { args } – laeuft VOR jedem Tool-Aufruf.
+//             { error } lehnt ab (das Tool laeuft nicht), { args } ersetzt die Argumente. Der
+//             HTTP-Einstieg setzt damit seine Regeln je Aufruf durch (src/mcp/remote-policy.js).
+//   erweitern optional: ({ tool, z, registry, antwort }) => void – registriert zusaetzliche Tools
+//             ueber denselben Weg (Policy, Wrapper, Hooks). Fuer Tools, die nur ein Einstieg hat.
 //   instructions  optional: eigener Hinweistext fuer initialize (Remote-Connector: Kurzfassung
 //             ohne Schreib-Tools). Standard: die lokale Fassung NEXUS_INSTRUCTIONS.
 //
@@ -123,7 +128,7 @@ const DESTI = { readOnlyHint: false, destructiveHint: true, idempotentHint: true
 // Objekte – deshalb unten ueberall offen({...}) statt z.object({...}) in output-Schemas.
 const offen = (shape) => { const o = z.object(shape); return typeof o.loose === 'function' ? o.loose() : o.passthrough(); };
 
-export function buildServer({ registry, policy = {}, info = {}, instructions = NEXUS_INSTRUCTIONS, onResult = null } = {}) {
+export function buildServer({ registry, policy = {}, info = {}, instructions = NEXUS_INSTRUCTIONS, onResult = null, onCall = null, erweitern = null } = {}) {
   if (!registry || typeof registry.get !== 'function') throw new Error('buildServer: registry fehlt');
   const erlaubt = typeof policy?.allow === 'function' ? policy.allow : () => true;
   // Identitaet fuer list_vaults – Felder wie im outputSchema (version/dataDir Pflicht, Rest nullable).
@@ -144,7 +149,16 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
   function tool(name, { description, input = {}, output, annotations, title }, fn) {
     if (!erlaubt(name, { annotations })) return;
     registriert++;
-    const aufruf = run(fn);
+    const roh = run(fn);
+    // onCall: Regeln je Aufruf – ablehnen oder Argumente ersetzen, bevor das Tool laeuft.
+    const aufruf = typeof onCall === 'function'
+      ? async (args, extra) => {
+          let r;
+          try { r = onCall(name, args ?? {}); } catch (e) { return fail(e?.message || String(e)); }
+          if (r?.error) return fail(r.error);
+          return roh(r?.args ?? args, extra);
+        }
+      : roh;
     server.registerTool(name, {
       title, description,
       inputSchema: input,
@@ -531,6 +545,9 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
     const r = e.tools.vaultCheck({ dryRun: dry_run, regeln });
     return r.error ? fail(`[${e.vault.name}] ${r.error}`) : structured({ vault: e.vault.name, ...r });
   });
+
+  // Zusaetzliche Tools eines Einstiegs (z. B. datei_link im HTTP-Einstieg).
+  if (typeof erweitern === 'function') erweitern({ tool, z, registry, antwort: { text, asJson, fail, structured }, annotations: { RO, ADD, IDEM, DEST, DESTI } });
 
   // "$schema" aus den Tool-Schemas entfernen (Cowork-Fix, 2026-10-04).
   // Das SDK (bis mindestens 1.32) konvertiert Zod->JSON-Schema fest mit target draft-7 und

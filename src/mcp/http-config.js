@@ -5,6 +5,8 @@
 // wirft EINEN Fehler mit allen Problemen: ein unvollstaendig konfigurierter Server startet nicht.
 // Beschreibung aller Variablen: docs/remote-connector.md
 
+import { REMOTE_LEVELS } from './remote-policy.js';
+
 const AUS = new Set(['0', 'false', 'off', 'no']);
 
 const liste = (s) => String(s ?? '').split(',').map(x => x.trim()).filter(Boolean);
@@ -66,6 +68,12 @@ export function loadHttpConfig(env = {}) {
     // Freigegebene Vaults (Namen aus nexus.config.json). Standard: KEINER – ohne diese Variable
     // laeuft der Server, liefert aber aus keinem Vault etwas.
     config.allowedVaults = liste(env.NEXUS_MCP_ALLOWED_VAULTS);
+    // Stufen (R31): "read" gilt immer; "write" und "admin" werden einzeln eingeschaltet.
+    // Standard: nur lesen. Welche Tools zu welcher Stufe gehoeren: src/mcp/remote-policy.js.
+    const stufen = [...new Set(liste(env.NEXUS_MCP_LEVELS).map(x => x.toLowerCase()))];
+    const fremd = stufen.filter(x => !REMOTE_LEVELS.includes(x));
+    if (fremd.length) fehler.push(`NEXUS_MCP_LEVELS kennt nur ${REMOTE_LEVELS.join(', ')} (unbekannt: ${fremd.join(', ')})`);
+    config.levels = Object.freeze(REMOTE_LEVELS.filter(x => x === 'read' || stufen.includes(x)));
 
     // Haertung: erlaubte Host-Header (Standard: der Host der Ressourcen-URL) und erlaubte
     // Origins (Standard: nur der eigene). Alles andere wird mit 403 abgewiesen.

@@ -645,7 +645,8 @@ try {
     aus.kind.kill();
 
     // 6c. Keine persoenlichen Werte im Repo: in Code, Test und Doku des Connectors nur example.com.
-    const dateien = ['src/mcp-http.js', 'src/mcp/http-app.js', 'src/mcp/http-config.js', 'src/mcp/token.js', 'src/mcp/remote-policy.js', 'test/mcp-http.test.mjs', 'docs/remote-connector.md']
+    const dateien = ['src/mcp-http.js', 'src/mcp/http-app.js', 'src/mcp/http-config.js', 'src/mcp/token.js', 'src/mcp/remote-policy.js', 'test/mcp-http.test.mjs', 'docs/remote-connector.md',
+      'src/mcp/audit.js', 'src/mcp/download.js', 'test/mcp-http-write.test.mjs', 'test/mcp-http-helfer.mjs']
       .filter(f => existsSync(join(ROOT, f)));
     const ERLAUBT = /(^|\.)example\.com$|^127\.0\.0\.1$|^localhost$|^claude\.ai$/;
     const funde = [];

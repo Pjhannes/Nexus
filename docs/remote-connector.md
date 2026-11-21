@@ -61,6 +61,7 @@ im Datenordner (`NEXUS_DATA_DIR`).
 | `NEXUS_MCP_JWKS_URI` | ja | – | Adresse der öffentlichen Schlüssel des Issuers, z. B. `https://auth.example.com/jwks.json` (steht als `jwks_uri` in dessen Discovery-Dokument). |
 | `NEXUS_MCP_ALLOWED_SUBS` | ja | – | Erlaubte Benutzer als `sub`-Werte, kommagetrennt. Fehlt die Liste, startet der Server nicht. |
 | `NEXUS_MCP_ALLOWED_VAULTS` | nein | *(keiner)* | Freigegebene Vault-Namen aus `nexus.config.json`, kommagetrennt. Ohne Angabe ist kein Vault erreichbar. |
+| `NEXUS_MCP_LEVELS` | nein | `read` | Freigegebene Stufen, kommagetrennt: `read` (gilt immer), `write`, `admin`. Welche Tools dazugehören, steht unter „Stufen“. Unbekannte Werte verhindern den Start. |
 | `NEXUS_MCP_ALLOWED_HOSTS` | nein | Host aus der Ressourcen-URL | Erlaubte `Host`-Header, kommagetrennt (mit Port, falls nicht Standard). |
 | `NEXUS_MCP_ALLOWED_ORIGINS` | nein | *(nur der eigene)* | Zusätzlich erlaubte `Origin`-Werte, z. B. für ein Prüfwerkzeug im Browser. |
 | `NEXUS_MCP_MAX_RESPONSE_BYTES` | nein | `524288` | Größenlimit je Tool-Antwort (1024 bis 16777216). Größere Antworten werden zu einem Tool-Fehler mit Hinweis, wie der Aufruf enger zu fassen ist. Bilder aus `read_bild` zählen mit. |

@@ -8,12 +8,12 @@
 // die Antwort ist ein JSON-Dokument (enableJsonResponse).
 //
 // Reihenfolge der Pruefungen (jede bricht ab, bevor die naechste Arbeit macht):
-//   Kill-Switch -> (/healthz) -> Host-Allowlist -> Origin -> Methode -> Token -> Body (max. 2 MB) -> Policy
+//   Kill-Switch -> (/healthz) -> Host-Allowlist -> Origin -> Methode -> Token -> Body (max. 2 MB) -> Policy -> Regeln
 import express from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { buildServer } from './build-server.js';
 import { makeTokenVerifier, bearerToken } from './token.js';
-import { readOnlyPolicy, restrictRegistry, REMOTE_INSTRUCTIONS, REMOTE_READ_TOOLS } from './remote-policy.js';
+import { remotePolicy, remoteGuard, restrictRegistry, remoteInstructions } from './remote-policy.js';
 
 export const BODY_LIMIT_BYTES = 2 * 1024 * 1024;
 
@@ -39,11 +39,15 @@ export function createHttpApp({ registry, info = {}, config, log = stdoutLog }) 
   }
   if (!registry || typeof registry.get !== 'function') throw new Error('createHttpApp: registry fehlt');
 
-  // Nur lesen, nur freigegebene Vaults (src/mcp/remote-policy.js). Kein Server-Pfad nach aussen.
-  const policy = readOnlyPolicy();
+  // Stufen + Regeln + nur freigegebene Vaults (src/mcp/remote-policy.js). Standard: nur lesen.
+  // Kein Server-Pfad nach aussen.
+  const levels = config.levels ?? ['read'];
+  const policy = remotePolicy({ levels });
+  const guard = remoteGuard({ levels });
   const sicht = restrictRegistry(registry, config.allowedVaults);
   const identitaet = { ...info, dataDir: '' };
-  const leseTools = new Set(REMOTE_READ_TOOLS);
+  const freigegeben = new Set(policy.tools);
+  const hinweise = remoteInstructions({ tools: policy.tools, levels });
 
   // ── Aufruf-Log: EINE JSON-Zeile je Anfrage – Zeit, sub, Tool, Pfad, Ergebnis. Keine Inhalte:
   // weder Suchbegriffe noch Abfragen, Notiztext, Token oder Header. Die Felder fuellen die
@@ -159,11 +163,11 @@ export function createHttpApp({ registry, info = {}, config, log = stdoutLog }) 
       const a = msg.params?.arguments ?? {};
       e.tool = kurz(msg.params?.name);
       e.vault = kurz(a.vault);
-      e.pfad = kurz(a.path) ?? kurz(a.prefix);
+      e.pfad = kurz(a.path) ?? kurz(a.from) ?? kurz(a.prefix);
       // Vorbelegung, falls der Aufruf das Tool nie erreicht (nicht freigegeben / ungueltige Argumente).
-      e.ergebnis = leseTools.has(msg.params?.name) ? 'aufruf_fehler' : 'tool_abgelehnt';
+      e.ergebnis = freigegeben.has(msg.params?.name) ? 'aufruf_fehler' : 'tool_abgelehnt';
     }
-    const server = buildServer({ registry: sicht, policy, info: identitaet, instructions: REMOTE_INSTRUCTIONS, onResult: begrenze(e) });
+    const server = buildServer({ registry: sicht, policy, info: identitaet, instructions: hinweise, onResult: begrenze(e), onCall: guard });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on('close', () => {
       transport.close().catch(() => {});
