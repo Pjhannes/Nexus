@@ -108,7 +108,9 @@ function eolNeutral(s) {
 export const CAPTURE_ORDNER = '_Eingang';
 export const CAPTURE_MAX_ZEICHEN = 20000;
 export function captureName(titel, max = 60) {
-  const sauber = String(titel ?? '').replace(/[\\/:*?"<>|\u0000-\u001f#^[\]]/g, ' ').replace(/\s+/g, ' ').trim()
+  // NFC zuerst: der Dateiname soll nicht aus Grundbuchstabe + Kombinationszeichen bestehen (und
+  // die Kuerzung darf kein Kombinationszeichen vom Buchstaben trennen).
+  const sauber = String(titel ?? '').normalize('NFC').replace(/[\\/:*?"<>|\u0000-\u001f#^[\]]/g, ' ').replace(/\s+/g, ' ').trim()
     .slice(0, max).replace(/[. ]+$/, '').replace(/^[. ]+/, '');
   return sauber || 'Notiz';
 }

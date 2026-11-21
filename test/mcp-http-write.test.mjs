@@ -82,6 +82,20 @@ try {
     const cap = await ruf('capture', { text: 'Schnell notiert am Handy', titel: 'Handy-Gedanke' });
     ok('capture legt eine Notiz im Eingangsordner an', !cap.fehler && /^_Eingang\/.+ – Handy-Gedanke\.md$/.test(cap.json?.path ?? '') && existsSync(vaultPfad('wissen', cap.json.path)), cap.text);
 
+    // Neue Namen entstehen in NFC, auch wenn der Aufruf NFD schickt (U + Trema statt Ü).
+    const NFD = 'Übung', NFC = 'Übung';
+    const namenIn = (...rel) => readdirSync(vaultPfad('wissen', ...rel));
+    const wn = await ruf('write_note', { path: `Remote/${NFD} A.md`, content: '# A\n', create: true });
+    ok('write_note mit NFD-Pfad: Datei liegt unter dem NFC-Namen, Ergebnis nennt ihn', !wn.fehler && namenIn('Remote').includes(`${NFC} A.md`) && !namenIn('Remote').includes(`${NFD} A.md`) && wn.json?.path === `Remote/${NFC} A.md`, wn.text + ' | ' + namenIn('Remote').join());
+    const mn = await ruf('move', { from: `Remote/${NFC} A.md`, to: `Remote/${NFD} B.md` });
+    ok('move mit NFD-Ziel: Datei liegt unter dem NFC-Namen', !mn.fehler && namenIn('Remote').includes(`${NFC} B.md`) && !namenIn('Remote').includes(`${NFD} B.md`) && !namenIn('Remote').includes(`${NFC} A.md`), mn.text + ' | ' + namenIn('Remote').join());
+    const cn = await ruf('capture', { text: 'Notiz mit Trema', titel: `${NFD} am Handy` });
+    ok('capture mit NFD-Titel: Dateiname in NFC', !cn.fehler && cn.json?.path === cn.json?.path?.normalize('NFC') && cn.json.path.endsWith(`– ${NFC} am Handy.md`) && namenIn('_Eingang').includes(cn.json.path.split('/').pop()), cn.text);
+    // Eine bestehende NFD-Datei (z. B. von einem anderen Geraet synchronisiert) bleibt als Quelle erreichbar.
+    writeFileSync(vaultPfad('wissen', 'Remote', `${NFD} alt.md`), '# alt\n', 'utf8');
+    const ma = await ruf('move', { from: `Remote/${NFD} alt.md`, to: `Remote/${NFD} neu.md` });
+    ok('move von einer bestehenden NFD-Datei: Quelle unveraendert gefunden, Ziel in NFC', !ma.fehler && namenIn('Remote').includes(`${NFC} neu.md`) && !namenIn('Remote').some(n => n.endsWith(' alt.md')), ma.text + ' | ' + namenIn('Remote').join());
+
     const fremd = await ruf('write_note', { path: 'Neu.md', content: 'x', create: true, vault: 'privat' });
     ok('Schreiben in einen nicht freigegebenen Vault -> Fehler, nichts angelegt', fremd.fehler && !existsSync(vaultPfad('privat', 'Neu.md')), fremd.text);
     const raus = await ruf('write_note', { path: '../privat/Raus.md', content: 'x', create: true });
@@ -96,7 +110,7 @@ try {
       && !existsSync(vaultPfad('wissen', '_System', 'Vault-Check.md')), vc.text);
     const vc2 = await ruf('vault_check', { dry_run: false });
     ok('vault_check dry_run:false ohne admin: bleibt Trockenlauf', vc2.json?.dryRun === true && !existsSync(vaultPfad('wissen', '_System', 'Vault-Check.md')), vc2.text);
-    const zeile = t.logZeilen.map(z => JSON.parse(z)).filter(z => z.tool === 'move').pop();
+    const zeile = t.logZeilen.map(z => JSON.parse(z)).filter(z => z.tool === 'move' && z.pfad === 'Remote/Neu.md').pop();
     ok('Aufruf-Log nennt bei move die Quelle als Pfad', zeile?.pfad === 'Remote/Neu.md' && zeile?.ergebnis === 'ok', zeile);
   }
 
@@ -115,6 +129,13 @@ try {
       && gw('move', { from: 'A/x.md', to: 'B/x.md' }) === undefined && gw('delete', { path: 'Uni/v1.2 Notiz.md' }) === undefined);
     ok('Windows-Host: die uebrigen Regeln gelten weiter, Lese-Tools sind nicht betroffen', /_System/.test(gw('delete', { path: '_System/Regeln.md' })?.error ?? '') && gw('search', { q: 'a:b~1' }) === undefined);
     ok('anderer Host: ":" und "~1" sind gewoehnliche Dateinamen', g('write_note', { path: 'Termin 10:30.md', content: 'x' }) === undefined && g('delete', { path: 'Kopie~1.md' }) === undefined);
+    // NFC: nur Ziele werden angepasst, Quellen bleiben.
+    const D = 'A/Ü.md', C = 'A/Ü.md';
+    ok('NFC: path der schreibenden Tools wird angepasst', ['write_note', 'append_to_section', 'patch', 'write_karten', 'write_vortrag', 'karten_gliedern', 'create_folder'].every(n => g(n, { path: D, x: 1 })?.args?.path === C && g(n, { path: D, x: 1 }).args.x === 1));
+    ok('NFC: move passt nur das Ziel an', g('move', { from: D, to: D })?.args?.from === D && g('move', { from: D, to: D }).args.to === C && g('move', { from: D, to: C }) === undefined);
+    ok('NFC: delete und restore bleiben unveraendert (Quelle einer bestehenden Datei)', g('delete', { path: D }) === undefined && g('restore', { path: D }) === undefined && g('restore', { path: '.trash/2026-01-01_000000/' + D }) === undefined);
+    ok('NFC: ein Pfad, der schon NFC ist, geht unveraendert durch; Lese-Tools sind nicht betroffen', g('write_note', { path: C }) === undefined && g('read_note', { path: D }) === undefined);
+    ok('NFC: die Regeln pruefen den angepassten Pfad', /Versteckte Pfade/.test(g('write_note', { path: '.Ü/x.md' })?.error ?? '') && gw('write_note', { path: D })?.args?.path === C);
     ok('delete permanent -> abgelehnt (auch fuer Papierkorb-Pfade)', /gesperrt/.test(g('delete', { path: '.trash/2026-01-01_000000/x.md', permanent: true })?.error ?? ''));
     for (const p of ['_System', '_System/Regeln.md', '_system/regeln.md', './_System/Regeln.md', '_System\\Regeln.md', '_System//Regeln.md'])
       ok(`delete ${JSON.stringify(p)} -> abgelehnt`, /_System/.test(g('delete', { path: p })?.error ?? ''));
@@ -214,6 +235,8 @@ try {
     ok('abgelehnter patch (Hash-Fehler): Zeile mit ergebnis "fehler" und Grund', /Stand abweichend/.test(p?.fehler ?? '') && p.pfad === 'Notiz.md', p);
     const m = von('move').find(z => z.ergebnis === 'ok');
     ok('move: Quelle und Ziel', m?.pfad === 'Remote/Neu.md' && m.nach === 'Remote/Ordner/Neu.md', m);
+    ok('NFD-Aufrufe: im Audit-Log steht der NFC-Name, unter dem die Datei liegt', von('write_note').some(z => z.pfad === 'Remote/Übung A.md' && z.ergebnis === 'ok')
+      && von('move').some(z => z.nach === 'Remote/Übung B.md' && z.ergebnis === 'ok') && !alle.some(z => /Übung [AB]\.md/.test((z.pfad ?? '') + (z.nach ?? ''))), von('move'));
     const d = von('delete');
     ok('delete: Papierkorb-Pfad als Ziel; die abgelehnten Versuche stehen als Fehler drin', d.some(z => z.ergebnis === 'ok' && /^\.trash\//.test(z.nach ?? ''))
       && d.some(z => z.ergebnis === 'fehler' && /gesperrt/.test(z.fehler)) && d.some(z => z.ergebnis === 'fehler' && /_System/.test(z.fehler)), d);
