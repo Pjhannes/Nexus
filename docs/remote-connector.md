@@ -1,11 +1,14 @@
-# Nexus als Remote-Connector (nur lesen)
+# Nexus als Remote-Connector
 
-`src/mcp-http.js` stellt die Lese-Tools von Nexus über HTTP bereit, damit Claude (Web, Mobil,
+`src/mcp-http.js` stellt die Tools von Nexus über HTTP bereit, damit Claude (Web, Mobil,
 Desktop) einen Vault als **Custom Connector** nutzen kann. Der Einstieg ist optional und
 eigenständig: Die Desktop-App und der UI-Server starten ihn nie.
 
+**Standard ist nur lesen.** Schreiben (`NEXUS_MCP_LEVELS`) und Download-Links
+(`NEXUS_MCP_DOWNLOAD_SECRET`) werden einzeln eingeschaltet.
+
 ```
-Claude ──HTTPS──► Reverse-Proxy ──HTTP──► node src/mcp-http.js ──► Vault (nur lesen)
+Claude ──HTTPS──► Reverse-Proxy ──HTTP──► node src/mcp-http.js ──► Vault
                                               │
                         prüft das Bearer-Token gegen die JWKS des Autorisierungsservers
 ```
@@ -20,12 +23,36 @@ Umgebung des Prozesses, nicht ins Repository.
 | `POST /mcp` | MCP über Streamable HTTP, zustandslos, Antwort als JSON. Braucht ein gültiges Bearer-Token. |
 | `GET`, `DELETE` (und alles andere) auf `/mcp` | `405` |
 | `GET /.well-known/oauth-protected-resource` und `…/oauth-protected-resource/mcp` | Öffentliche Metadaten (RFC 9728): `resource`, `authorization_servers`, `bearer_methods_supported`, optional `scopes_supported` |
+| `GET /dl/<token>/<name>` | Nur mit `NEXUS_MCP_DOWNLOAD_SECRET`: liefert die Datei aus einem Download-Link (siehe „Download-Links“). Ohne Bearer-Token – der signierte Token im Pfad ist die Berechtigung. |
 | `GET /healthz` | `200` mit `{"status":"ok"}` – ohne Token, von der Host-Allowlist ausgenommen, ohne Angaben zu Vaults, Version oder Konfiguration. Bei `NEXUS_MCP_ENABLED=0`: `503`. |
 | alles andere | `404` |
 
-**Freigegebene Tools:** `search`, `outline`, `read_note`, `read_bild`, `backlinks`, `list_notes`,
-`query`, `dataview`, `lern_status`, `list_vaults`, `list_trash`. Schreib-Tools werden für diesen
-Einstieg nicht registriert – sie stehen nicht in `tools/list` und sind nicht aufrufbar.
+## Stufen
+
+Welche Tools es gibt, bestimmt `NEXUS_MCP_LEVELS`. Ein Tool, das zu keiner eingeschalteten Stufe
+gehört, wird nicht registriert – es steht nicht in `tools/list` und ist nicht aufrufbar.
+
+| Stufe | Tools |
+|---|---|
+| `read` (immer) | `search`, `outline`, `read_note`, `read_bild`, `backlinks`, `list_notes`, `query`, `dataview`, `lern_status`, `list_vaults`, `list_trash` |
+| `write` | `write_note`, `append_to_section`, `patch`, `write_karten`, `write_vortrag`, `karten_gliedern`, `create_folder`, `move`, `restore`, `capture`, `vault_check` (nur Trockenlauf) |
+| `admin` | `delete`, `reindex`; `vault_check` schreibt seinen Bericht in den Vault |
+
+Zusätzlich gelten für den Remote-Zugriff feste Regeln, unabhängig von der Stufe:
+
+- `delete` verschiebt in den Papierkorb. Endgültiges Löschen (`permanent`) ist gesperrt.
+- Unter `_System` wird nichts gelöscht; der Ordner `_System` wird nicht verschoben.
+- `move` in den Papierkorb ist gesperrt (wäre ein Löschen an den Regeln vorbei).
+- Nur freigegebene Vaults (`NEXUS_MCP_ALLOWED_VAULTS`) sind erreichbar.
+
+**Kollisionsschutz:** `write_note`, `patch` und `append_to_section` nehmen `expected_hash` an – den
+Hash des Stands, auf dem die Änderung beruht (`hash` aus `outline`, aus `read_note` mit
+`hash: true` oder aus dem letzten Schreib-Ergebnis). Wurde die Notiz inzwischen geändert, etwa auf
+einem anderen Gerät, schlägt der Aufruf fehl und nennt den aktuellen Hash; geschrieben wird nichts.
+
+Der Vault muss für Schreibstufen beschreibbar eingehängt sein. `capture` legt Notizen im Ordner
+aus `capture.folder` der `nexus.config.json` ab (Standard `_Eingang`); der Dateiname enthält die
+Ortszeit des Servers – im Container die Zeitzone setzen (`TZ`).
 
 **Token-Prüfung** (lokal, ohne Rückfrage beim Aussteller): JWT mit `alg` RS256 und `typ` `at+jwt`,
 Signatur gegen die JWKS (mit Cache), `iss` zeichengenau, `aud` enthält die Ressourcen-URL, `exp`,
@@ -87,13 +114,51 @@ Eine JSON-Zeile je Anfrage auf **stdout** (Diagnose und Startmeldungen gehen auf
 
 `ergebnis` ist `ok`, `tool_fehler`, `zu_gross`, `tool_abgelehnt`, `aufruf_fehler`, ein Grund der
 Token-Prüfung (`kein_token`, `ERR_JWT_EXPIRED:exp`, `sub_nicht_erlaubt`, …), `host_abgelehnt`,
-`origin_abgelehnt` oder `body_zu_gross`. Nicht im Log: Suchbegriffe, Abfragen, Notiztext, Token,
+`origin_abgelehnt` oder `body_zu_gross`; bei Downloads (`tool: download`) außerdem `link_form`,
+`link_signatur`, `link_abgelaufen`, `datei_fehlt`. Nicht im Log: Suchbegriffe, Abfragen, Notiztext, Token,
 Header. Abrufe der Metadaten werden nicht protokolliert.
+
+## Audit-Log
+
+Sobald `NEXUS_MCP_LEVELS` eine Schreibstufe enthält, ist `NEXUS_MCP_AUDIT_LOG` Pflicht. Jeder Aufruf
+eines ändernden Tools schreibt eine JSON-Zeile – auch abgelehnte Aufrufe:
+
+```json
+{"zeit":"2026-01-01T12:00:00.000Z","sub":"<sub>","client":"<client-id>","tool":"patch","vault":"<vault-name>","pfad":"Ordner/Notiz.md","ergebnis":"ok","hashVorher":"sha256:…","hash":"sha256:…"}
+```
+
+`nach` nennt bei `move` das Ziel und bei `delete` den Pfad im Papierkorb, `fehler` den Grund einer
+Ablehnung. Inhalte (Notiztext, Patches) stehen nicht im Log. Download-Links und Abrufe stehen als
+`datei_link` und `download` darin.
+
+Die Datei liegt außerhalb der Vaults; ein Pfad in einem Vault verhindert den Start. Ist sie nicht
+beschreibbar, startet der Server nicht bzw. lehnt Änderungen ab, bevor etwas geschrieben wird.
+Rotation ist Aufgabe des Betriebs (z. B. `logrotate` mit `copytruncate`).
+
+## Download-Links
+
+Ein Tool-Ergebnis ist Text im Kontext des Modells; eine Datei von mehreren MB kommt so nicht beim
+Nutzer an. Mit `NEXUS_MCP_DOWNLOAD_SECRET` gibt es das Tool `datei_link { path, vault? }`. Es
+liefert `url`, `bytes` und `gueltigBis`; den Link öffnet der Nutzer im Browser.
+
+- Der Link gilt `NEXUS_MCP_DOWNLOAD_TTL_S` Sekunden und nur für diese eine Datei. Innerhalb der
+  Laufzeit kann er mehrfach abgerufen werden; widerrufen lässt er sich nur durch ein neues Geheimnis.
+- Der Token ist signiert (HMAC-SHA256), nicht verschlüsselt: Vault-Name und Pfad sind darin lesbar.
+- Bei jedem Abruf wird neu geprüft: Signatur, Ablauf, Vault freigegeben, Pfad im Vault (auch über
+  Symlinks), Größe. Dateien in versteckten Ordnern (`.trash`, `.nexus`, …) werden nie ausgeliefert.
+- Ausgeliefert wird immer als Anhang mit `application/octet-stream` – eine HTML-Datei aus dem Vault
+  wird unter dieser Adresse nicht ausgeführt.
+- Antworten: `200` Datei · `404` Link ungültig oder Datei nicht (mehr) verfügbar · `410` Link abgelaufen.
+
+Wer das Geheimnis kennt, kann Links für jede Datei der freigegebenen Vaults erzeugen: wie ein
+Passwort behandeln, nicht ins Repository. Der Link selbst ist bis zum Ablauf ein Inhaberausweis –
+zusätzlich kann der Proxy vor `/dl/*` eine Anmeldung verlangen (Beispiel unten).
 
 ## Beispiel: Container
 
-Das Image ist dasselbe wie für den UI-Server, nur mit anderem Startbefehl. Der Vault kann für den
-Lesezugriff schreibgeschützt eingehängt werden; der Datenordner braucht Schreibrechte für den Index.
+Das Image ist dasselbe wie für den UI-Server, nur mit anderem Startbefehl. Für den reinen
+Lesezugriff wird der Vault schreibgeschützt eingehängt (`:ro`); der Datenordner braucht
+Schreibrechte für den Index. Die auskommentierten Zeilen schalten Schreiben und Download-Links ein.
 
 ```yaml
 services:
@@ -114,9 +179,16 @@ services:
       NEXUS_MCP_JWKS_URI: https://auth.example.com/jwks.json
       NEXUS_MCP_ALLOWED_SUBS: <sub-des-erlaubten-benutzers>
       NEXUS_MCP_ALLOWED_VAULTS: <vault-name>
+      # Schreiben: Vault unten ohne ":ro" einhängen, Audit-Volume dazu
+      # TZ: Europe/Berlin
+      # NEXUS_MCP_LEVELS: write
+      # NEXUS_MCP_AUDIT_LOG: /audit/audit.jsonl
+      # Download-Links
+      # NEXUS_MCP_DOWNLOAD_SECRET: <zufaelliges-geheimnis-mind-32-zeichen>
     volumes:
       - <pfad-zum-vault>:/vault:ro
       - nexus_mcp_data:/data
+      # - nexus_mcp_audit:/audit
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
       interval: 30s
@@ -125,6 +197,7 @@ services:
 
 volumes:
   nexus_mcp_data:
+  # nexus_mcp_audit:
 networks:
   proxy:
     external: true
@@ -140,7 +213,9 @@ networks:
 }
 ```
 
-Der Container muss die `NEXUS_MCP_JWKS_URI` erreichen können (ausgehend, HTTPS).
+Der Container muss die `NEXUS_MCP_JWKS_URI` erreichen können (ausgehend, HTTPS). Schreibt der
+Prozess in den Vault, müssen Benutzer und Gruppe im Container zu den Dateirechten des Vaults passen
+(`user:` im Compose), sonst gehören neue Notizen dem falschen Benutzer.
 
 ## Beispiel: Reverse-Proxy (Caddy)
 
@@ -158,6 +233,13 @@ mcp.example.com {
 	handle @mcp {
 		@fremd not remote_ip 203.0.113.0/24
 		respond @fremd 403
+		reverse_proxy nexus-mcp:3100
+	}
+
+	# Nur mit Download-Links: der Browser des Nutzers ruft von überall ab.
+	# Optional eine Anmeldung davor (hier als Beispiel forward_auth).
+	handle /dl/* {
+		# forward_auth <auth-dienst>:<port> { uri /api/authz/forward-auth }
 		reverse_proxy nexus-mcp:3100
 	}
 
@@ -206,7 +288,9 @@ curl -s -X POST https://mcp.example.com/mcp \
 
 Automatische Tests: `node test/mcp-http.test.mjs` (lokal erzeugter Schlüssel, lokale JWKS).
 
+Automatische Tests für Schreiben, Audit-Log und Download-Links: `node test/mcp-http-write.test.mjs`.
+
 ## Nicht enthalten
 
-Schreib-Tools, ein dauerhaftes Audit-Log und Rate-Limiting (Aufgabe des Proxys) gibt es in
-diesem Stand nicht.
+Rate-Limiting und Rotation der Logs sind Aufgabe von Proxy und Betrieb. Scopes aus dem Token
+steuern die Stufen nicht – sie stehen in der Server-Konfiguration.

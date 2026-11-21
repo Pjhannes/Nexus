@@ -23,7 +23,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { spawn } from 'child_process';
 import { buildServer } from '../src/mcp/build-server.js';
-import { REMOTE_READ_TOOLS } from '../src/mcp/remote-policy.js';
+import { REMOTE_READ_TOOLS, REMOTE_WRITE_TOOLS, REMOTE_ADMIN_TOOLS } from '../src/mcp/remote-policy.js';
 import { createHttpApp } from '../src/mcp/http-app.js';
 import { loadHttpConfig } from '../src/mcp/http-config.js';
 import { makeVaultRegistry } from '../src/vault-registry.js';
@@ -667,7 +667,7 @@ try {
     const inDoku = new Set([...doku.matchAll(/NEXUS_MCP_[A-Z_]+/g)].map(m => m[0]));
     ok('docs/remote-connector.md beschreibt alle Variablen aus http-config.js', doku.length > 0 && [...imCode].every(v => inDoku.has(v)), [...imCode].filter(v => !inDoku.has(v)).join());
     ok('die Doku nennt keine Variable, die der Code nicht kennt', [...inDoku].every(v => imCode.has(v)), [...inDoku].filter(v => !imCode.has(v)).join());
-    ok('die Doku nennt alle freigegebenen Tools', REMOTE_READ_TOOLS.every(t => doku.includes('`' + t + '`')));
+    ok('die Doku nennt alle freigegebenen Tools', [...REMOTE_READ_TOOLS, ...REMOTE_WRITE_TOOLS, ...REMOTE_ADMIN_TOOLS, 'datei_link'].every(t => doku.includes('`' + t + '`')));
   }
 } catch (e) {
   console.error('  \x1b[31m✗ Testlauf-Fehler:\x1b[0m', e.stack || e.message);
