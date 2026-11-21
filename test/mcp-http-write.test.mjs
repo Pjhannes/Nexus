@@ -299,7 +299,9 @@ try {
     // Ungueltige Links
     const tok = pfadVon(l.json.url).split('/')[2];
     const [tt, ss] = tok.split('.');
-    const kipp = (x) => x.slice(0, -1) + (x.endsWith('A') ? 'B' : 'A');
+    // Das ERSTE Zeichen kippen: beim letzten Base64-Zeichen sind die unteren Bits Fuellbits –
+    // "B" -> "A" ergaebe dieselben Bytes und damit eine weiterhin gueltige Signatur (Wackler).
+    const kipp = (x) => (x.startsWith('A') ? 'B' : 'A') + x.slice(1);
     for (const [name, kaputt] of [['Signatur veraendert', tt + '.' + kipp(ss)], ['Inhalt veraendert', kipp(tt) + '.' + ss], ['ohne Signatur', tt], ['leer', 'x']]) {
       const r = await t.anfrage(port, { method: 'GET', path: '/dl/' + kaputt + '/gross.bin' });
       ok(`${name} -> 404 ohne Inhalt`, r.status === 404 && r.buffer.length < 200, `${r.status} ${r.buffer.length}`);
