@@ -36,6 +36,8 @@ try {
   ok('hoechstens 60 Zeichen, kein Leerzeichen am Ende', captureName('x'.repeat(59) + ' yz').length <= 60 && !/ $/.test(captureName('x'.repeat(59) + ' yz')));
   ok('leer oder nur Sonderzeichen -> "Notiz"', captureName('') === 'Notiz' && captureName('///') === 'Notiz' && captureName(undefined) === 'Notiz');
   ok('Umlaute und Gedankenstrich bleiben', captureName('Prüfung – Übung') === 'Prüfung – Übung');
+  ok('NFD-Titel (Buchstabe + Kombinationszeichen) -> NFC-Name', captureName('Übung zur Prüfung') === 'Übung zur Prüfung' && captureName('Café') === 'Café');
+  ok('Kuerzung trennt kein Kombinationszeichen ab', captureName('x'.repeat(59) + 'ü') === 'x'.repeat(59) + 'ü');
 
   console.log('\n── B. tools.capture ──');
   const a = tools.capture({ text: 'Radar: Filter fuer Schicht pruefen\nzweite Zeile', now: JETZT });

@@ -48,7 +48,9 @@ export function auditFelder(args = {}, ergebnis) {
   const s = (v) => (typeof v === 'string' ? v : undefined);
   return {
     ergebnis: 'ok', vault: s(j.vault) ?? args.vault ?? null,
-    pfad: args.path ?? args.from ?? s(j.path), nach: args.to ?? s(j.trashed),
+    // Das Ergebnis gewinnt vor dem Argument: die Regeln koennen einen Pfad anpassen (NFC), und im
+    // Log soll der Name stehen, unter dem die Datei wirklich liegt.
+    pfad: s(j.path) ?? args.path ?? args.from, nach: s(j.to) ?? args.to ?? s(j.trashed),
     hashVorher: j.hashVorher === null ? null : s(j.hashVorher), hash: s(j.hash),
   };
 }

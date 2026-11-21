@@ -65,6 +65,7 @@ const SCHREIBT_PFAD = new Set(['write_note', 'append_to_section', 'patch', 'writ
 // oder "~<Ziffer>" dort abgelehnt, wo Regeln Namen vergleichen. Auf anderen Systemen sind das
 // gewoehnliche Dateinamen und bleiben erlaubt.
 export const windowsSchreibweise = (p) => /:|~\d/.test(String(p ?? ''));
+const nfc = (v) => (typeof v === 'string' ? v.normalize('NFC') : v);
 const PRUEFT_NAMEN = new Set([...SCHREIBT_PFAD, 'delete', 'move', 'restore']);
 
 // Regeln fuer einzelne Aufrufe. Rueckgabe: undefined = unveraendert weiter, { error } = ablehnen
@@ -72,7 +73,15 @@ const PRUEFT_NAMEN = new Set([...SCHREIBT_PFAD, 'delete', 'move', 'restore']);
 // windows: laeuft der Server auf einem Windows-Host? (Standard: die Plattform; in Tests gesetzt.)
 export function remoteGuard({ levels = [], windows = process.platform === 'win32' } = {}) {
   const admin = levels.includes('admin');
-  return (name, args = {}) => {
+  return (name, roh = {}) => {
+    // Neue Namen entstehen in NFC: "U" + Trema (NFD, so liefern es manche Tastaturen und macOS)
+    // und "Ü" (NFC) sehen gleich aus, sind aber auf Linux und Windows zwei verschiedene Dateien –
+    // Links und Suche faenden die NFD-Fassung nicht. Nur ZIELE werden angepasst (path der
+    // schreibenden Tools, to bei move); Quellen bestehender Dateien (move from, delete, restore)
+    // bleiben, wie sie sind, sonst waere eine vorhandene NFD-Datei nicht mehr erreichbar.
+    let args = roh;
+    if (SCHREIBT_PFAD.has(name) && nfc(roh.path) !== roh.path) args = { ...args, path: nfc(roh.path) };
+    if (name === 'move' && nfc(roh.to) !== roh.to) args = { ...args, to: nfc(roh.to) };
     if (windows && PRUEFT_NAMEN.has(name) && [args.path, args.from, args.to].some(windowsSchreibweise))
       return { error: 'Pfade mit ":" oder Kurznamen-Muster ("~1") sind ueber den Remote-Zugriff auf einem Windows-Host nicht erlaubt.' };
     if (name === 'delete') {
@@ -102,7 +111,7 @@ export function remoteGuard({ levels = [], windows = process.platform === 'win32
     }
     // Ohne Stufe "admin" prueft vault_check nur – der Bericht wird nicht in den Vault geschrieben.
     if (name === 'vault_check' && !admin && args.dry_run !== true) return { args: { ...args, dry_run: true } };
-    return undefined;
+    return args === roh ? undefined : { args };
   };
 }
 

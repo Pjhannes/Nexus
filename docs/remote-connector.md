@@ -46,6 +46,9 @@ Zusätzlich gelten für den Remote-Zugriff feste Regeln, unabhängig von der Stu
   sind nicht schreibbar, nicht verschiebbar und nicht löschbar – auch nicht in den Papierkorb.
   Aus dem Papierkorb holt `restore` zurück, aber nur an ein Ziel, das nicht versteckt ist.
 - Nur freigegebene Vaults (`NEXUS_MCP_ALLOWED_VAULTS`) sind erreichbar.
+- Neue Namen entstehen in Unicode-NFC: der Pfad der schreibenden Tools, das Ziel von `move` und
+  der Dateiname von `capture` werden vor dem Schreiben auf NFC gebracht; Quellen bestehender
+  Dateien (`move` von, `delete`, `restore`) bleiben, wie sie angegeben sind.
 - Läuft der Server unter Windows, werden für ändernde Tools und für Download-Links Pfade mit `:`
   oder Kurznamen-Muster (`~1`) abgelehnt: Kurznamen (`_SYSTE~1`) und Datenströme (`a.md::$DATA`)
   sind dort weitere Namen derselben Datei und würden die Regeln oben umgehen. Unter Linux und
