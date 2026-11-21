@@ -12,6 +12,8 @@
 //   3. Stale Dates        – aktualisiert:/stand: aelter als 30 Tage
 //   4. Karteileichen      – Links auf bekannte tote Pfade/Namen
 //   5. Doppelte Dateinamen– gleiche Basenames ausserhalb der Backup-Ordner
+//   6. Sync-Konflikte     – Syncthing-Konfliktdateien ("<name>.sync-conflict-<datum>-<zeit>-<geraet>.<ext>"):
+//                           zwei Geraete haben dieselbe Datei geaendert, eine Fassung liegt daneben (R31)
 //
 // Wikilink-/Frontmatter-Semantik stammt aus src/parse.js (parseNote); die
 // Backlink-Aufloesung spiegelt das DB-Statement aus src/tools.js:
@@ -61,6 +63,15 @@ const SELF_SCRIPT = '_System/Scripts/vault_check.md';
 // als Treffer (kaputte Links / Karteileichen / Orphan).
 const isMetaFile = (p) => p === SELF_SCRIPT || p === REPORT_REL;
 
+// Syncthing legt die unterlegene Fassung als "<name>.sync-conflict-JJJJMMTT-HHMMSS-<Geraet>.<ext>" ab.
+const SYNC_CONFLICT = /^(.*)\.sync-conflict-\d{8}-\d{6}(?:-[A-Z0-9]+)?(\.[^.]*)?$/;
+export function syncKonflikt(rel) {
+  const m = SYNC_CONFLICT.exec(baseOf(rel));
+  if (!m) return null;
+  const ordner = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/') + 1) : '';
+  return { file: rel, original: ordner + m[1] + (m[2] ?? '') };
+}
+
 const STALE_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const toTime = (c) => (c instanceof Date ? c.getTime() : Date.parse(String(c)));
@@ -71,7 +82,7 @@ const toTime = (c) => (c instanceof Date ? c.getTime() : Date.parse(String(c)));
  * @param {Array}    input.notes        – [{ path, basename, pathNoExt, title, fm, links:[target] }]
  * @param {string[]} input.allRelPaths  – ALLE Dateien (posix-rel, inkl. Anhaenge)
  * @param {number}   input.now          – Zeitstempel in ms (Date.now()) fuer Stale-Cutoff
- * @returns {{brokenLinks:Array, orphans:string[], staleDates:Array, deadRefs:Array, duplicates:Array}}
+ * @returns {{brokenLinks:Array, orphans:string[], staleDates:Array, deadRefs:Array, duplicates:Array, syncConflicts:Array}}
  */
 export function runVaultCheck({ notes, allRelPaths, now, regeln = {} }) {
   const { isActive, isBackupPath, deadPathPrefixes, deadNames } = makeRegeln(regeln);
@@ -148,7 +159,12 @@ export function runVaultCheck({ notes, allRelPaths, now, regeln = {} }) {
     .filter(([, paths]) => paths.length > 1)
     .map(([name, paths]) => ({ name, paths }));
 
-  return { brokenLinks, orphans, staleDates, deadRefs, duplicates };
+  // --- 6. Sync-Konflikte ----------------------------------------------------
+  // Ueber ALLE Dateien (auch Anhaenge, Sidecars und inaktive Bereiche): ein Konflikt ist ueberall
+  // ein Zeichen, dass eine Aenderung nur in einer der beiden Fassungen steckt.
+  const syncConflicts = allRelPaths.map(syncKonflikt).filter(Boolean);
+
+  return { brokenLinks, orphans, staleDates, deadRefs, duplicates, syncConflicts };
 }
 
 function localDate(ts) {
@@ -162,7 +178,7 @@ function localDate(ts) {
  * und die Zaehler vom Aufrufer.
  */
 export function renderReport(result, { now, notesCount, filesCount, cap = 50 }) {
-  const { brokenLinks, orphans, staleDates, deadRefs, duplicates } = result;
+  const { brokenLinks, orphans, staleDates, deadRefs, duplicates, syncConflicts = [] } = result;
   const today = localDate(now);
 
   const md = ['---', 'typ: vault-check', `aktualisiert: ${today}`, 'tags: [system, vault-check]', '---', '',
@@ -174,7 +190,8 @@ export function renderReport(result, { now, notesCount, filesCount, cap = 50 }) 
     `| Verwaiste Notizen | ${orphans.length} | ${orphans.length <= 5 ? '✅' : '⚠️'} |`,
     `| Stale Dates (>30 Tage) | ${staleDates.length} | ${staleDates.length <= 10 ? '✅' : '⚠️'} |`,
     `| Karteileichen | ${deadRefs.length} | ${deadRefs.length === 0 ? '✅' : '🔴'} |`,
-    `| Doppelte Dateinamen | ${duplicates.length} | ${duplicates.length === 0 ? '✅' : 'ℹ️'} |`, ''];
+    `| Doppelte Dateinamen | ${duplicates.length} | ${duplicates.length === 0 ? '✅' : 'ℹ️'} |`,
+    `| Sync-Konflikte | ${syncConflicts.length} | ${syncConflicts.length === 0 ? '✅' : '🔴'} |`, ''];
 
   const section = (title, items, render) => {
     md.push(`## ${title}`, '');
@@ -188,6 +205,8 @@ export function renderReport(result, { now, notesCount, filesCount, cap = 50 }) 
   section('🟡 Stale Dates', staleDates, s => `- [[${s.file}]] – ${s.value} (${s.days} Tage alt)`);
   section('🔴 Karteileichen', deadRefs, r => `- [[${r.file}]] – ${r.hits.join(', ')}`);
   section('ℹ️ Doppelte Dateinamen', duplicates, d => `- **${d.name}**: ${d.paths.map(p => '`' + p + '`').join(', ')}`);
+  section('🔴 Sync-Konflikte (zwei Geraete haben dieselbe Datei geaendert – Fassungen vergleichen, eine behalten)', syncConflicts,
+    k => `- \`${k.file}\` ↔ \`${k.original}\``);
   md.push('---');
   md.push(`*Bericht generiert: ${new Date(now).toLocaleString('de-DE')} · ${notesCount} Notizen, ${filesCount} Dateien gescannt*`);
   return md.join('\n');

@@ -6,7 +6,7 @@
 //   4. Stufe "admin": delete landet im Papierkorb, reindex, vault_check mit Bericht
 //   5. Audit-Log: Pflicht bei Schreibstufen, eine Zeile je aenderndem Aufruf, fail-closed
 // Aufbau: test/mcp-http-helfer.mjs. Lauf: node test/mcp-http-write.test.mjs
-import { existsSync, readFileSync, readdirSync, rmSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, rmSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { aufbau } from './mcp-http-helfer.mjs';
 import { loadHttpConfig } from '../src/mcp/http-config.js';
@@ -84,7 +84,9 @@ try {
     for (const n of REMOTE_ADMIN_TOOLS) ok(`${n} ist auf Stufe write nicht aufrufbar`, (await ruf(n, { path: 'Notiz.md' })).fehler);
     ok('Notiz.md liegt nach dem delete-Versuch noch da', existsSync(vaultPfad('wissen', 'Notiz.md')));
 
+    writeFileSync(vaultPfad('wissen', 'Notiz.sync-conflict-20261121-153000-ABCDEFG.md'), '# Notiz\n\nFassung vom anderen Geraet.\n', 'utf8');
     const vc = await ruf('vault_check', {});
+    ok('vault_check meldet die Syncthing-Konfliktdatei', vc.json?.summary?.syncConflicts === 1 && vc.json?.samples?.syncConflicts?.[0]?.original === 'Notiz.md', vc.text);
     ok('vault_check ohne Stufe admin: laeuft als Trockenlauf, kein Bericht im Vault', !vc.fehler && vc.json?.dryRun === true && vc.json?.reportPath === null
       && !existsSync(vaultPfad('wissen', '_System', 'Vault-Check.md')), vc.text);
     const vc2 = await ruf('vault_check', { dry_run: false });

@@ -541,7 +541,7 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
   tool('vault_check', {
     title: 'Vault-Gesundheit pruefen',
     description: 'Vault-Gesundheits-Check ueber den Live-Index (kein Voll-Reparse): kaputte Links, verwaiste Notizen, veraltete Daten (>30 Tage), ' +
-      'Karteileichen, doppelte Dateinamen. Schreibt den vollen Bericht nach _System/Vault-Check.md (dry_run=true: nur lesen, nichts schreiben) ' +
+      'Karteileichen, doppelte Dateinamen, Sync-Konfliktdateien (*.sync-conflict-*). Schreibt den vollen Bericht nach _System/Vault-Check.md (dry_run=true: nur lesen, nichts schreiben) ' +
       'und gibt eine kompakte Zusammenfassung zurueck. Regeln fuer persoenliche Bereiche stehen in nexus.config.json unter "vaultCheck".',
     input: {
       dry_run: z.boolean().optional().describe('true = nur pruefen, Bericht NICHT in den Vault schreiben'),

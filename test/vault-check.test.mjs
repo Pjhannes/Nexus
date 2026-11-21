@@ -1,7 +1,7 @@
 // test/vault-check.test.mjs – Verifiziert die reine Pruef-Logik aus src/vault-check.js.
 // Synthetische Notizen/Dateien, fixer Zeitstempel -> deterministisch, ohne FS/DB.
 // Lauf: node test/vault-check.test.mjs
-import { runVaultCheck, renderReport, REPORT_REL } from '../src/vault-check.js';
+import { runVaultCheck, renderReport, REPORT_REL, syncKonflikt } from '../src/vault-check.js';
 
 let pass = 0, fail = 0;
 function ok(label, cond) {
@@ -115,6 +115,27 @@ const daysAgo = (n) => new Date(NOW - n * 86400000).toISOString().slice(0, 10);
   ok('ignoreNames: Backup-Kopien erzeugen keine Duplikat-Treffer', r3.duplicates.length === 0, JSON.stringify(r3.duplicates));
   const r4 = runVaultCheck({ notes: dup, allRelPaths: dup.map(n => n.path), now: NOW });
   ok('ohne ignoreNames werden die Kopien als Duplikate gemeldet', r4.duplicates.length >= 1);
+}
+
+// ── 6. Sync-Konflikte (R31) ───────────────────────────────────────────────
+{
+  ok('syncKonflikt: Notiz', JSON.stringify(syncKonflikt('Uni/Skript.sync-conflict-20261121-153000-ABCDEFG.md'))
+    === JSON.stringify({ file: 'Uni/Skript.sync-conflict-20261121-153000-ABCDEFG.md', original: 'Uni/Skript.md' }));
+  ok('syncKonflikt: im Vault-Wurzelordner, ohne Geraetekennung', syncKonflikt('START.sync-conflict-20261121-153000.md')?.original === 'START.md');
+  ok('syncKonflikt: Sidecar und Datei ohne Endung', syncKonflikt('A/N.karten.sync-conflict-20260101-000000-XYZ1234.json')?.original === 'A/N.karten.json'
+    && syncKonflikt('A/LIESMICH.sync-conflict-20260101-000000-XYZ1234')?.original === 'A/LIESMICH');
+  ok('syncKonflikt: normale Dateien sind keine Konflikte', syncKonflikt('Uni/Skript.md') === null && syncKonflikt('Notiz ueber sync-conflict.md') === null
+    && syncKonflikt('x.sync-conflict-heute.md') === null);
+  const notes = [note('A.md'), note('A.sync-conflict-20261121-153000-ABCDEFG.md'), note('B.md', { links: ['A'] })];
+  const pfade = [...notes.map(n => n.path), 'Anhang/bild.sync-conflict-20261120-101010-ABCDEFG.png', 'Projekt Vault-App/X.sync-conflict-20261120-101010-ABCDEFG.md'];
+  const r = runVaultCheck({ notes, allRelPaths: pfade, now: NOW, regeln: { inactiveAreas: ['Projekt Vault-App/'] } });
+  ok('Konfliktdateien werden gemeldet – auch Anhaenge und inaktive Bereiche', r.syncConflicts.length === 3
+    && r.syncConflicts.some(k => k.original === 'A.md') && r.syncConflicts.some(k => k.original === 'Anhang/bild.png'));
+  ok('ohne Konfliktdateien: leere Liste', runVaultCheck({ notes: [note('A.md')], allRelPaths: ['A.md'], now: NOW }).syncConflicts.length === 0);
+  const md = renderReport(r, { now: NOW, notesCount: 3, filesCount: 5 });
+  ok('Report: Zeile in der Zusammenfassung und eigener Abschnitt', md.includes('| Sync-Konflikte | 3 | 🔴 |') && md.includes('`A.sync-conflict-20261121-153000-ABCDEFG.md` ↔ `A.md`'));
+  const leer = renderReport(runVaultCheck({ notes: [note('A.md')], allRelPaths: ['A.md'], now: NOW }), { now: NOW, notesCount: 1, filesCount: 1 });
+  ok('Report ohne Konflikte: 0 und ✅', leer.includes('| Sync-Konflikte | 0 | ✅ |'));
 }
 
 // ── renderReport: gueltige Notiz mit Frontmatter ──────────────────────────

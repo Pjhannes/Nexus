@@ -1187,6 +1187,7 @@ export function makeTools(indexer, vaultPath) {
         staleDates:  result.staleDates.length,
         deadRefs:    result.deadRefs.length,
         duplicates:  result.duplicates.length,
+        syncConflicts: result.syncConflicts.length,
       },
       // Erste Treffer je Kategorie fuer sofortige Sicht; voller Bericht in reportPath.
       samples: {
@@ -1195,6 +1196,7 @@ export function makeTools(indexer, vaultPath) {
         staleDates:  result.staleDates.slice(0, cap),
         deadRefs:    result.deadRefs.slice(0, cap),
         duplicates:  result.duplicates.slice(0, cap),
+        syncConflicts: result.syncConflicts.slice(0, cap),
       },
       reportPath,
       dryRun,
