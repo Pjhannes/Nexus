@@ -8,12 +8,14 @@
 // die Antwort ist ein JSON-Dokument (enableJsonResponse).
 //
 // Reihenfolge der Pruefungen (jede bricht ab, bevor die naechste Arbeit macht):
-//   Kill-Switch -> (/healthz) -> Host-Allowlist -> Origin -> Methode -> Token -> Body (max. 2 MB) -> Policy
+//   Kill-Switch -> (/healthz) -> Host-Allowlist -> Origin -> Methode -> Token -> Body (max. 2 MB) -> Policy -> Regeln
 import express from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { buildServer } from './build-server.js';
 import { makeTokenVerifier, bearerToken } from './token.js';
-import { readOnlyPolicy, restrictRegistry, REMOTE_INSTRUCTIONS, REMOTE_READ_TOOLS } from './remote-policy.js';
+import { remotePolicy, remoteGuard, restrictRegistry, remoteInstructions, REMOTE_READ_TOOLS } from './remote-policy.js';
+import { makeAudit, liegtIn, auditFelder } from './audit.js';
+import { makeDownloads, dateiPruefen, dateiStrom, contentDisposition } from './download.js';
 
 export const BODY_LIMIT_BYTES = 2 * 1024 * 1024;
 
@@ -39,11 +41,38 @@ export function createHttpApp({ registry, info = {}, config, log = stdoutLog }) 
   }
   if (!registry || typeof registry.get !== 'function') throw new Error('createHttpApp: registry fehlt');
 
-  // Nur lesen, nur freigegebene Vaults (src/mcp/remote-policy.js). Kein Server-Pfad nach aussen.
-  const policy = readOnlyPolicy();
+  // Stufen + Regeln + nur freigegebene Vaults (src/mcp/remote-policy.js). Standard: nur lesen.
+  // Kein Server-Pfad nach aussen.
+  const levels = config.levels ?? ['read'];
+  // Download-Links (src/mcp/download.js): nur mit NEXUS_MCP_DOWNLOAD_SECRET – dann gibt es das Tool
+  // datei_link und die Route /dl/<token>/<name>.
+  const downloads = config.download ? makeDownloads(config.download) : null;
+  const policy = remotePolicy({ levels, extra: downloads ? ['datei_link'] : [] });
+  const guard = remoteGuard({ levels });
   const sicht = restrictRegistry(registry, config.allowedVaults);
   const identitaet = { ...info, dataDir: '' };
-  const leseTools = new Set(REMOTE_READ_TOOLS);
+  const freigegeben = new Set(policy.tools);
+  const hinweise = remoteInstructions({ tools: policy.tools, levels, download: !!downloads });
+
+  // Audit-Log (src/mcp/audit.js): Pflicht bei Schreibstufen (http-config.js), nie in einem Vault.
+  // Erst pruefen, dann anlegen: makeAudit erzeugt Ordner und Datei.
+  if (config.auditLog && liegtIn(config.auditLog, registry.entries().map(e => e.vault.path)))
+    throw new Error('NEXUS_MCP_AUDIT_LOG liegt in einem Vault – das Audit-Log gehoert ausserhalb der Vaults.');
+  const audit = makeAudit(config.auditLog);
+  const nurLesend = new Set(REMOTE_READ_TOOLS);
+  // Vor dem Aufruf: erst die Regeln, dann (nur fuer aendernde Tools) die Probe aufs Audit-Log.
+  const vorAufruf = (name, args) => {
+    const r = guard(name, args);
+    if (r?.error || nurLesend.has(name) || !audit) return r;
+    try { audit.pruefe(); } catch { return { error: 'Audit-Log nicht beschreibbar – Aenderung abgelehnt, nichts geschrieben.' }; }
+    return r;
+  };
+  // Nach dem Aufruf: eine Audit-Zeile je aenderndem Tool (auch bei Fehler oder abgelehnter Regel).
+  const auditiere = (req, name, args, ergebnis) => {
+    if (!audit || nurLesend.has(name)) return;
+    try { audit.schreibe({ sub: req.nexusAuth?.sub, client: req.nexusAuth?.clientId, tool: name, ...auditFelder(args, ergebnis) }); }
+    catch (err) { console.error('[Nexus-MCP-HTTP] Audit-Zeile nicht geschrieben: ' + (err?.message || err)); }
+  };
 
   // ── Aufruf-Log: EINE JSON-Zeile je Anfrage – Zeit, sub, Tool, Pfad, Ergebnis. Keine Inhalte:
   // weder Suchbegriffe noch Abfragen, Notiztext, Token oder Header. Die Felder fuellen die
@@ -101,6 +130,46 @@ export function createHttpApp({ registry, info = {}, config, log = stdoutLog }) 
     return res.json(metadaten);
   });
 
+  // ── /dl/<token>/<name>: Download ueber einen Link aus datei_link. Kein Bearer-Token – der
+  // signierte, kurzlebige Token im Pfad IST die Berechtigung (der Browser des Nutzers ruft ab).
+  // Immer als Anhang und als Binaerdaten: eine HTML-Datei aus dem Vault wird hier nie ausgefuehrt.
+  // Unbekannt/ungueltig -> 404 ohne Begruendung; abgelaufen (Signatur echt) -> 410.
+  if (downloads) {
+    app.all(['/dl/:token', '/dl/:token/:name'], (req, res) => {
+      const e = res.locals.log;
+      e.methode = 'download'; e.tool = 'download';
+      res.set('Cache-Control', 'no-store');
+      res.set('Referrer-Policy', 'no-referrer');
+      if (req.method !== 'GET' && req.method !== 'HEAD') { res.set('Allow', 'GET'); return res.status(405).json({ error: 'method_not_allowed' }); }
+      const t = downloads.pruefe(req.params.token);
+      e.sub = t.sub ?? null; e.vault = kurz(t.vault); e.pfad = kurz(t.path);
+      if (!t.ok) {
+        e.ergebnis = 'link_' + t.grund;
+        return t.grund === 'abgelaufen'
+          ? res.status(410).json({ error: 'gone', error_description: 'Der Download-Link ist abgelaufen – bitte einen neuen anfordern.' })
+          : res.status(404).json({ error: 'not_found' });
+      }
+      let d;
+      try { d = dateiPruefen(sicht.get(t.vault).vault.path, t.path, downloads.maxBytes); } catch { d = { error: 'vault' }; }
+      if (d.error) { e.ergebnis = 'datei_fehlt'; return res.status(404).json({ error: 'not_found' }); }
+      res.set({
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': contentDisposition(d.name),
+        'Content-Length': String(d.bytes),
+        'Content-Security-Policy': "sandbox; default-src 'none'",
+      });
+      e.ergebnis = 'ok';
+      // HEAD liefert nur Kopfzeilen: kein Abruf, also keine Audit-Zeile (im Aufruf-Log steht er).
+      if (req.method === 'HEAD') return res.end();
+      if (audit) { try { audit.schreibe({ sub: t.sub, tool: 'download', vault: t.vault, pfad: t.path, ergebnis: 'ok' }); } catch (err) { console.error('[Nexus-MCP-HTTP] Audit-Zeile nicht geschrieben: ' + (err?.message || err)); } }
+      // Nur die geprueften Bytes (d.bytes = Content-Length); eine leere Datei hat keinen Strom.
+      const strom = dateiStrom(d.full, d.bytes);
+      if (!strom) return res.end();
+      strom.on('error', () => { e.ergebnis = 'lese_fehler'; res.destroy(); });
+      strom.pipe(res);
+    });
+  }
+
   // ── /mcp: nur POST – kein SSE-Stream (GET) und keine Sitzung, die man beenden koennte (DELETE).
   app.all('/mcp', (req, res, next) => {
     res.set('Cache-Control', 'no-store');
@@ -149,6 +218,28 @@ export function createHttpApp({ registry, info = {}, config, log = stdoutLog }) 
     };
   }
 
+  // Tool datei_link (nur mit Download-Konfiguration): Link auf eine Datei des Vaults.
+  const dateiLinkTool = (req) => ({ tool, z, registry: reg, antwort, annotations }) => {
+    tool('datei_link', {
+      title: 'Download-Link',
+      description: 'Eine Datei aus dem Vault zum HERUNTERLADEN bereitstellen (HTML, PDF, Excel, Bilder, auch Notizen): liefert einen Link, ' +
+        `den der Nutzer im Browser oeffnet. Der Link gilt ${Math.round(downloads.ttlS / 60) || 1} Minuten und nur fuer diese Datei. Die url dem Nutzer unveraendert als Link geben – ` +
+        'nicht selbst abrufen. Zum LESEN von Notizen weiter read_note verwenden.',
+      input: {
+        path:  z.string().describe('Relativer Pfad der Datei im Vault (mit Endung)'),
+        vault: z.string().optional().describe('Vault-Name (Standard: der aktive Vault; alle Namen: list_vaults)'),
+      },
+      annotations: annotations.RO,
+    }, ({ path, vault }) => {
+      const e = reg.get(vault);
+      const d = dateiPruefen(e.vault.path, path, downloads.maxBytes);
+      if (d.error) return antwort.fail(`[${e.vault.name}] ${d.error}`);
+      const rel = path.replace(/\\/g, '/');
+      const { token, exp } = downloads.token({ vault: e.vault.name, path: rel, sub: req.nexusAuth?.sub ?? null });
+      return antwort.asJson({ vault: e.vault.name, path: rel, bytes: d.bytes, url: downloads.url(token, d.name), gueltigBis: new Date(exp * 1000).toISOString() });
+    });
+  };
+
   app.post('/mcp', (req, res, next) => auth(req, res, next).catch(next), express.json({ limit: BODY_LIMIT_BYTES, type: () => true }), async (req, res) => {
     const e = res.locals.log;
     const msg = req.body;
@@ -159,11 +250,14 @@ export function createHttpApp({ registry, info = {}, config, log = stdoutLog }) 
       const a = msg.params?.arguments ?? {};
       e.tool = kurz(msg.params?.name);
       e.vault = kurz(a.vault);
-      e.pfad = kurz(a.path) ?? kurz(a.prefix);
+      e.pfad = kurz(a.path) ?? kurz(a.from) ?? kurz(a.prefix);
       // Vorbelegung, falls der Aufruf das Tool nie erreicht (nicht freigegeben / ungueltige Argumente).
-      e.ergebnis = leseTools.has(msg.params?.name) ? 'aufruf_fehler' : 'tool_abgelehnt';
+      e.ergebnis = freigegeben.has(msg.params?.name) ? 'aufruf_fehler' : 'tool_abgelehnt';
     }
-    const server = buildServer({ registry: sicht, policy, info: identitaet, instructions: REMOTE_INSTRUCTIONS, onResult: begrenze(e) });
+    const grenze = begrenze(e);
+    const nachAufruf = (name, args, ergebnis) => { auditiere(req, name, args, ergebnis); return grenze(name, args, ergebnis); };
+    const server = buildServer({ registry: sicht, policy, info: identitaet, instructions: hinweise, onResult: nachAufruf, onCall: vorAufruf,
+      erweitern: downloads ? dateiLinkTool(req) : null });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on('close', () => {
       transport.close().catch(() => {});

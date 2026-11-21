@@ -13,6 +13,11 @@
 //   onResult  optional: (name, args, result) => result – laeuft nach JEDEM Tool-Aufruf ueber das
 //             fertige Ergebnis (auch Fehler). Der HTTP-Einstieg begrenzt damit die Antwortgroesse
 //             und fuehrt sein Aufruf-Log; ohne Hook bleibt alles wie bisher.
+//   onCall    optional: (name, args) => undefined | { error } | { args } – laeuft VOR jedem Tool-Aufruf.
+//             { error } lehnt ab (das Tool laeuft nicht), { args } ersetzt die Argumente. Der
+//             HTTP-Einstieg setzt damit seine Regeln je Aufruf durch (src/mcp/remote-policy.js).
+//   erweitern optional: ({ tool, z, registry, antwort }) => void – registriert zusaetzliche Tools
+//             ueber denselben Weg (Policy, Wrapper, Hooks). Fuer Tools, die nur ein Einstieg hat.
 //   instructions  optional: eigener Hinweistext fuer initialize (Remote-Connector: Kurzfassung
 //             ohne Schreib-Tools). Standard: die lokale Fassung NEXUS_INSTRUCTIONS.
 //
@@ -35,13 +40,16 @@ const vaultParam = z.string().optional()
 // R27b: Zod-Bounds statt nackter Zahlen.
 const limitParam  = (def, max = 200) => z.number().int().min(1).max(max).optional().describe(`Max. Ergebnisse (Standard: ${def}, hoechstens ${max})`);
 const offsetParam = z.number().int().min(0).optional().describe('Ergebnisse ueberspringen (Pagination, Standard: 0)');
+// R31: Kollisionsschutz fuer Schreib-Tools.
+const hashParam = z.string().max(80).optional()
+  .describe('Optional: Hash des Stands, auf dem die Aenderung beruht (hash aus outline, read_note mit hash:true oder dem letzten Schreib-Ergebnis). Wurde die Notiz seither geaendert, wird NICHT geschrieben (Fehler nennt den aktuellen Hash)');
 
 // Wird dem Client (z.B. Claude Desktop) beim Verbinden mitgegeben. Stoesst die
 // Pflichtlektuere an, ohne dass jemand ans Lesen erinnern muss (Arbeitsweise-Regel 12).
 // Die eigentlichen Regeln leben editierbar im Vault unter _System/ – Scaffold im App-Ordner unter rules/.
 const NEXUS_INSTRUCTIONS = [
   'Du arbeitest auf persoenlichen Wissens-Vaults ueber die Nexus-Tools',
-  '(list_vaults, search, outline, read_note, read_bild, write_note, write_vortrag, write_karten, karten_gliedern,',
+  '(list_vaults, search, outline, read_note, read_bild, write_note, capture, write_vortrag, write_karten, karten_gliedern,',
   'lern_status, append_to_section, patch, backlinks, list_notes, query, dataview, reindex, create_folder, move,',
   'delete, list_trash, restore, vault_check).',
   'Der Server bedient ALLE Vaults der Nexus-App: list_vaults zeigt sie (und nennt Version/Datenordner',
@@ -120,7 +128,7 @@ const DESTI = { readOnlyHint: false, destructiveHint: true, idempotentHint: true
 // Objekte – deshalb unten ueberall offen({...}) statt z.object({...}) in output-Schemas.
 const offen = (shape) => { const o = z.object(shape); return typeof o.loose === 'function' ? o.loose() : o.passthrough(); };
 
-export function buildServer({ registry, policy = {}, info = {}, instructions = NEXUS_INSTRUCTIONS, onResult = null } = {}) {
+export function buildServer({ registry, policy = {}, info = {}, instructions = NEXUS_INSTRUCTIONS, onResult = null, onCall = null, erweitern = null } = {}) {
   if (!registry || typeof registry.get !== 'function') throw new Error('buildServer: registry fehlt');
   const erlaubt = typeof policy?.allow === 'function' ? policy.allow : () => true;
   // Identitaet fuer list_vaults – Felder wie im outputSchema (version/dataDir Pflicht, Rest nullable).
@@ -141,7 +149,16 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
   function tool(name, { description, input = {}, output, annotations, title }, fn) {
     if (!erlaubt(name, { annotations })) return;
     registriert++;
-    const aufruf = run(fn);
+    const roh = run(fn);
+    // onCall: Regeln je Aufruf – ablehnen oder Argumente ersetzen, bevor das Tool laeuft.
+    const aufruf = typeof onCall === 'function'
+      ? async (args, extra) => {
+          let r;
+          try { r = onCall(name, args ?? {}); } catch (e) { return fail(e?.message || String(e)); }
+          if (r?.error) return fail(r.error);
+          return roh(r?.args ?? args, extra);
+        }
+      : roh;
     server.registerTool(name, {
       title, description,
       inputSchema: input,
@@ -206,7 +223,7 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
 
   tool('outline', {
     title: 'Gliederung einer Notiz',
-    description: 'Struktur einer Notiz erfassen, bevor man sie liest: Ueberschriften mit Ebene und Zeile. Spart Tokens gegenueber read_note der ganzen Datei.',
+    description: 'Struktur einer Notiz erfassen, bevor man sie liest: Ueberschriften mit Ebene und Zeile, dazu der hash des aktuellen Stands (fuer expected_hash). Spart Tokens gegenueber read_note der ganzen Datei.',
     input: { path: z.string().describe('Relativer Pfad zur Notiz im Vault'), vault: vaultParam },
     annotations: RO,
   }, ({ path, vault }) => plain(registry.get(vault).tools.outline({ path })));
@@ -219,12 +236,15 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
       path:    z.string().describe('Relativer Pfad zur Notiz im Vault'),
       section: z.string().optional().describe('Abschnittstitel (optional) – liefert diesen Abschnitt bis zur naechsten Ueberschrift gleicher oder hoeherer Ebene (Unterabschnitte inklusive). Exakter Titel gewinnt vor Teiltreffer. Unbekannter Titel = Fehler mit der Liste der vorhandenen Ueberschriften'),
       lines:   z.number().int().min(1).max(2000).optional().describe(`Zeilenlimit (optional, 1..2000). Ohne Angabe: ganze Notiz bzw. hoechstens ${SECTION_MAX_LINES} Zeilen eines Abschnitts; Kuerzungen werden am Ende gemeldet`),
+      hash:    z.boolean().optional().describe('true = am Ende eine Zeile "[hash: sha256:…]" anhaengen (Hash der ganzen Datei, als expected_hash fuer write_note/patch/append_to_section)'),
       vault:   vaultParam,
     },
     annotations: RO,
-  }, ({ path, section, lines, vault }) => {
-    const r = registry.get(vault).tools.readNote({ path, section, lines });
+  }, ({ path, section, lines, hash, vault }) => {
+    const r = registry.get(vault).tools.readNote({ path, section, lines, withHash: !!hash });
     if (r.error) return fail(r.error);
+    // R31: der Hash steht – wie die Kuerzung – im Text, weil read_note nur Text liefert.
+    if (hash && r.hash) r.content = `${r.content}\n\n[hash: ${r.hash}]`;
     // R29/N2: Eine Kuerzung steht im Text – read_note liefert nur Text, ein Flag im Ergebnisobjekt
     // saehe der Aufrufer nie. (Unbekannter Abschnitt ist ein Fehler: r.error mit Ueberschriftenliste.)
     if (r.truncated && r.sectionLines)
@@ -339,10 +359,11 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
       path:    z.string().describe('Relativer Pfad der .md-Notiz'),
       content: z.string().describe('Vollstaendiger neuer Inhalt'),
       create:  z.boolean().optional().describe('true = neue Datei erlaubt'),
+      expected_hash: hashParam,
       vault:   vaultParam,
     },
     annotations: DESTI,
-  }, ({ path, content, create, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.writeNote({ path, content, create })); });
+  }, ({ path, content, create, expected_hash, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.writeNote({ path, content, create, expectedHash: expected_hash })); });
 
   tool('append_to_section', {
     title: 'An Abschnitt anhaengen',
@@ -351,10 +372,11 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
       path:    z.string().describe('Relativer Pfad der Notiz'),
       section: z.string().describe('Ueberschrift des Abschnitts (exakter Titel gewinnt vor Teiltreffer). Unbekannter Titel = Fehler mit der Liste der vorhandenen Ueberschriften, es wird nichts geschrieben'),
       text:    z.string().describe('Anzuhaengender Text'),
+      expected_hash: hashParam,
       vault:   vaultParam,
     },
     annotations: ADD,
-  }, ({ path, section, text: t, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.appendToSection({ path, section, text: t })); });
+  }, ({ path, section, text: t, expected_hash, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.appendToSection({ path, section, text: t, expectedHash: expected_hash })); });
 
   tool('patch', {
     title: 'Textstellen ersetzen',
@@ -366,10 +388,27 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
         old_str: z.string().describe('Zu ersetzender Text (erste Fundstelle). Darf mehrere Zeilen umfassen – Zeilenenden (CRLF/LF) werden beim Vergleich ignoriert'),
         new_str: z.string().optional().describe('Ersatztext (leer = loeschen); wird mit den Zeilenenden der Datei geschrieben'),
       })).min(1).describe('Liste von Ersetzungen'),
+      expected_hash: hashParam,
       vault:   vaultParam,
     },
     annotations: DEST,
-  }, ({ path, patches, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.patch({ path, patches })); });
+  }, ({ path, patches, expected_hash, vault }) => { const e = registry.get(vault); return withVault(e, e.tools.patch({ path, patches, expectedHash: expected_hash })); });
+
+  tool('capture', {
+    title: 'Schnell ablegen',
+    description: 'Einen Gedanken, eine Aufgabe oder einen Fund SOFORT ablegen, ohne einen Ort zu waehlen: legt eine neue Notiz im Eingangsordner an ' +
+      '("JJJJ-MM-TT HHMM – Titel.md", Standard-Ordner _Eingang). Ueberschreibt nie etwas. Einsortiert wird spaeter (move).',
+    input: {
+      text:  z.string().describe('Inhalt der Notiz (Markdown)'),
+      titel: z.string().max(120).optional().describe('Titel (Standard: die erste Zeile des Textes)'),
+      vault: vaultParam,
+    },
+    annotations: ADD,
+  }, ({ text: t, titel, vault }) => {
+    const e = registry.get(vault);
+    const ordner = registry.config().capture?.folder;
+    return withVault(e, e.tools.capture({ text: t, titel, ...(typeof ordner === 'string' && ordner ? { ordner } : {}) }));
+  });
 
   tool('write_vortrag', {
     title: 'Vortragsskript schreiben',
@@ -502,7 +541,7 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
   tool('vault_check', {
     title: 'Vault-Gesundheit pruefen',
     description: 'Vault-Gesundheits-Check ueber den Live-Index (kein Voll-Reparse): kaputte Links, verwaiste Notizen, veraltete Daten (>30 Tage), ' +
-      'Karteileichen, doppelte Dateinamen. Schreibt den vollen Bericht nach _System/Vault-Check.md (dry_run=true: nur lesen, nichts schreiben) ' +
+      'Karteileichen, doppelte Dateinamen, Sync-Konfliktdateien (*.sync-conflict-*). Schreibt den vollen Bericht nach _System/Vault-Check.md (dry_run=true: nur lesen, nichts schreiben) ' +
       'und gibt eine kompakte Zusammenfassung zurueck. Regeln fuer persoenliche Bereiche stehen in nexus.config.json unter "vaultCheck".',
     input: {
       dry_run: z.boolean().optional().describe('true = nur pruefen, Bericht NICHT in den Vault schreiben'),
@@ -522,6 +561,9 @@ export function buildServer({ registry, policy = {}, info = {}, instructions = N
     const r = e.tools.vaultCheck({ dryRun: dry_run, regeln });
     return r.error ? fail(`[${e.vault.name}] ${r.error}`) : structured({ vault: e.vault.name, ...r });
   });
+
+  // Zusaetzliche Tools eines Einstiegs (z. B. datei_link im HTTP-Einstieg).
+  if (typeof erweitern === 'function') erweitern({ tool, z, registry, antwort: { text, asJson, fail, structured }, annotations: { RO, ADD, IDEM, DEST, DESTI } });
 
   // "$schema" aus den Tool-Schemas entfernen (Cowork-Fix, 2026-10-04).
   // Das SDK (bis mindestens 1.32) konvertiert Zod->JSON-Schema fest mit target draft-7 und

@@ -6,7 +6,7 @@
 //   B. tools.appendToSection nutzt dieselbe Abschnitts-Regel; unbekannter Abschnitt = Fehler, nichts geschrieben
 //   C. MCP read_note (buildServer, InMemoryTransport): Kuerzung/Nicht-gefunden stehen im Text
 // Alles im Temp-Scratch. Lauf: node test/read-section.test.mjs
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, statSync, utimesSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -160,6 +160,18 @@ try {
   const apGross = tools.appendToSection({ path: 'Gross.md', section: 'Gibt es nicht', text: 'x' });
   ok('append, viele Ueberschriften: Liste wie bei read_note in der Tiefe reduziert', apGross.error.includes('(100; nur bis Ebene 1, 90 tiefere nicht gezeigt – outline zeigt alle):') && apGross.error.split('\n').length === 11, apGross.error.slice(0, 160));
   ok('append, Datei nicht lesbar: weiterhin der Lese-Fehler', tools.appendToSection({ path: 'Fehlt.md', section: 'A', text: 'x' }).error === 'Datei nicht lesbar: Fehlt.md');
+
+  // Gleiche mtime, andere Groesse (zwei Aenderungen in derselben Millisekunde, Sync mit gesetzter
+  // mtime): der Index muss die Aenderung trotzdem bemerken.
+  // Feste, ganze Sekunde als mtime: keine Rundungsfragen zwischen Dateisystem und Index.
+  const TAKT = new Date(2026, 0, 1, 12, 0, 0);
+  writeFileSync(join(vaultDir, 'Takt.md'), '# Takt\n\n## A\n\na\n', 'utf8');
+  utimesSync(join(vaultDir, 'Takt.md'), TAKT, TAKT); indexer.reindex();
+  writeFileSync(join(vaultDir, 'Takt.md'), '# Takt\n\nneu davor\n\n## A\n\na\n\n## B\n\nb\n', 'utf8');
+  utimesSync(join(vaultDir, 'Takt.md'), TAKT, TAKT);
+  ok('Testaufbau: mtime der geaenderten Datei ist dieselbe wie im Index', statSync(join(vaultDir, 'Takt.md')).mtimeMs === TAKT.getTime());
+  indexer.reindex();
+  ok('gleiche mtime, andere Groesse: Datei wird neu indexiert', tools.outline({ path: 'Takt.md' }).headings.map(h => h.text + ':' + h.line).join() === 'Takt:1,A:5,B:9', tools.outline({ path: 'Takt.md' }).headings);
 
   // Veralteter Index: die Einfuegestelle kommt aus der Zeilennummer – sie muss zur Datei passen
   writeFileSync(join(vaultDir, 'Alt.md'), '# Alt\n\n## A\n\na\n\n## B\n\nb\n', 'utf8'); indexer.reindex();

@@ -84,7 +84,7 @@ try {
 
   // ── 3. policy ──────────────────────────────────────────────────────────────
   const alle = (await cA.listTools()).tools;
-  ok('ohne policy: alle 23 Tools', alle.length === 23, `${alle.length}: ${alle.map(t => t.name).join(',')}`);
+  ok('ohne policy: alle 24 Tools', alle.length === 24, `${alle.length}: ${alle.map(t => t.name).join(',')}`);
   const nurLesen = { allow: (name, { annotations }) => annotations?.readOnlyHint === true };
   const cRO = await verbinde(buildServer({ registry: regA, policy: nurLesen, info })); clients.push(cRO);
   const ro = (await cRO.listTools()).tools;

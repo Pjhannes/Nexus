@@ -23,7 +23,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { spawn } from 'child_process';
 import { buildServer } from '../src/mcp/build-server.js';
-import { REMOTE_READ_TOOLS } from '../src/mcp/remote-policy.js';
+import { REMOTE_READ_TOOLS, REMOTE_WRITE_TOOLS, REMOTE_ADMIN_TOOLS } from '../src/mcp/remote-policy.js';
 import { createHttpApp } from '../src/mcp/http-app.js';
 import { loadHttpConfig } from '../src/mcp/http-config.js';
 import { makeVaultRegistry } from '../src/vault-registry.js';
@@ -346,7 +346,7 @@ try {
     const alle = (await lokal.listTools()).tools;
     await lokal.close();
     const schreibend = alle.map(t => t.name).filter(n => !LESEN.includes(n));
-    ok('Referenz: 23 Tools lokal, davon 12 nicht freigegeben', alle.length === 23 && schreibend.length === 12, `${alle.length}/${schreibend.length}`);
+    ok('Referenz: 24 Tools lokal, davon 13 nicht freigegeben', alle.length === 24 && schreibend.length === 13, `${alle.length}/${schreibend.length}`);
     ok('jedes freigegebene Tool ist lokal als readOnly markiert', LESEN.every(n => alle.find(t => t.name === n)?.annotations?.readOnlyHint === true));
     ok('jedes lokale Tool OHNE readOnlyHint steht nicht auf der Liste', alle.filter(t => t.annotations?.readOnlyHint !== true).every(t => !LESEN.includes(t.name)));
 
@@ -381,8 +381,9 @@ try {
       delete: { path: 'Notiz.md' },
       restore: { path: 'Notiz.md' },
       vault_check: {},
+      capture: { text: 'schnell notiert' },
     };
-    ok('Testfaelle decken alle 12 nicht freigegebenen Tools ab', schreibend.every(n => n in versuche), schreibend.filter(n => !(n in versuche)).join());
+    ok('Testfaelle decken alle 13 nicht freigegebenen Tools ab', schreibend.every(n => n in versuche), schreibend.filter(n => !(n in versuche)).join());
     for (const n of schreibend) {
       const r = await ruf(n, versuche[n] ?? {});
       ok(`tools/call ${n} -> abgelehnt`, abgelehnt(r), `${r.status} ${r.text}`);
@@ -645,7 +646,8 @@ try {
     aus.kind.kill();
 
     // 6c. Keine persoenlichen Werte im Repo: in Code, Test und Doku des Connectors nur example.com.
-    const dateien = ['src/mcp-http.js', 'src/mcp/http-app.js', 'src/mcp/http-config.js', 'src/mcp/token.js', 'src/mcp/remote-policy.js', 'test/mcp-http.test.mjs', 'docs/remote-connector.md']
+    const dateien = ['src/mcp-http.js', 'src/mcp/http-app.js', 'src/mcp/http-config.js', 'src/mcp/token.js', 'src/mcp/remote-policy.js', 'test/mcp-http.test.mjs', 'docs/remote-connector.md',
+      'src/mcp/audit.js', 'src/mcp/download.js', 'test/mcp-http-write.test.mjs', 'test/mcp-http-helfer.mjs']
       .filter(f => existsSync(join(ROOT, f)));
     const ERLAUBT = /(^|\.)example\.com$|^127\.0\.0\.1$|^localhost$|^claude\.ai$/;
     const funde = [];
@@ -665,7 +667,7 @@ try {
     const inDoku = new Set([...doku.matchAll(/NEXUS_MCP_[A-Z_]+/g)].map(m => m[0]));
     ok('docs/remote-connector.md beschreibt alle Variablen aus http-config.js', doku.length > 0 && [...imCode].every(v => inDoku.has(v)), [...imCode].filter(v => !inDoku.has(v)).join());
     ok('die Doku nennt keine Variable, die der Code nicht kennt', [...inDoku].every(v => imCode.has(v)), [...inDoku].filter(v => !imCode.has(v)).join());
-    ok('die Doku nennt alle freigegebenen Tools', REMOTE_READ_TOOLS.every(t => doku.includes('`' + t + '`')));
+    ok('die Doku nennt alle freigegebenen Tools', [...REMOTE_READ_TOOLS, ...REMOTE_WRITE_TOOLS, ...REMOTE_ADMIN_TOOLS, 'datei_link'].every(t => doku.includes('`' + t + '`')));
   }
 } catch (e) {
   console.error('  \x1b[31m✗ Testlauf-Fehler:\x1b[0m', e.stack || e.message);

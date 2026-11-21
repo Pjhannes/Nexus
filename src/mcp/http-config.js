@@ -5,6 +5,9 @@
 // wirft EINEN Fehler mit allen Problemen: ein unvollstaendig konfigurierter Server startet nicht.
 // Beschreibung aller Variablen: docs/remote-connector.md
 
+import { isAbsolute } from 'path';
+import { REMOTE_LEVELS } from './remote-policy.js';
+
 const AUS = new Set(['0', 'false', 'off', 'no']);
 
 const liste = (s) => String(s ?? '').split(',').map(x => x.trim()).filter(Boolean);
@@ -66,6 +69,20 @@ export function loadHttpConfig(env = {}) {
     // Freigegebene Vaults (Namen aus nexus.config.json). Standard: KEINER – ohne diese Variable
     // laeuft der Server, liefert aber aus keinem Vault etwas.
     config.allowedVaults = liste(env.NEXUS_MCP_ALLOWED_VAULTS);
+    // Stufen (R31): "read" gilt immer; "write" und "admin" werden einzeln eingeschaltet.
+    // Standard: nur lesen. Welche Tools zu welcher Stufe gehoeren: src/mcp/remote-policy.js.
+    const stufen = [...new Set(liste(env.NEXUS_MCP_LEVELS).map(x => x.toLowerCase()))];
+    const fremd = stufen.filter(x => !REMOTE_LEVELS.includes(x));
+    if (fremd.length) fehler.push(`NEXUS_MCP_LEVELS kennt nur ${REMOTE_LEVELS.join(', ')} (unbekannt: ${fremd.join(', ')})`);
+    // "admin" baut auf "write" auf (vault_check gehoert zu write, restore als Gegenstueck zu delete
+    // auch) – admin allein waere eine halbe Stufe und ist deshalb ein Konfigurationsfehler.
+    if (stufen.includes('admin') && !stufen.includes('write')) fehler.push('NEXUS_MCP_LEVELS: admin setzt write voraus (write,admin)');
+    config.levels = Object.freeze(REMOTE_LEVELS.filter(x => x === 'read' || stufen.includes(x)));
+    // Audit-Log (R31): Datei AUSSERHALB der Vaults, eine JSON-Zeile je Schreibaufruf. Pflicht, sobald
+    // eine Schreibstufe eingeschaltet ist – ohne Audit-Log startet der Server dann nicht.
+    config.auditLog = String(env.NEXUS_MCP_AUDIT_LOG ?? '').trim() || null;
+    if (config.auditLog && !isAbsolute(config.auditLog)) fehler.push('NEXUS_MCP_AUDIT_LOG muss ein absoluter Pfad sein');
+    if (!config.auditLog && config.levels.length > 1) fehler.push('NEXUS_MCP_AUDIT_LOG fehlt (Pflicht, sobald NEXUS_MCP_LEVELS write oder admin enthaelt)');
 
     // Haertung: erlaubte Host-Header (Standard: der Host der Ressourcen-URL) und erlaubte
     // Origins (Standard: nur der eigene). Alles andere wird mit 403 abgewiesen.
@@ -75,6 +92,27 @@ export function loadHttpConfig(env = {}) {
     config.allowedOrigins = [...new Set([...(resource ? [resource.u.origin] : []), ...klein(env.NEXUS_MCP_ALLOWED_ORIGINS)])];
     // Groessenlimit je Tool-Antwort in Bytes (serialisiertes Ergebnis inkl. Bilddaten).
     config.maxResponseBytes = ganzzahl(env, 'NEXUS_MCP_MAX_RESPONSE_BYTES', 512 * 1024, 1024, 16 * 1024 * 1024, fehler);
+    // Download-Links (R31): eingeschaltet, sobald ein Geheimnis gesetzt ist. Der Link fuehrt auf
+    // /dl/<token>/<name> an der Basis-URL (Standard: Ursprung der Ressourcen-URL); deren Host
+    // zaehlt automatisch zu den erlaubten Hosts.
+    const geheim = String(env.NEXUS_MCP_DOWNLOAD_SECRET ?? '');
+    config.download = null;
+    if (geheim) {
+      if (geheim.length < 32) fehler.push('NEXUS_MCP_DOWNLOAD_SECRET ist zu kurz (mindestens 32 Zeichen)');
+      let basis = resource ? resource.u.origin : null;
+      if (String(env.NEXUS_MCP_DOWNLOAD_BASE_URL ?? '').trim()) {
+        const b = url(env, 'NEXUS_MCP_DOWNLOAD_BASE_URL', fehler);
+        if (b) {
+          basis = b.u.origin + b.u.pathname.replace(/\/+$/, '');
+          if (!config.allowedHosts.includes(b.u.host)) config.allowedHosts.push(b.u.host);
+        }
+      }
+      config.download = Object.freeze({
+        secret: geheim, baseUrl: basis,
+        ttlS: ganzzahl(env, 'NEXUS_MCP_DOWNLOAD_TTL_S', 300, 30, 3600, fehler),
+        maxBytes: ganzzahl(env, 'NEXUS_MCP_DOWNLOAD_MAX_BYTES', 50 * 1024 * 1024, 1024, 1024 * 1024 * 1024, fehler),
+      });
+    }
     // Optional: Scopes, die im scp-Claim stehen muessen (Standard: keine Scope-Pflicht).
     const scopes = (name) => {
       const l = [...new Set(liste(String(env[name] ?? '').replace(/\s+/g, ',')))];

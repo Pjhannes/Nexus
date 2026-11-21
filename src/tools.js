@@ -75,6 +75,24 @@ export function dateiEol(s) {
   const lf = (s.match(/\n/g) || []).length - crlf;
   return crlf > lf ? '\r\n' : '\n';
 }
+// R31: Inhalts-Hash einer Notiz – Grundlage fuer expected_hash (Kollisionsschutz, wenn zwei Seiten
+// dieselbe Notiz aendern, z. B. Connector am Server und App am Laptop). Gleiches Format wie
+// notizHash in den Sidecars: "sha256:<hex>" ueber den Dateiinhalt als UTF-8.
+export function inhaltHash(content) {
+  return 'sha256:' + createHash('sha256').update(String(content ?? ''), 'utf8').digest('hex');
+}
+// expected_hash pruefen: null = passt (oder nichts verlangt), sonst Fehlertext. Angenommen wird der
+// volle Wert mit oder ohne "sha256:" sowie ein Anfang ab 12 Hex-Zeichen (Gross/Klein egal).
+export const HASH_MIN_HEX = 12;
+export function hashAbweichung(expected, content, path) {
+  if (expected === undefined || expected === null || expected === '') return null;
+  const ist = inhaltHash(content);
+  const soll = String(expected).trim().toLowerCase().replace(/^sha256:/, '');
+  if (!/^[0-9a-f]+$/.test(soll) || soll.length < HASH_MIN_HEX || soll.length > 64)
+    return `expected_hash ungueltig (erwartet: "sha256:<hex>", mindestens ${HASH_MIN_HEX} Hex-Zeichen) – nichts geschrieben.`;
+  if (ist.slice(7).startsWith(soll)) return null;
+  return `Stand abweichend: ${path} wurde seit dem Lesen geaendert (expected_hash passt nicht, aktuell ${ist}) – nichts geschrieben. Notiz neu lesen und die Aenderung auf den aktuellen Stand anwenden.`;
+}
 export function inEol(s, eol) {
   const lf = String(s ?? '').replace(/\r\n/g, '\n');
   return eol === '\r\n' ? lf.replace(/\n/g, '\r\n') : lf;
@@ -82,6 +100,17 @@ export function inEol(s, eol) {
 function eolNeutral(s) {
   const teile = s.replace(/\r\n/g, '\n').split('\n').map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   return new RegExp(teile.join('\\r?\\n'));
+}
+
+// R31: capture – Dateiname aus einem Titel. Entfernt, was Windows/macOS/Syncthing in Dateinamen
+// nicht moegen (\ / : * ? " < > | und Steuerzeichen), fasst Leerraum zusammen, keine Punkte/Leerzeichen
+// am Rand, hoechstens `max` Zeichen. Leer -> "Notiz".
+export const CAPTURE_ORDNER = '_Eingang';
+export const CAPTURE_MAX_ZEICHEN = 20000;
+export function captureName(titel, max = 60) {
+  const sauber = String(titel ?? '').replace(/[\\/:*?"<>|\u0000-\u001f#^[\]]/g, ' ').replace(/\s+/g, ' ').trim()
+    .slice(0, max).replace(/[. ]+$/, '').replace(/^[. ]+/, '');
+  return sauber || 'Notiz';
 }
 
 // Die Normalisierung wohnt in src/norm.js (damit auch lernen.js sie nutzen kann,
@@ -273,10 +302,16 @@ export function makeTools(indexer, vaultPath) {
   function outline({ path }) {
     const note = stmts.outline.get(path);
     if (!note) return { error: 'Notiz nicht gefunden: ' + path };
-    return { path, title: note.title, headings: stmts.headings.all(note.id) };
+    // R31: Hash des aktuellen Dateiinhalts – ein spaeteres write_note/patch/append_to_section kann
+    // ihn als expected_hash mitgeben. Nicht lesbar (Datei gerade weg) -> Feld fehlt.
+    let hash;
+    try { const f = safeFull(path); if (f) hash = inhaltHash(readFileSync(f, 'utf8')); } catch { /* ohne Hash */ }
+    return { path, title: note.title, ...(hash ? { hash } : {}), headings: stmts.headings.all(note.id) };
   }
 
-  function readNote({ path, section, lines }) {
+  // withHash (R31): zusaetzlich hash = Hash der GANZEN Datei (fuer expected_hash) – nur auf Wunsch,
+  // das Ergebnis ohne withHash bleibt exakt wie bisher.
+  function readNote({ path, section, lines, withHash = false }) {
     const fullPath = safeFull(path);                        // R27a: kein ../-Ausbruch
     if (!fullPath || typeof path !== 'string' || !path) return { error: 'Pfad ausserhalb des Vaults oder ungueltig: ' + path };
     let content;
@@ -303,15 +338,16 @@ export function makeTools(indexer, vaultPath) {
           path, section: h.text, level: h.level, line: h.line,
           content: allLines.slice(start, truncated ? start + max : end).join('\n').replace(/\r$/, ''),
           truncated, sectionLines: total,
+          ...(withHash ? { hash: inhaltHash(content) } : {}),
         };
       }
       return { error: abschnittFehlt(path, section, hs, { ohne: 'Die Notiz hat keine Ueberschriften – ohne section lesen (ggf. mit lines).' }) };
     }
     if (lines) {
       const allLines = content.split('\n');
-      return { path, content: allLines.slice(0, lines).join('\n'), truncated: allLines.length > lines, totalLines: allLines.length };
+      return { path, content: allLines.slice(0, lines).join('\n'), truncated: allLines.length > lines, totalLines: allLines.length, ...(withHash ? { hash: inhaltHash(content) } : {}) };
     }
-    return { path, content };
+    return withHash ? { path, content, hash: inhaltHash(content) } : { path, content };
   }
 
   // Abschnitt einer Notiz aufloesen – gemeinsam fuer read_note und append_to_section.
@@ -369,7 +405,9 @@ export function makeTools(indexer, vaultPath) {
     return { level: h.level, text: h.text, line: h.line, endIdx: next ? next.line - 1 : null };
   }
 
-  function writeNote({ path, content, create = false }) {
+  // R31: expectedHash (optional) = Hash des Stands, auf dem die Aenderung beruht. Weicht die Datei
+  // davon ab, wird NICHT geschrieben. Das Ergebnis nennt hash (neu) und hashVorher (null = neu angelegt).
+  function writeNote({ path, content, create = false, expectedHash }) {
     // R27a: Pfad-Haertung auch bei create:true – vorher konnte ein neuer Pfad
     // mit ../ ausserhalb des Vaults angelegt werden.
     const fullPath = (typeof path === 'string' && path) ? safeFull(path) : null;
@@ -378,6 +416,14 @@ export function makeTools(indexer, vaultPath) {
       return { error: 'Notiz existiert nicht (create=false): ' + path };
     if (typeof content !== 'string')
       return { error: 'content fehlt oder ist kein String' };
+    let vorher = null;
+    try { vorher = readFileSync(fullPath, 'utf8'); } catch { /* Datei gibt es noch nicht */ }
+    const hashVorher = vorher === null ? null : inhaltHash(vorher);
+    if (expectedHash !== undefined && expectedHash !== null && expectedHash !== '') {
+      if (vorher === null) return { error: `expected_hash angegeben, aber die Notiz existiert nicht: ${path} – nichts geschrieben.` };
+      const abw = hashAbweichung(expectedHash, vorher, path);
+      if (abw) return { error: abw };
+    }
     // R14+: Schreib-Integritaet per VOLLEM Read-Back (nicht nur Byte-Laenge).
     // Eine reine Laengen-Pruefung faengt die EIGENTLICHE Fehlerklasse NICHT, die in
     // STATUS.md/scripts/safe-edit.mjs dokumentiert ist: Read-Modify-Write ueber den
@@ -402,7 +448,7 @@ export function makeTools(indexer, vaultPath) {
     // Nur Markdown gehoert in Index/FTS/Graph (wie reindex und /api/save) – seit R27a
     // laeuft auch der Editor-Save ueber diesen Pfad, der auch .txt/.json anfasst.
     if (/\.md$/i.test(fullPath)) indexer.indexFile(fullPath);
-    return { ok: true, path, bytes: expectedBytes };
+    return { ok: true, path, bytes: expectedBytes, hash: inhaltHash(content), hashVorher };
   }
 
   // R24: Vortragsskript-Sidecar (<Notiz>.vortrag.json) schreiben. Validiert jeden
@@ -690,9 +736,11 @@ export function makeTools(indexer, vaultPath) {
     };
   }
 
-  function appendToSection({ path, section, text }) {
+  function appendToSection({ path, section, text, expectedHash }) {
     const { content, error } = readNote({ path });
     if (error) return { error };
+    const abw = hashAbweichung(expectedHash, content, path);
+    if (abw) return { error: abw };
     const originalBytes = Buffer.byteLength(content, 'utf8');
     const lines = content.split('\n');
     // Dieselbe Abschnitts-Aufloesung wie read_note (R29/N2). Unbekannter oder leerer Abschnitt =
@@ -723,7 +771,31 @@ export function makeTools(indexer, vaultPath) {
     // (bestehende grosse Notiz wuerde sonst beim Rueckschreiben gekappt -> Datenverlust).
     if (Buffer.byteLength(merged, 'utf8') < originalBytes)
       return { error: 'append_to_section abgebrochen: Ergebnis kuerzer als Original – moeglicher Datenverlust, nichts geschrieben.' };
-    return writeNote({ path, content: merged });
+    // Gegen den gerade gelesenen Stand schreiben: aendert jemand die Datei zwischen Lesen und
+    // Schreiben, schlaegt writeNote fehl, statt die fremde Aenderung zu ueberschreiben.
+    return writeNote({ path, content: merged, expectedHash: inhaltHash(content) });
+  }
+
+  // R31: capture – schnelle Notiz in den Eingangsordner, ohne ein Ziel zu waehlen (vom Handy).
+  // Jeder Aufruf legt eine NEUE Datei an ("JJJJ-MM-TT HHMM – Titel.md"): nichts wird ueberschrieben,
+  // und zwei Geraete koennen gleichzeitig ablegen, ohne dieselbe Datei zu aendern.
+  // ordner: aus nexus.config.json (capture.folder), Standard "_Eingang". now: fuer Tests.
+  function capture({ text, titel, ordner = CAPTURE_ORDNER, now = new Date() } = {}) {
+    if (typeof text !== 'string' || !text.trim()) return { error: 'text fehlt' };
+    if (text.length > CAPTURE_MAX_ZEICHEN) return { error: `text zu lang (${text.length} Zeichen, hoechstens ${CAPTURE_MAX_ZEICHEN}) – fuer laengere Inhalte write_note verwenden.` };
+    const dir = String(ordner || CAPTURE_ORDNER).replace(/\\/g, '/').replace(/\/+$/, '');
+    const dirFull = dir ? safeFull(dir) : null;
+    if (!dirFull || dirFull === resolve(vaultPath) || inTrash(relOf(dirFull))) return { error: 'Eingangsordner ungueltig: ' + ordner };
+    const p = (n) => String(n).padStart(2, '0');
+    const tag = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+    const zeit = `${p(now.getHours())}${p(now.getMinutes())}`;
+    const kopf = (typeof titel === 'string' && titel.trim()) ? titel.trim() : text.trim().split(/\r?\n/)[0].replace(/^#+\s*/, '');
+    const name = captureName(kopf);
+    let path = `${dir}/${tag} ${zeit} – ${name}.md`;
+    for (let i = 2; existsSync(safeFull(path)); i++) path = `${dir}/${tag} ${zeit} – ${name} (${i}).md`;
+    const content = ['---', 'typ: eingang', `erstellt: ${tag}T${p(now.getHours())}:${p(now.getMinutes())}`, 'tags: [eingang]', '---', '',
+      `# ${kopf.replace(/\s+/g, ' ').slice(0, 120)}`, '', text.replace(/\r\n/g, '\n').trim(), ''].join('\n');
+    return writeNote({ path, content, create: true });
   }
 
   function backlinks({ path }) {
@@ -930,10 +1002,12 @@ export function makeTools(indexer, vaultPath) {
   // patches: [{ old_str: string, new_str: string }]
   // Jeder Patch ersetzt die erste Fundstelle von old_str durch new_str.
   // Gibt applied (Anzahl erfolgreicher Patches) und missed (nicht gefundene old_str) zurueck.
-  function patch({ path, patches = [] }) {
+  function patch({ path, patches = [], expectedHash }) {
     if (!patches.length) return { error: 'Keine Patches angegeben' };
     const { content, error } = readNote({ path });
     if (error) return { error };
+    const abw = hashAbweichung(expectedHash, content, path);
+    if (abw) return { error: abw };
     let cur = content;
     let applied = 0;
     let expectedDelta = 0;   // R14: summierte Laengenaenderung aller angewandten Patches
@@ -970,7 +1044,7 @@ export function makeTools(indexer, vaultPath) {
     // Trunkierung) – dann NICHT schreiben, sondern echten Fehler melden.
     if (cur.length !== content.length + expectedDelta)
       return { error: 'patch abgebrochen: Laengen-Invariante verletzt (moegliche Trunkierung) – nichts geschrieben.', applied, missed: missed.length ? missed : undefined };
-    const result = writeNote({ path, content: cur });
+    const result = writeNote({ path, content: cur, expectedHash: inhaltHash(content) });
     return { ...result, applied, missed: missed.length ? missed : undefined };
   }
 
@@ -1113,6 +1187,7 @@ export function makeTools(indexer, vaultPath) {
         staleDates:  result.staleDates.length,
         deadRefs:    result.deadRefs.length,
         duplicates:  result.duplicates.length,
+        syncConflicts: result.syncConflicts.length,
       },
       // Erste Treffer je Kategorie fuer sofortige Sicht; voller Bericht in reportPath.
       samples: {
@@ -1121,12 +1196,13 @@ export function makeTools(indexer, vaultPath) {
         staleDates:  result.staleDates.slice(0, cap),
         deadRefs:    result.deadRefs.slice(0, cap),
         duplicates:  result.duplicates.slice(0, cap),
+        syncConflicts: result.syncConflicts.slice(0, cap),
       },
       reportPath,
       dryRun,
     };
   }
 
-  return { search, searchDetail, outline, readNote, writeNote, writeVortrag, writeKarten, karteGliedern, readBild, lernStatus, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, listTrash, restore, vaultCheck };
+  return { search, searchDetail, outline, readNote, writeNote, writeVortrag, writeKarten, karteGliedern, readBild, lernStatus, appendToSection, backlinks, listNotes, reindex, query, patch, graph, dataview, createFolder, move, delete: deleteEntry, listTrash, restore, vaultCheck, capture };
 }
 // rev: graph() fuer UI-Graph (Session 13)
