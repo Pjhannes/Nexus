@@ -41,8 +41,9 @@ gehört, wird nicht registriert – es steht nicht in `tools/list` und ist nicht
 Zusätzlich gelten für den Remote-Zugriff feste Regeln, unabhängig von der Stufe:
 
 - `delete` verschiebt in den Papierkorb. Endgültiges Löschen (`permanent`) ist gesperrt.
-- Unter `_System` wird nichts gelöscht; der Ordner `_System` wird nicht verschoben.
-- `move` in den Papierkorb ist gesperrt (wäre ein Löschen an den Regeln vorbei).
+- Unter `_System` wird nichts gelöscht und nichts herausverschoben (Umbenennen innerhalb geht).
+- Versteckte Pfade (ein Segment beginnt mit `.`: `.trash`, `.stignore`, `.git`, …) sind nicht
+  schreibbar und nicht verschiebbar; aus dem Papierkorb holt `restore` zurück.
 - Nur freigegebene Vaults (`NEXUS_MCP_ALLOWED_VAULTS`) sind erreichbar.
 
 **Kollisionsschutz:** `write_note`, `patch` und `append_to_section` nehmen `expected_hash` an – den

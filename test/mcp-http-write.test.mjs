@@ -108,6 +108,15 @@ try {
     ok('delete ausserhalb von _System -> erlaubt', g('delete', { path: 'Uni/_System-Notizen.md' }) === undefined && g('delete', { path: '_Systematik/x.md' }) === undefined);
     ok('move in den Papierkorb -> abgelehnt', /Papierkorb/.test(g('move', { from: 'a.md', to: '.trash/a.md' })?.error ?? '') && /Papierkorb/.test(g('move', { from: 'a.md', to: './.TRASH/x/a.md' })?.error ?? ''));
     ok('move des Ordners _System -> abgelehnt, einer Notiz darin -> erlaubt', /_System/.test(g('move', { from: '_System', to: 'Alt' })?.error ?? '') && g('move', { from: '_System/a.md', to: '_System/b.md' }) === undefined);
+    ok('move aus _System heraus -> abgelehnt (erster Schritt zum Loeschen)', /_System/.test(g('move', { from: '_System/a.md', to: 'Alt/a.md' })?.error ?? '') && /_System/.test(g('move', { from: '_system/Templates', to: 'T' })?.error ?? ''));
+    ok('move nach _System hinein und ausserhalb davon -> erlaubt', g('move', { from: 'Alt/a.md', to: '_System/a.md' }) === undefined && g('move', { from: 'A/x.md', to: 'B/x.md' }) === undefined);
+    for (const p of ['_System.', '_System ', '_SYSTEM./Regeln.md']) ok(`delete ${JSON.stringify(p)} (Windows-Schreibweise) -> abgelehnt`, /_System/.test(g('delete', { path: p })?.error ?? ''));
+    for (const [n, a] of [['write_note', { path: '.stignore', content: '*' }], ['write_note', { path: 'Uni/.versteckt/x.md', content: 'x' }], ['patch', { path: '.trash/2026/x.md', patches: [] }],
+      ['append_to_section', { path: './.obsidian/app.md', section: 'A', text: 'x' }], ['create_folder', { path: '.git' }], ['write_karten', { path: '.x/N.md', karten: [] }]])
+      ok(`${n} auf verstecktem Pfad ${JSON.stringify(a.path)} -> abgelehnt`, /Versteckte Pfade/.test(g(n, a)?.error ?? ''));
+    ok('move von/nach versteckten Pfaden -> abgelehnt', /Versteckte Pfade/.test(g('move', { from: '.stignore', to: 'x.md' })?.error ?? '') && /Versteckte Pfade/.test(g('move', { from: 'x.md', to: 'A/.b/x.md' })?.error ?? ''));
+    ok('normale Pfade mit Punkt im Namen bleiben schreibbar', g('write_note', { path: 'Uni/v1.2 Notiz.md', content: 'x' }) === undefined && g('write_note', { path: 'a.b/c.md', content: 'x' }) === undefined);
+    ok('restore aus dem Papierkorb bleibt erlaubt', g('restore', { path: '.trash/2026-01-01_000000/x.md' }) === undefined);
     ok('vault_check mit admin: unveraendert', g('vault_check', {}) === undefined);
     ok('vault_check ohne admin: dry_run erzwungen', remoteGuard({ levels: ['read', 'write'] })('vault_check', { dry_run: false })?.args?.dry_run === true);
     ok('andere Tools: keine Regel', g('write_note', { path: '_System/Regeln.md', content: 'x' }) === undefined && g('search', { q: 'x' }) === undefined);
@@ -125,6 +134,10 @@ try {
     ok('delete permanent -> Fehler, der Papierkorb-Eintrag bleibt', end.fehler && /gesperrt/.test(end.text) && existsSync(vaultPfad('wissen', weg.json.trashed)), end.text);
     const sys = await ruf('delete', { path: '_System/Regeln.md' });
     ok('delete unter _System -> Fehler, Datei bleibt', sys.fehler && existsSync(vaultPfad('wissen', '_System', 'Regeln.md')), sys.text);
+    const st = await ruf('write_note', { path: '.stignore', content: '*', create: true });
+    ok('write_note auf .stignore -> Fehler, nichts angelegt', st.fehler && !existsSync(vaultPfad('wissen', '.stignore')), st.text);
+    const hinaus = await ruf('move', { from: '_System/Regeln.md', to: 'Regeln.md' });
+    ok('move aus _System heraus -> Fehler, Datei bleibt', hinaus.fehler && existsSync(vaultPfad('wissen', '_System', 'Regeln.md')) && !existsSync(vaultPfad('wissen', 'Regeln.md')), hinaus.text);
     const trick = await ruf('move', { from: '_System/Regeln.md', to: '.trash/Regeln.md' });
     ok('move nach .trash -> Fehler, Datei bleibt', trick.fehler && existsSync(vaultPfad('wissen', '_System', 'Regeln.md')), trick.text);
     const zurueck = await ruf('restore', { path: weg.json.trashed });

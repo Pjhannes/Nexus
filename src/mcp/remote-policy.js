@@ -9,7 +9,8 @@
 //              eingeschraenkte SICHT uebergeben; nicht freigegebene Vaults existieren fuer die
 //              Tools nicht (auch nicht als Standard-Vault und nicht in list_vaults).
 //   3. Regeln: remoteGuard() prueft die Argumente einzelner Aufrufe (kein endgueltiges Loeschen,
-//              _System nicht loeschbar, vault_check ohne Stufe "admin" nur als Trockenlauf).
+//              _System nicht loeschbar und nicht herausverschiebbar, versteckte Pfade nicht
+//              schreibbar, vault_check ohne Stufe "admin" nur als Trockenlauf).
 //
 // Stufen (NEXUS_MCP_LEVELS, Standard: nur "read"):
 //   read   immer an – die Lese-Tools
@@ -45,10 +46,17 @@ export function remotePolicy({ levels = [], extra = [] } = {}) {
 // Nur lesen (R30) – bleibt der Standard.
 export const readOnlyPolicy = () => remotePolicy();
 
-// Pfad fuer Regel-Vergleiche: Schraegstriche vereinheitlichen, "." und leere Segmente weg,
-// klein (Windows/macOS unterscheiden "_system" und "_System" nicht).
-const normRel = (p) => String(p ?? '').replace(/\\/g, '/').split('/').filter(s => s && s !== '.').join('/').toLowerCase();
+// Pfad fuer Regel-Vergleiche: Schraegstriche vereinheitlichen, "." und leere Segmente weg, klein
+// (Windows/macOS unterscheiden "_system" und "_System" nicht), Punkte/Leerzeichen am Segmentende
+// weg (Windows behandelt "_System." und "_System " wie "_System").
+const normRel = (p) => String(p ?? '').replace(/\\/g, '/').split('/').map(s => s.replace(/[. ]+$/, '') || s)
+  .filter(s => s && s !== '.').join('/').toLowerCase();
 const innerhalb = (rel, ordner) => rel === ordner || rel.startsWith(ordner + '/');
+// Versteckt = ein Segment beginnt mit "." (.trash, .stignore, .stfolder, .git, .obsidian ...).
+const versteckt = (rel) => rel.split('/').some(s => s.startsWith('.'));
+// Tools, die unter einem Pfad schreiben. restore und delete fehlen bewusst: sie arbeiten mit dem
+// Papierkorb (.trash) und haben eigene Regeln.
+const SCHREIBT_PFAD = new Set(['write_note', 'append_to_section', 'patch', 'write_karten', 'write_vortrag', 'karten_gliedern', 'create_folder']);
 
 // Regeln fuer einzelne Aufrufe. Rueckgabe: undefined = unveraendert weiter, { error } = ablehnen
 // (das Tool laeuft nicht), { args } = mit geaenderten Argumenten weiter.
@@ -59,10 +67,18 @@ export function remoteGuard({ levels = [] } = {}) {
       if (args.permanent) return { error: 'Endgueltiges Loeschen ist ueber den Remote-Zugriff gesperrt – delete ohne permanent verschiebt in den Papierkorb.' };
       if (innerhalb(normRel(args.path), '_system')) return { error: 'Geschuetzt: unter _System wird ueber den Remote-Zugriff nichts geloescht.' };
     }
+    // Versteckte Pfade sind remote nicht schreibbar: dort liegen Papierkorb und Steuerdateien der
+    // Synchronisation (.stignore) – eine Aenderung daran wirkt weit ueber eine Notiz hinaus.
+    if (SCHREIBT_PFAD.has(name) && versteckt(normRel(args.path)))
+      return { error: 'Versteckte Pfade (Segment beginnt mit ".") sind ueber den Remote-Zugriff nicht schreibbar.' };
     if (name === 'move') {
+      const von = normRel(args.from), nach = normRel(args.to);
       // Ein move in den Papierkorb waere ein Loeschen an den delete-Regeln vorbei.
-      if (innerhalb(normRel(args.to), '.trash')) return { error: 'Ziel im Papierkorb ist nicht erlaubt – zum Loeschen delete verwenden.' };
-      if (normRel(args.from) === '_system') return { error: 'Geschuetzt: der Ordner _System wird ueber den Remote-Zugriff nicht verschoben.' };
+      if (innerhalb(nach, '.trash')) return { error: 'Ziel im Papierkorb ist nicht erlaubt – zum Loeschen delete verwenden.' };
+      if (versteckt(von) || versteckt(nach)) return { error: 'Versteckte Pfade (Segment beginnt mit ".") werden ueber den Remote-Zugriff nicht verschoben – aus dem Papierkorb holt restore zurueck.' };
+      // Aus _System heraus verschieben waere der erste Schritt zum Loeschen; innerhalb umbenennen geht.
+      if (innerhalb(von, '_system') && !(von !== '_system' && innerhalb(nach, '_system')))
+        return { error: 'Geschuetzt: _System und sein Inhalt werden ueber den Remote-Zugriff nicht herausverschoben (umbenennen innerhalb von _System geht).' };
     }
     // Ohne Stufe "admin" prueft vault_check nur – der Bericht wird nicht in den Vault geschrieben.
     if (name === 'vault_check' && !admin && args.dry_run !== true) return { args: { ...args, dry_run: true } };
