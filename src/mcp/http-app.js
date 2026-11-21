@@ -13,7 +13,8 @@ import express from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { buildServer } from './build-server.js';
 import { makeTokenVerifier, bearerToken } from './token.js';
-import { remotePolicy, remoteGuard, restrictRegistry, remoteInstructions } from './remote-policy.js';
+import { remotePolicy, remoteGuard, restrictRegistry, remoteInstructions, REMOTE_READ_TOOLS } from './remote-policy.js';
+import { makeAudit, liegtIn, auditFelder } from './audit.js';
 
 export const BODY_LIMIT_BYTES = 2 * 1024 * 1024;
 
@@ -48,6 +49,26 @@ export function createHttpApp({ registry, info = {}, config, log = stdoutLog }) 
   const identitaet = { ...info, dataDir: '' };
   const freigegeben = new Set(policy.tools);
   const hinweise = remoteInstructions({ tools: policy.tools, levels });
+
+  // Audit-Log (src/mcp/audit.js): Pflicht bei Schreibstufen (http-config.js), nie in einem Vault.
+  // Erst pruefen, dann anlegen: makeAudit erzeugt Ordner und Datei.
+  if (config.auditLog && liegtIn(config.auditLog, registry.entries().map(e => e.vault.path)))
+    throw new Error('NEXUS_MCP_AUDIT_LOG liegt in einem Vault – das Audit-Log gehoert ausserhalb der Vaults.');
+  const audit = makeAudit(config.auditLog);
+  const nurLesend = new Set(REMOTE_READ_TOOLS);
+  // Vor dem Aufruf: erst die Regeln, dann (nur fuer aendernde Tools) die Probe aufs Audit-Log.
+  const vorAufruf = (name, args) => {
+    const r = guard(name, args);
+    if (r?.error || nurLesend.has(name) || !audit) return r;
+    try { audit.pruefe(); } catch { return { error: 'Audit-Log nicht beschreibbar – Aenderung abgelehnt, nichts geschrieben.' }; }
+    return r;
+  };
+  // Nach dem Aufruf: eine Audit-Zeile je aenderndem Tool (auch bei Fehler oder abgelehnter Regel).
+  const auditiere = (req, name, args, ergebnis) => {
+    if (!audit || nurLesend.has(name)) return;
+    try { audit.schreibe({ sub: req.nexusAuth?.sub, client: req.nexusAuth?.clientId, tool: name, ...auditFelder(args, ergebnis) }); }
+    catch (err) { console.error('[Nexus-MCP-HTTP] Audit-Zeile nicht geschrieben: ' + (err?.message || err)); }
+  };
 
   // ── Aufruf-Log: EINE JSON-Zeile je Anfrage – Zeit, sub, Tool, Pfad, Ergebnis. Keine Inhalte:
   // weder Suchbegriffe noch Abfragen, Notiztext, Token oder Header. Die Felder fuellen die
@@ -167,7 +188,9 @@ export function createHttpApp({ registry, info = {}, config, log = stdoutLog }) 
       // Vorbelegung, falls der Aufruf das Tool nie erreicht (nicht freigegeben / ungueltige Argumente).
       e.ergebnis = freigegeben.has(msg.params?.name) ? 'aufruf_fehler' : 'tool_abgelehnt';
     }
-    const server = buildServer({ registry: sicht, policy, info: identitaet, instructions: hinweise, onResult: begrenze(e), onCall: guard });
+    const grenze = begrenze(e);
+    const nachAufruf = (name, args, ergebnis) => { auditiere(req, name, args, ergebnis); return grenze(name, args, ergebnis); };
+    const server = buildServer({ registry: sicht, policy, info: identitaet, instructions: hinweise, onResult: nachAufruf, onCall: vorAufruf });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on('close', () => {
       transport.close().catch(() => {});

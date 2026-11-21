@@ -5,6 +5,7 @@
 // wirft EINEN Fehler mit allen Problemen: ein unvollstaendig konfigurierter Server startet nicht.
 // Beschreibung aller Variablen: docs/remote-connector.md
 
+import { isAbsolute } from 'path';
 import { REMOTE_LEVELS } from './remote-policy.js';
 
 const AUS = new Set(['0', 'false', 'off', 'no']);
@@ -74,6 +75,11 @@ export function loadHttpConfig(env = {}) {
     const fremd = stufen.filter(x => !REMOTE_LEVELS.includes(x));
     if (fremd.length) fehler.push(`NEXUS_MCP_LEVELS kennt nur ${REMOTE_LEVELS.join(', ')} (unbekannt: ${fremd.join(', ')})`);
     config.levels = Object.freeze(REMOTE_LEVELS.filter(x => x === 'read' || stufen.includes(x)));
+    // Audit-Log (R31): Datei AUSSERHALB der Vaults, eine JSON-Zeile je Schreibaufruf. Pflicht, sobald
+    // eine Schreibstufe eingeschaltet ist – ohne Audit-Log startet der Server dann nicht.
+    config.auditLog = String(env.NEXUS_MCP_AUDIT_LOG ?? '').trim() || null;
+    if (config.auditLog && !isAbsolute(config.auditLog)) fehler.push('NEXUS_MCP_AUDIT_LOG muss ein absoluter Pfad sein');
+    if (!config.auditLog && config.levels.length > 1) fehler.push('NEXUS_MCP_AUDIT_LOG fehlt (Pflicht, sobald NEXUS_MCP_LEVELS write oder admin enthaelt)');
 
     // Haertung: erlaubte Host-Header (Standard: der Host der Ressourcen-URL) und erlaubte
     // Origins (Standard: nur der eigene). Alles andere wird mit 403 abgewiesen.

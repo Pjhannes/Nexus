@@ -4,8 +4,10 @@
 //   2. Stufe "write": Schreib-Tools sichtbar und wirksam, nur im freigegebenen Vault
 //   3. Regeln je Aufruf: kein endgueltiges Loeschen, _System geschuetzt, vault_check als Trockenlauf
 //   4. Stufe "admin": delete landet im Papierkorb, reindex, vault_check mit Bericht
+//   5. Audit-Log: Pflicht bei Schreibstufen, eine Zeile je aenderndem Aufruf, fail-closed
 // Aufbau: test/mcp-http-helfer.mjs. Lauf: node test/mcp-http-write.test.mjs
-import { existsSync, readFileSync, readdirSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, rmSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import { aufbau } from './mcp-http-helfer.mjs';
 import { loadHttpConfig } from '../src/mcp/http-config.js';
 import { REMOTE_READ_TOOLS, REMOTE_WRITE_TOOLS, REMOTE_ADMIN_TOOLS, remotePolicy, remoteGuard } from '../src/mcp/remote-policy.js';
@@ -22,7 +24,9 @@ const t = await aufbau('nexus-mcp-write-');
 const { ENV, vaultPfad } = t;
 const platte = (...rel) => readFileSync(vaultPfad('wissen', ...rel), 'utf8');
 // Umgebung fuer einen Server mit Schreibstufen.
-const schreibEnv = (levels, extra = {}) => ({ ...ENV, NEXUS_MCP_LEVELS: levels, ...extra });
+const AUDIT = join(t.scratch, 'audit', 'audit.jsonl');
+const schreibEnv = (levels, extra = {}) => ({ ...ENV, NEXUS_MCP_LEVELS: levels, NEXUS_MCP_AUDIT_LOG: AUDIT, ...extra });
+const auditZeilen = (datei = AUDIT) => existsSync(datei) ? readFileSync(datei, 'utf8').split('\n').filter(Boolean).map(z => JSON.parse(z)) : [];
 
 try {
   // ── 1. Konfiguration ───────────────────────────────────────────────────────
@@ -121,6 +125,55 @@ try {
     const vc = await ruf('vault_check', {});
     ok('vault_check mit admin schreibt den Bericht', !vc.fehler && vc.json?.reportPath === '_System/Vault-Check.md' && existsSync(vaultPfad('wissen', '_System', 'Vault-Check.md')), vc.text);
     ok('im nicht freigegebenen Vault ist nichts entstanden', readdirSync(vaultPfad('privat')).join() === 'Geheim.md', readdirSync(vaultPfad('privat')).join());
+  }
+
+  // ── 5. Audit-Log ───────────────────────────────────────────────────────────
+  console.log('5. Audit-Log');
+  {
+    ok('Schreibstufe ohne NEXUS_MCP_AUDIT_LOG -> Konfigurationsfehler', /NEXUS_MCP_AUDIT_LOG fehlt/.test(wirft({ ...ENV, NEXUS_MCP_LEVELS: 'write' }) ?? '')
+      && /NEXUS_MCP_AUDIT_LOG fehlt/.test(wirft({ ...ENV, NEXUS_MCP_LEVELS: 'admin' }) ?? ''));
+    ok('nur lesen braucht kein Audit-Log', loadHttpConfig(ENV).auditLog === null);
+    ok('relativer Pfad -> Konfigurationsfehler', /absoluter Pfad/.test(wirft(schreibEnv('write', { NEXUS_MCP_AUDIT_LOG: 'audit.jsonl' })) ?? ''));
+    let imVault = null;
+    try { t.baueApp(loadHttpConfig(schreibEnv('write', { NEXUS_MCP_AUDIT_LOG: vaultPfad('wissen', 'audit.jsonl') }))); } catch (e) { imVault = e.message; }
+    ok('Audit-Log in einem Vault -> die App startet nicht', /ausserhalb der Vaults/.test(imVault ?? ''), imVault);
+    let imFremden = null;
+    try { t.baueApp(loadHttpConfig(schreibEnv('write', { NEXUS_MCP_AUDIT_LOG: vaultPfad('privat', 'x', 'audit.jsonl') }))); } catch (e) { imFremden = e.message; }
+    ok('auch nicht in einem nicht freigegebenen Vault', /ausserhalb der Vaults/.test(imFremden ?? '') && !existsSync(vaultPfad('privat', 'x')), imFremden);
+
+    // Die Abschnitte 2 und 4 haben ueber AUDIT geschrieben.
+    const alle = auditZeilen();
+    const von = (tool) => alle.filter(z => z.tool === tool);
+    ok('jede Zeile hat Zeit, sub, client, tool, ergebnis', alle.length > 0 && alle.every(z => !isNaN(Date.parse(z.zeit)) && z.sub === '00000000-0000-4000-8000-000000000001' && z.client === 'test-client' && z.tool && ['ok', 'fehler'].includes(z.ergebnis)), alle[0]);
+    ok('Lese-Tools stehen nicht im Audit-Log', alle.every(z => !REMOTE_READ_TOOLS.includes(z.tool)), alle.map(z => z.tool).join());
+    const w = von('write_note').find(z => z.pfad === 'Remote/Neu.md');
+    ok('write_note: Vault, Pfad, hashVorher null (neu), hash', w?.ergebnis === 'ok' && w.vault === 'wissen' && w.hashVorher === null && /^sha256:[0-9a-f]{64}$/.test(w.hash ?? ''), w);
+    const a = von('append_to_section').find(z => z.ergebnis === 'ok');
+    ok('append_to_section: Hash vorher und nachher', /^sha256:/.test(a?.hashVorher ?? '') && /^sha256:/.test(a?.hash ?? '') && a.hashVorher !== a.hash, a);
+    const p = von('patch').find(z => z.ergebnis === 'fehler');
+    ok('abgelehnter patch (Hash-Fehler): Zeile mit ergebnis "fehler" und Grund', /Stand abweichend/.test(p?.fehler ?? '') && p.pfad === 'Notiz.md', p);
+    const m = von('move').find(z => z.ergebnis === 'ok');
+    ok('move: Quelle und Ziel', m?.pfad === 'Remote/Neu.md' && m.nach === 'Remote/Ordner/Neu.md', m);
+    const d = von('delete');
+    ok('delete: Papierkorb-Pfad als Ziel; die abgelehnten Versuche stehen als Fehler drin', d.some(z => z.ergebnis === 'ok' && /^\.trash\//.test(z.nach ?? ''))
+      && d.some(z => z.ergebnis === 'fehler' && /gesperrt/.test(z.fehler)) && d.some(z => z.ergebnis === 'fehler' && /_System/.test(z.fehler)), d);
+    ok('Schreibversuch in den nicht freigegebenen Vault steht als Fehler drin', von('write_note').some(z => z.ergebnis === 'fehler' && z.vault === 'privat'));
+    const roh = readFileSync(AUDIT, 'utf8');
+    ok('kein Notiztext im Audit-Log', !roh.includes('Vom Handy') && !roh.includes('Angehaengt') && !roh.includes('Leuchtturm'));
+    ok('eine Zeile je Aufruf, jede gueltiges JSON', roh.endsWith('\n') && roh.trim().split('\n').length === alle.length);
+
+    // Fail-closed: Log nicht beschreibbar -> Aenderung abgelehnt, nichts geschrieben; Lesen geht weiter.
+    const eigenes = join(t.scratch, 'audit2', 'a.jsonl');
+    const port = await t.starte(t.baueApp(loadHttpConfig(schreibEnv('write', { NEXUS_MCP_AUDIT_LOG: eigenes }))));
+    const ruf = t.rufer(port);
+    ok('Start legt den Ordner des Audit-Logs an', existsSync(eigenes));
+    rmSync(join(t.scratch, 'audit2'), { recursive: true, force: true });
+    const zu = await ruf('write_note', { path: 'OhneAudit.md', content: 'x', create: true });
+    ok('Audit-Log weg -> write_note abgelehnt, nichts angelegt', zu.fehler && /Audit-Log/.test(zu.text) && !existsSync(vaultPfad('wissen', 'OhneAudit.md')), zu.text);
+    ok('Lesen geht ohne Audit-Log weiter', !(await ruf('search', { q: 'Leuchtturm' })).fehler);
+    mkdirSync(join(t.scratch, 'audit2'), { recursive: true });
+    const wieder = await ruf('write_note', { path: 'MitAudit.md', content: 'x', create: true });
+    ok('Audit-Log wieder da -> Schreiben geht, Zeile steht drin', !wieder.fehler && auditZeilen(eigenes).some(z => z.tool === 'write_note' && z.pfad === 'MitAudit.md'), wieder.text);
   }
 } catch (e) {
   console.error('  \x1b[31m✗ Testlauf-Fehler:\x1b[0m', e.stack || e.message);
