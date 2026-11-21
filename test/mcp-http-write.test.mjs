@@ -306,7 +306,7 @@ try {
     // Leere Datei und Begrenzung auf die gepruefte Groesse
     writeFileSync(vaultPfad('wissen', 'Dateien', 'leer.txt'), '');
     const leer = await ruf('datei_link', { path: 'Dateien/leer.txt' });
-    const ld = await holen(leer.json?.url ?? 'https://x/dl/x');
+    const ld = await holen(leer.json?.url ?? 'https://mcp.example.com/dl/x');
     ok('leere Datei: Link mit 0 Bytes, Abruf 200 ohne Inhalt', !leer.fehler && leer.json?.bytes === 0 && ld.status === 200 && ld.buffer.length === 0 && ld.headers['content-length'] === '0', `${leer.text} ${ld.status}`);
     const lesen = (strom) => new Promise((res, rej) => { const teile = []; strom.on('data', x => teile.push(x)); strom.on('end', () => res(Buffer.concat(teile))); strom.on('error', rej); });
     writeFileSync(vaultPfad('wissen', 'Dateien', 'zehn.txt'), '0123456789', 'utf8');
