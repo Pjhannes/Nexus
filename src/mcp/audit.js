@@ -32,9 +32,11 @@ export function makeAudit(pfad) {
 }
 
 // Liegt datei in (oder auf) einem der Ordner? Fuer die Pruefung "Audit-Log nicht im Vault".
-export function liegtIn(datei, ordner = []) {
-  const d = resolve(datei);
-  return ordner.some(o => { const r = resolve(o); return d === r || d.startsWith(r + sep); });
+// Unter Windows ohne Gross/Klein: "D:\vault\audit.log" liegt dort auch im Vault "D:\Vault".
+export function liegtIn(datei, ordner = [], { windows = process.platform === 'win32' } = {}) {
+  const norm = (p) => (windows ? resolve(p).toLowerCase() : resolve(p));
+  const d = norm(datei);
+  return ordner.some(o => { const r = norm(o); return d === r || d.startsWith(r + sep); });
 }
 
 // Aus einem Tool-Ergebnis die Felder fuers Audit lesen (Ergebnistext ist JSON, Fehler sind Klartext).

@@ -13,7 +13,8 @@ import { join } from 'path';
 import { aufbau } from './mcp-http-helfer.mjs';
 import { loadHttpConfig } from '../src/mcp/http-config.js';
 import { REMOTE_READ_TOOLS, REMOTE_WRITE_TOOLS, REMOTE_ADMIN_TOOLS, remotePolicy, remoteGuard } from '../src/mcp/remote-policy.js';
-import { makeDownloads, contentDisposition, dateiStrom } from '../src/mcp/download.js';
+import { makeDownloads, contentDisposition, dateiStrom, dateiPruefen } from '../src/mcp/download.js';
+import { liegtIn } from '../src/mcp/audit.js';
 
 let pass = 0, fail = 0;
 function ok(label, cond, extra) {
@@ -102,7 +103,18 @@ try {
   // ── 3. Regeln je Aufruf ────────────────────────────────────────────────────
   console.log('3. Regeln');
   {
-    const g = remoteGuard({ levels: ['read', 'write', 'admin'] });
+    // windows:false = die Regeln selbst, unabhaengig davon, wo der Test laeuft.
+    const g = remoteGuard({ levels: ['read', 'write', 'admin'], windows: false });
+    // Windows-Host: Kurznamen und Datenstroeme sind andere Namen fuer dieselbe Datei.
+    const gw = remoteGuard({ levels: ['read', 'write', 'admin'], windows: true });
+    for (const [n, a] of [['delete', { path: '_SYSTE~1/Regeln.md' }], ['delete', { path: '_System::$DATA' }], ['write_note', { path: 'STIGNO~1', content: '*' }],
+      ['write_note', { path: 'a.md:.stignore', content: '*' }], ['patch', { path: 'Uni/NOTIZ~2.MD', patches: [] }], ['create_folder', { path: 'GIT~1' }],
+      ['move', { from: '_SYSTE~1/a.md', to: 'raus.md' }], ['move', { from: 'a.md', to: 'TRASH~1/a.md' }], ['restore', { path: '.trash/2026-01-01_000000/STIGNO~1' }]])
+      ok(`Windows-Host: ${n} ${JSON.stringify(a.path ?? a.from + ' -> ' + a.to)} -> abgelehnt`, /Windows-Host/.test(gw(n, a)?.error ?? ''));
+    ok('Windows-Host: gewoehnliche Namen (auch mit Tilde ohne Ziffer) bleiben erlaubt', gw('write_note', { path: 'Uni/Notiz ~ Entwurf.md', content: 'x' }) === undefined
+      && gw('move', { from: 'A/x.md', to: 'B/x.md' }) === undefined && gw('delete', { path: 'Uni/v1.2 Notiz.md' }) === undefined);
+    ok('Windows-Host: die uebrigen Regeln gelten weiter, Lese-Tools sind nicht betroffen', /_System/.test(gw('delete', { path: '_System/Regeln.md' })?.error ?? '') && gw('search', { q: 'a:b~1' }) === undefined);
+    ok('anderer Host: ":" und "~1" sind gewoehnliche Dateinamen', g('write_note', { path: 'Termin 10:30.md', content: 'x' }) === undefined && g('delete', { path: 'Kopie~1.md' }) === undefined);
     ok('delete permanent -> abgelehnt (auch fuer Papierkorb-Pfade)', /gesperrt/.test(g('delete', { path: '.trash/2026-01-01_000000/x.md', permanent: true })?.error ?? ''));
     for (const p of ['_System', '_System/Regeln.md', '_system/regeln.md', './_System/Regeln.md', '_System\\Regeln.md', '_System//Regeln.md'])
       ok(`delete ${JSON.stringify(p)} -> abgelehnt`, /_System/.test(g('delete', { path: p })?.error ?? ''));
@@ -184,6 +196,10 @@ try {
     let imFremden = null;
     try { t.baueApp(loadHttpConfig(schreibEnv('write', { NEXUS_MCP_AUDIT_LOG: vaultPfad('privat', 'x', 'audit.jsonl') }))); } catch (e) { imFremden = e.message; }
     ok('auch nicht in einem nicht freigegebenen Vault', /ausserhalb der Vaults/.test(imFremden ?? '') && !existsSync(vaultPfad('privat', 'x')), imFremden);
+    const andersGeschrieben = join(t.scratch, 'WISSEN', 'Audit.jsonl');
+    ok('liegtIn: Windows-Host vergleicht ohne Gross/Klein, andere Hosts genau', liegtIn(andersGeschrieben, [vaultPfad('wissen')], { windows: true }) === true
+      && liegtIn(andersGeschrieben, [vaultPfad('wissen')], { windows: false }) === false && liegtIn(vaultPfad('wissen', 'a.jsonl'), [vaultPfad('wissen')], { windows: false }) === true);
+    ok('liegtIn: Nachbarordner mit gleichem Anfang zaehlt nicht', liegtIn(join(t.scratch, 'WISSEN2', 'a.jsonl'), [vaultPfad('wissen')], { windows: true }) === false);
 
     // Die Abschnitte 2 und 4 haben ueber AUDIT geschrieben.
     const alle = auditZeilen();
@@ -334,6 +350,15 @@ try {
       const r = await ruf('datei_link', args);
       ok(`datei_link: ${name} -> Fehler, kein Link`, r.fehler && !/\/dl\//.test(r.text), r.text);
     }
+    // Windows-Host: Kurznamen und Datenstroeme (Helfer-Ebene mit windows:true, laeuft ueberall)
+    const wv = vaultPfad('wissen');
+    ok('dateiPruefen, Windows-Host: Kurzname und Datenstrom -> Fehler', /Windows-Host/.test(dateiPruefen(wv, 'DATEIE~1/gross.bin', 1e9, { windows: true }).error ?? '')
+      && /Windows-Host/.test(dateiPruefen(wv, 'Dateien/gross.bin::$DATA', 1e9, { windows: true }).error ?? '') && /Windows-Host/.test(dateiPruefen(wv, 'TRASH~1/x/Alt.md', 1e9, { windows: true }).error ?? ''));
+    ok('dateiPruefen, Windows-Host: gewoehnliche Datei geht weiter', dateiPruefen(wv, 'Dateien/gross.bin', 1e9, { windows: true }).bytes === gross.length);
+    writeFileSync(vaultPfad('wissen', 'Dateien', 'Kopie~1.txt'), 'kopie', 'utf8');
+    ok('dateiPruefen, anderer Host: "~1" ist ein gewoehnlicher Dateiname', dateiPruefen(wv, 'Dateien/Kopie~1.txt', 1e9, { windows: false }).bytes === 5);
+    const kurz = await ruf('datei_link', { path: 'DATEIE~1/gross.bin' });
+    ok('datei_link ueber einen Kurznamen -> Fehler, kein Link (unter Windows per Regel, sonst gibt es die Datei nicht)', kurz.fehler && !/\/dl\//.test(kurz.text), kurz.text);
     let link = false;
     try { symlinkSync(vaultPfad('privat', 'Geheim.md'), vaultPfad('wissen', 'Dateien', 'verknuepft.md')); link = true; } catch { /* z. B. Windows ohne Entwicklermodus */ }
     if (link) {

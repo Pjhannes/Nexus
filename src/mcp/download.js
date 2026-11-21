@@ -12,6 +12,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { statSync, realpathSync, createReadStream } from 'fs';
 import { basename, sep } from 'path';
 import { safeFull } from '../paths.js';
+import { windowsSchreibweise } from './remote-policy.js';
 
 export const SECRET_MIN_ZEICHEN = 32;
 const b64 = (v) => Buffer.from(v).toString('base64url');
@@ -46,10 +47,13 @@ export function makeDownloads({ secret, ttlS, maxBytes, baseUrl }) {
 // Darf diese Datei ausgeliefert werden? { full, bytes, name } oder { error }.
 // Nur regulaere Dateien im Vault; nichts aus versteckten Ordnern (.trash, .nexus, .git,
 // .stversions ...); Symlinks duerfen nicht aus dem Vault hinausfuehren; Groessengrenze.
-export function dateiPruefen(vaultPath, rel, maxBytes) {
+// windows: Windows-Host (Standard: die Plattform) – dort koennten Kurznamen ("GEHEIM~1" fuer
+// ".geheim") und Datenstroeme ("a.pdf::$DATA") die Regel fuer versteckte Ordner umgehen.
+export function dateiPruefen(vaultPath, rel, maxBytes, { windows = process.platform === 'win32' } = {}) {
   if (typeof rel !== 'string' || !rel) return { error: 'path fehlt' };
   const segmente = rel.replace(/\\/g, '/').split('/').filter(s => s && s !== '.');
   if (segmente.some(s => s.startsWith('.'))) return { error: 'Versteckte Dateien und Ordner werden nicht ausgeliefert: ' + rel };
+  if (windows && windowsSchreibweise(rel)) return { error: 'Pfade mit ":" oder Kurznamen-Muster ("~1") werden auf einem Windows-Host nicht ausgeliefert: ' + rel };
   const full = safeFull(vaultPath, rel);
   if (!full) return { error: 'Pfad ausserhalb des Vaults oder ungueltig: ' + rel };
   let st, echt, wurzel;

@@ -59,12 +59,22 @@ const versteckt = (rel) => rel.split('/').some(s => s.startsWith('.'));
 // Papierkorb (.trash) und haben eigene Regeln (remoteGuard: delete nie auf versteckten Pfaden,
 // restore nie mit verstecktem Ziel).
 const SCHREIBT_PFAD = new Set(['write_note', 'append_to_section', 'patch', 'write_karten', 'write_vortrag', 'karten_gliedern', 'create_folder']);
+// Windows-Host: dieselbe Datei hat dort mehrere Namen, an denen die Namensregeln oben vorbeisehen –
+// 8.3-Kurznamen ("_SYSTE~1" = "_System", "STIGNO~1" = ".stignore") und NTFS-Datenstroeme
+// ("Notiz.md:strom", "_System::$DATA"). Statt jede Schreibweise aufzuloesen, werden Pfade mit ":"
+// oder "~<Ziffer>" dort abgelehnt, wo Regeln Namen vergleichen. Auf anderen Systemen sind das
+// gewoehnliche Dateinamen und bleiben erlaubt.
+export const windowsSchreibweise = (p) => /:|~\d/.test(String(p ?? ''));
+const PRUEFT_NAMEN = new Set([...SCHREIBT_PFAD, 'delete', 'move', 'restore']);
 
 // Regeln fuer einzelne Aufrufe. Rueckgabe: undefined = unveraendert weiter, { error } = ablehnen
 // (das Tool laeuft nicht), { args } = mit geaenderten Argumenten weiter.
-export function remoteGuard({ levels = [] } = {}) {
+// windows: laeuft der Server auf einem Windows-Host? (Standard: die Plattform; in Tests gesetzt.)
+export function remoteGuard({ levels = [], windows = process.platform === 'win32' } = {}) {
   const admin = levels.includes('admin');
   return (name, args = {}) => {
+    if (windows && PRUEFT_NAMEN.has(name) && [args.path, args.from, args.to].some(windowsSchreibweise))
+      return { error: 'Pfade mit ":" oder Kurznamen-Muster ("~1") sind ueber den Remote-Zugriff auf einem Windows-Host nicht erlaubt.' };
     if (name === 'delete') {
       if (args.permanent) return { error: 'Endgueltiges Loeschen ist ueber den Remote-Zugriff gesperrt – delete ohne permanent verschiebt in den Papierkorb.' };
       // Auch delete ist eine Aenderung an einem versteckten Pfad: eine .stignore im Papierkorb
